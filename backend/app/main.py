@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.db.session import init_db
 from app.models.user import User
 from app.models.domain import Vehiculo, Solicitud, Evidencia, Tecnico
-from app.api import auth, solicitudes, tecnicos
+from app.api import auth, solicitudes, tecnicos, vehiculos
 
 app = FastAPI(
     title="Plataforma Inteligente de Emergencias Vehiculares",
@@ -31,5 +31,6 @@ async def root():
 
 # Incluir routers de la API
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
+app.include_router(vehiculos.router, prefix="/api/v1/vehiculos", tags=["Vehiculos"])
 app.include_router(solicitudes.router, prefix="/api/v1/solicitudes", tags=["Solicitudes"])
 app.include_router(tecnicos.router, prefix="/api/v1/tecnicos", tags=["Técnicos"])
