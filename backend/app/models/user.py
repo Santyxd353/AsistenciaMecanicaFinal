@@ -25,5 +25,26 @@ class User(UserBase, table=True):
 class UserCreate(UserBase):
     password: str
 
+
+class UserRegister(SQLModel):
+    username: str
+    email: str
+    full_name: Optional[str] = None
+    password: str
+
+
+class UserUpdate(SQLModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+
+
 class UserRead(UserBase):
     id: int
+
+
+class AuthResponse(SQLModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: UserRole
+    user: UserRead

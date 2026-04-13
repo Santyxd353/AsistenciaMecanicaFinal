@@ -22,6 +22,14 @@ class Vehiculo(VehiculoBase, table=True):
     propietario: Optional["User"] = Relationship(back_populates="vehiculos")
     solicitudes: List["Solicitud"] = Relationship(back_populates="vehiculo")
 
+
+class VehiculoCreate(VehiculoBase):
+    pass
+
+
+class VehiculoRead(VehiculoBase):
+    id: int
+
 class TecnicoBase(SQLModel):
     nombre: str
     especialidad: str

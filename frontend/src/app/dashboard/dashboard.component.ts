@@ -6,6 +6,7 @@ import { SolicitudService, Solicitud } from '../core/incident.service';
 import { TecnicoService, Tecnico } from '../core/tecnico.service';
 import { DetalleSolicitudModalComponent, AsignacionEvento } from './detalle-solicitud-modal.component';
 import { DetalleTecnicoModalComponent } from './detalle-tecnico-modal.component';
+import { Router } from '@angular/router';
 
 @Component({
   selector: 'app-dashboard',
@@ -230,10 +231,21 @@ export class DashboardComponent implements OnInit {
     private authService: AuthService,
     private solicitudService: SolicitudService,
     private tecnicoService: TecnicoService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private router: Router
   ) {}
 
   ngOnInit() {
+    if (!this.authService.isLoggedIn()) {
+      this.router.navigate(['/login']);
+      return;
+    }
+
+    if (!this.authService.isWorkshopLike()) {
+      this.router.navigate(['/cliente']);
+      return;
+    }
+
     this.cargarSolicitudes();
     this.cargarTecnicos();
   }
