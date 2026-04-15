@@ -1,9 +1,10 @@
-fastapi[all]
+fastapi
+uvicorn[standard]
 sqlmodel
+sqlalchemy
+pydantic
 psycopg2-binary
-alembic
 python-jose[cryptography]
 bcrypt
 python-multipart
 python-dotenv
-uvicorn
