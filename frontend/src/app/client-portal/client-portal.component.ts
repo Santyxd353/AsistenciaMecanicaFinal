@@ -193,7 +193,7 @@ export class ClientPortalComponent implements OnInit {
     }
 
     if (this.authService.isWorkshopLike()) {
-      this.router.navigate(['/dashboard']);
+      this.router.navigate([this.authService.getDefaultRouteForRole()]);
       return;
     }
 

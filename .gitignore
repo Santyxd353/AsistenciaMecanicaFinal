@@ -1,0 +1,12 @@
+# Archivos de entorno
+.env
+
+# Dependencias Node
+node_modules/
+
+# Cachés de Python
+__pycache__/
+
+# Archivos de logs
+*.log
+

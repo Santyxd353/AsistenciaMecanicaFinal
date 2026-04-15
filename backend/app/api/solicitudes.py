@@ -3,8 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from app.db.session import get_session
-from app.models.domain import Solicitud, SolicitudCreate, SolicitudRead, Tecnico
+from app.models.domain import Solicitud, SolicitudCreate, SolicitudRead, Tecnico, Taller
 from app.models.user import User
+from app.api.deps import get_current_user
 
 router = APIRouter()
 
@@ -44,10 +45,87 @@ def crear_solicitud(*, session: Session = Depends(get_session), solicitud_in: So
     return solicitud
 
 
-@router.get("/", response_model=List[SolicitudRead])
-def listar_solicitudes(skip: int = 0, limit: int = 100, session: Session = Depends(get_session)):
-    solicitudes = session.exec(select(Solicitud).offset(skip).limit(limit)).all()
+@router.get("/mis-solicitudes", response_model=List[SolicitudRead])
+def listar_solicitudes_taller(
+    *,
+    skip: int = 0,
+    limit: int = 100,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Listar solicitudes asignadas al taller del usuario actual.
+    Solo usuarios WORKSHOP con taller pueden ver sus solicitudes.
+    """
+    # Obtener el taller del usuario
+    taller = session.exec(
+        select(Taller).where(Taller.propietario_id == current_user.id)
+    ).first()
+
+    if not taller:
+        return []  # Si no tiene taller, devolver lista vacía
+
+    solicitudes = session.exec(
+        select(Solicitud).where(Solicitud.taller_id == taller.id)
+        .offset(skip).limit(limit)
+    ).all()
     return solicitudes
+
+
+@router.patch("/{solicitud_id}/estado")
+def actualizar_estado_solicitud(
+    *,
+    session: Session = Depends(get_session),
+    solicitud_id: int,
+    estado: str,
+    tecnico_id: Optional[int] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Actualizar el estado de una solicitud asignada al taller del usuario.
+    Solo el propietario del taller puede modificar sus solicitudes.
+    """
+    # Obtener la solicitud
+    solicitud = session.get(Solicitud, solicitud_id)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+
+    # Verificar que la solicitud pertenece al taller del usuario
+    taller = session.exec(
+        select(Taller).where(Taller.propietario_id == current_user.id)
+    ).first()
+
+    if not taller or solicitud.taller_id != taller.id:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permisos para modificar esta solicitud"
+        )
+
+    # Validar el estado
+    from app.models.domain import EstadoSolicitud
+    try:
+        nuevo_estado = EstadoSolicitud(estado)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Estado inválido. Estados válidos: {[e.value for e in EstadoSolicitud]}"
+        )
+
+    # Si se proporciona tecnico_id, verificar que pertenezca al taller
+    if tecnico_id:
+        tecnico = session.get(Tecnico, tecnico_id)
+        if not tecnico or tecnico.taller_id != taller.id:
+            raise HTTPException(
+                status_code=400,
+                detail="El técnico no pertenece a tu taller"
+            )
+        solicitud.tecnico_id = tecnico_id
+
+    solicitud.estado = nuevo_estado
+    session.add(solicitud)
+    session.commit()
+    session.refresh(solicitud)
+    return solicitud
 
 
 @router.get("/{solicitud_id}", response_model=SolicitudRead)

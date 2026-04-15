@@ -19,8 +19,7 @@ class User(UserBase, table=True):
     hashed_password: str
     
     vehiculos: List["Vehiculo"] = Relationship(back_populates="propietario")
-    solicitudes_asignadas: List["Solicitud"] = Relationship(back_populates="taller")
-    tecnicos: List["Tecnico"] = Relationship(back_populates="taller")
+    taller: Optional["Taller"] = Relationship(back_populates="propietario")
 
 class UserCreate(UserBase):
     password: str
