@@ -278,83 +278,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _showVehicleDialog() async {
     final controller = context.read<AppController>();
-    final plateController = TextEditingController();
-    final brandController = TextEditingController();
-    final modelController = TextEditingController();
-    final colorController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
 
     final draft = await showDialog<_VehicleDraft>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Registrar vehiculo'),
-          content: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: plateController,
-                    textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(labelText: 'Placa'),
-                    validator: _requiredField('Ingresa la placa.'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: brandController,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(labelText: 'Marca'),
-                    validator: _requiredField('Ingresa la marca.'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: modelController,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(labelText: 'Modelo'),
-                    validator: _requiredField('Ingresa el modelo.'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: colorController,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(labelText: 'Color'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (!(formKey.currentState?.validate() ?? false)) {
-                  return;
-                }
-                Navigator.of(dialogContext).pop(
-                  _VehicleDraft(
-                    placa: plateController.text.trim(),
-                    marca: brandController.text.trim(),
-                    modelo: modelController.text.trim(),
-                    color: colorController.text.trim(),
-                  ),
-                );
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        );
-      },
+      builder: (_) => const _VehicleDialog(),
     );
-
-    plateController.dispose();
-    brandController.dispose();
-    modelController.dispose();
-    colorController.dispose();
 
     if (draft == null || !mounted) {
       return;
@@ -378,10 +306,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  FormFieldValidator<String> _requiredField(String message) {
-    return (value) => value == null || value.trim().isEmpty ? message : null;
-  }
-
   void _showMessage(String raw) {
     if (!mounted) {
       return;
@@ -389,5 +313,101 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(raw.replaceFirst('Exception: ', ''))),
     );
+  }
+}
+
+class _VehicleDialog extends StatefulWidget {
+  const _VehicleDialog();
+
+  @override
+  State<_VehicleDialog> createState() => _VehicleDialogState();
+}
+
+class _VehicleDialogState extends State<_VehicleDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _plateController = TextEditingController();
+  final _brandController = TextEditingController();
+  final _modelController = TextEditingController();
+  final _colorController = TextEditingController();
+
+  @override
+  void dispose() {
+    _plateController.dispose();
+    _brandController.dispose();
+    _modelController.dispose();
+    _colorController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Registrar vehiculo'),
+      content: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _plateController,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(labelText: 'Placa'),
+                validator: _requiredField('Ingresa la placa.'),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: _brandController,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'Marca'),
+                validator: _requiredField('Ingresa la marca.'),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: _modelController,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'Modelo'),
+                validator: _requiredField('Ingresa el modelo.'),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: _colorController,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'Color'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Guardar'),
+        ),
+      ],
+    );
+  }
+
+  void _submit() {
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
+
+    Navigator.of(context).pop(
+      _VehicleDraft(
+        placa: _plateController.text.trim(),
+        marca: _brandController.text.trim(),
+        modelo: _modelController.text.trim(),
+        color: _colorController.text.trim(),
+      ),
+    );
+  }
+
+  FormFieldValidator<String> _requiredField(String message) {
+    return (value) => value == null || value.trim().isEmpty ? message : null;
   }
 }
