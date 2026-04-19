@@ -72,6 +72,12 @@ class OverviewScreen extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
             ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: controller.loading ? null : controller.refreshData,
+              icon: const Icon(Icons.sync),
+              label: const Text('Actualizar estados'),
+            ),
             const SizedBox(height: 10),
             if (controller.loading)
               const Padding(
@@ -114,9 +120,7 @@ class OverviewScreen extends StatelessWidget {
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (_) => RequestDetailScreen(
-                            request: request,
-                            meta: controller.metaFor(request.id),
-                            vehicleLabel: controller.vehicleLabelFor(request),
+                            requestId: request.id,
                           ),
                         ),
                       );
@@ -380,6 +384,19 @@ class _RequestCard extends StatelessWidget {
                     style: const TextStyle(color: Color(0xFF6F655B)),
                   ),
                   const SizedBox(width: 16),
+                  const Icon(Icons.engineering_outlined, size: 18, color: Color(0xFF6F655B)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      request.tecnicoNombre ?? (request.tecnicoId == null ? 'Sin tecnico' : 'Tecnico #${request.tecnicoId}'),
+                      style: const TextStyle(color: Color(0xFF6F655B)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
                   const Icon(Icons.location_on_outlined, size: 18, color: Color(0xFF6F655B)),
                   const SizedBox(width: 6),
                   Expanded(

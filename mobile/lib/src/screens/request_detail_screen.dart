@@ -1,90 +1,138 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
+import '../app_controller.dart';
 import '../models.dart';
 
 class RequestDetailScreen extends StatelessWidget {
   const RequestDetailScreen({
     super.key,
-    required this.request,
-    required this.meta,
-    required this.vehicleLabel,
+    required this.requestId,
   });
 
-  final EmergencyRequest request;
-  final LocalRequestMeta? meta;
-  final String vehicleLabel;
+  final int requestId;
 
   @override
   Widget build(BuildContext context) {
-    final formatter = DateFormat('dd/MM/yyyy · HH:mm');
+    final controller = context.watch<AppController>();
+    final request = _findRequest(controller.requests, requestId);
+    if (request == null) {
+      return Scaffold(
+        appBar: AppBar(title: Text('Solicitud #$requestId')),
+        body: const Center(child: Text('Solicitud no disponible. Actualiza el seguimiento.')),
+      );
+    }
+    final meta = controller.metaFor(request.id);
+    final vehicleLabel = controller.vehicleLabelFor(request);
+    final technicianLabel = controller.technicianLabelFor(request);
+    final workshopLabel = controller.workshopLabelFor(request);
+    final formatter = DateFormat('dd/MM/yyyy - HH:mm');
 
     return Scaffold(
-      appBar: AppBar(title: Text('Solicitud #${request.id}')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
-        children: [
-          _SectionCard(
-            title: 'Estado actual',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _StatusPill(status: request.estado, label: request.statusLabel),
-                const SizedBox(height: 14),
-                _InfoLine(label: 'Vehiculo', value: vehicleLabel),
-                _InfoLine(label: 'Fecha', value: formatter.format(request.fechaCreacion.toLocal())),
-                _InfoLine(
-                  label: 'Ubicacion',
-                  value: '${request.latitud.toStringAsFixed(6)}, ${request.longitud.toStringAsFixed(6)}',
-                ),
-                _InfoLine(
-                  label: 'Tecnico asignado',
-                  value: request.tecnicoId?.toString() ?? 'Aun no asignado',
-                ),
-                _InfoLine(
-                  label: 'Taller',
-                  value: request.tallerId?.toString() ?? 'Pendiente de asignacion',
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          _SectionCard(
-            title: 'Analisis del backend',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _InfoLine(label: 'Clasificacion IA', value: request.clasificacionIa ?? 'Sin clasificar'),
-                _InfoLine(label: 'Prioridad', value: request.prioridadIa ?? 'Sin prioridad'),
-                _InfoLine(label: 'Resumen', value: request.resumenIa ?? request.descripcion),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          _SectionCard(
-            title: 'Adjuntos y notas mobile',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _InfoLine(label: 'Tipo reportado', value: meta?.issueType ?? 'No registrado'),
-                _InfoLine(label: 'Fotos', value: '${meta?.imagePaths.length ?? 0} archivo(s)'),
-                _InfoLine(
-                  label: 'Audio',
-                  value: meta?.audioPath == null ? 'Sin audio' : _fileName(meta!.audioPath!),
-                ),
-                _InfoLine(
-                  label: 'Notas',
-                  value: meta?.extraNotes.trim().isEmpty ?? true ? 'Sin notas adicionales' : meta!.extraNotes,
-                ),
-              ],
-            ),
+      appBar: AppBar(
+        title: Text('Solicitud #${request.id}'),
+        actions: [
+          IconButton(
+            tooltip: 'Actualizar estado',
+            onPressed: controller.loading ? null : controller.refreshData,
+            icon: const Icon(Icons.sync),
           ),
         ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: controller.refreshData,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+          children: [
+            _SectionCard(
+              title: 'Estado actual',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _StatusPill(status: request.estado, label: request.statusLabel),
+                  const SizedBox(height: 14),
+                  _InfoLine(label: 'Vehiculo', value: vehicleLabel),
+                  _InfoLine(label: 'Fecha', value: formatter.format(request.fechaCreacion.toLocal())),
+                  _InfoLine(
+                    label: 'Ubicacion',
+                    value: '${request.latitud.toStringAsFixed(6)}, ${request.longitud.toStringAsFixed(6)}',
+                  ),
+                  _InfoLine(label: 'Taller asignado', value: workshopLabel),
+                  _InfoLine(label: 'Tecnico asignado', value: technicianLabel),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _SectionCard(
+              title: 'Descripcion del incidente',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _InfoLine(label: 'Tipo reportado', value: meta?.issueType ?? 'No registrado'),
+                  _InfoLine(label: 'Descripcion enviada', value: request.descripcion),
+                  _InfoLine(
+                    label: 'Notas adicionales',
+                    value: meta?.extraNotes.trim().isEmpty ?? true ? 'Sin notas adicionales' : meta!.extraNotes,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _SectionCard(
+              title: 'Analisis del backend',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _InfoLine(label: 'Clasificacion IA', value: request.clasificacionIa ?? 'Sin clasificar'),
+                  _InfoLine(label: 'Prioridad', value: request.prioridadIa ?? 'Sin prioridad'),
+                  _InfoLine(label: 'Resumen', value: request.resumenIa ?? 'Sin resumen'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _SectionCard(
+              title: 'Adjuntos mobile',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _AttachmentSummary(
+                    icon: Icons.photo_library_outlined,
+                    title: 'Fotografias',
+                    value: '${meta?.imagePaths.length ?? 0} archivo(s)',
+                    items: meta?.imagePaths ?? const [],
+                  ),
+                  const SizedBox(height: 12),
+                  _AttachmentSummary(
+                    icon: Icons.mic_none_outlined,
+                    title: 'Audio descriptivo',
+                    value: meta?.audioPath == null ? 'Sin audio' : _fileName(meta!.audioPath!),
+                    items: meta?.audioPath == null ? const [] : [meta!.audioPath!],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Los adjuntos se conservan localmente en la app mientras el backend no tenga endpoint de carga de archivos.',
+                    style: TextStyle(color: Color(0xFF6F655B), fontSize: 12, height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   String _fileName(String path) => path.split(RegExp(r'[\\/]')).last;
+
+  EmergencyRequest? _findRequest(List<EmergencyRequest> requests, int requestId) {
+    for (final request in requests) {
+      if (request.id == requestId) {
+        return request;
+      }
+    }
+    return null;
+  }
 }
 
 class _SectionCard extends StatelessWidget {
@@ -128,6 +176,61 @@ class _InfoLine extends StatelessWidget {
           const SizedBox(height: 4),
           Text(value, style: const TextStyle(fontWeight: FontWeight.w600, height: 1.4)),
         ],
+      ),
+    );
+  }
+}
+
+class _AttachmentSummary extends StatelessWidget {
+  const _AttachmentSummary({
+    required this.icon,
+    required this.title,
+    required this.value,
+    required this.items,
+  });
+
+  final IconData icon;
+  final String title;
+  final String value;
+  final List<String> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFF0E5D7)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: const Color(0xFFC65A16)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+                ),
+                Text(value, style: const TextStyle(color: Color(0xFF6F655B))),
+              ],
+            ),
+            if (items.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              ...items.map(
+                (path) => Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    path.split(RegExp(r'[\\/]')).last,
+                    style: const TextStyle(color: Color(0xFF5F554B), fontSize: 12),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

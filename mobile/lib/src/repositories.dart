@@ -186,6 +186,12 @@ class ApiClient {
     return payload.map(EmergencyRequest.fromApi).toList();
   }
 
+  Future<List<Technician>> fetchTechnicians() async {
+    final response = await http.get(_uri('/api/v1/tecnicos/'), headers: _headers()).timeout(const Duration(seconds: 12));
+    final payload = _decodeList(response);
+    return payload.map(Technician.fromApi).toList();
+  }
+
   Future<EmergencyRequest> createRequest({
     required String descripcion,
     required double latitud,

@@ -74,6 +74,9 @@ class Solicitud(SolicitudBase, table=True):
 class SolicitudRead(SolicitudBase):
     id: int
     fecha_creacion: datetime
+    taller_nombre: Optional[str] = None
+    tecnico_nombre: Optional[str] = None
+    tecnico_especialidad: Optional[str] = None
     
 class SolicitudCreate(SolicitudBase):
     pass

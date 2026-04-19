@@ -13,6 +13,7 @@ class AppController extends ChangeNotifier {
   List<Vehicle> _vehicles = const [];
   List<LocalRequestMeta> _requestMetas = const [];
   List<EmergencyRequest> _requests = const [];
+  List<Technician> _technicians = const [];
 
   bool get initialized => _initialized;
   bool get loading => _loading;
@@ -25,6 +26,7 @@ class AppController extends ChangeNotifier {
   List<Vehicle> get vehicles => List.unmodifiable(_vehicles);
   List<LocalRequestMeta> get requestMetas => List.unmodifiable(_requestMetas);
   List<EmergencyRequest> get requests => List.unmodifiable(_requests);
+  List<Technician> get technicians => List.unmodifiable(_technicians);
   List<EmergencyRequest> get activeRequests => _requests.where((request) => !request.isClosed).toList();
 
   Future<void> initialize() async {
@@ -148,6 +150,7 @@ class AppController extends ChangeNotifier {
     _vehicles = const [];
     _requestMetas = const [];
     _requests = const [];
+    _technicians = const [];
     await storage.clearSession();
     notifyListeners();
   }
@@ -248,6 +251,51 @@ class AppController extends ChangeNotifier {
     return metaFor(request.id)?.vehicleLabel ?? 'Vehiculo no identificado';
   }
 
+  EmergencyRequest requestById(int requestId) {
+    return _requests.firstWhere(
+      (request) => request.id == requestId,
+      orElse: () => throw ApiException('La solicitud ya no esta disponible.'),
+    );
+  }
+
+  String technicianLabelFor(EmergencyRequest request) {
+    if ((request.tecnicoNombre?.trim().isNotEmpty ?? false)) {
+      final specialty = request.tecnicoEspecialidad?.trim();
+      return specialty == null || specialty.isEmpty ? request.tecnicoNombre!.trim() : '${request.tecnicoNombre!.trim()} - $specialty';
+    }
+
+    if (request.tecnicoId != null) {
+      for (final technician in _technicians) {
+        if (technician.id == request.tecnicoId) {
+          return technician.label;
+        }
+      }
+      return 'Tecnico #${request.tecnicoId}';
+    }
+
+    return 'Aun no asignado';
+  }
+
+  String workshopLabelFor(EmergencyRequest request) {
+    if ((request.tallerNombre?.trim().isNotEmpty ?? false)) {
+      return request.tallerNombre!.trim();
+    }
+
+    if (request.tallerId != null) {
+      return 'Taller #${request.tallerId}';
+    }
+
+    if (request.tecnicoId != null) {
+      for (final technician in _technicians) {
+        if (technician.id == request.tecnicoId && technician.tallerId != null) {
+          return 'Taller #${technician.tallerId}';
+        }
+      }
+    }
+
+    return 'Pendiente de asignacion';
+  }
+
   Future<void> _register({
     required String path,
     required String username,
@@ -314,6 +362,7 @@ class AppController extends ChangeNotifier {
       }
 
       final requests = await api.fetchRequests();
+      _technicians = await api.fetchTechnicians();
       final trackedIds = _requestMetas.map((meta) => meta.requestId).toSet();
       _requests = requests
           .where((request) => trackedIds.contains(request.id))
@@ -326,6 +375,7 @@ class AppController extends ChangeNotifier {
       _vehicles = const [];
       _requests = const [];
       _requestMetas = const [];
+      _technicians = const [];
       await storage.saveVehicles(_vehicles);
       await storage.saveRequestMetas(_requestMetas);
     }

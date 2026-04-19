@@ -139,6 +139,34 @@ class Vehicle {
   }
 }
 
+class Technician {
+  const Technician({
+    required this.id,
+    required this.nombre,
+    required this.especialidad,
+    required this.disponible,
+    this.tallerId,
+  });
+
+  final int id;
+  final String nombre;
+  final String especialidad;
+  final bool disponible;
+  final int? tallerId;
+
+  String get label => '$nombre - $especialidad';
+
+  factory Technician.fromApi(Map<String, dynamic> json) {
+    return Technician(
+      id: json['id'] as int,
+      nombre: json['nombre'] as String? ?? 'Tecnico',
+      especialidad: json['especialidad'] as String? ?? 'General',
+      disponible: json['disponible'] as bool? ?? false,
+      tallerId: json['taller_id'] as int?,
+    );
+  }
+}
+
 class EmergencyRequest {
   const EmergencyRequest({
     required this.id,
@@ -155,6 +183,9 @@ class EmergencyRequest {
     this.clasificacionIa,
     this.prioridadIa,
     this.resumenIa,
+    this.tallerNombre,
+    this.tecnicoNombre,
+    this.tecnicoEspecialidad,
   });
 
   final int id;
@@ -171,6 +202,9 @@ class EmergencyRequest {
   final String? clasificacionIa;
   final String? prioridadIa;
   final String? resumenIa;
+  final String? tallerNombre;
+  final String? tecnicoNombre;
+  final String? tecnicoEspecialidad;
 
   bool get isClosed => estado == 'resuelta' || estado == 'cancelada';
 
@@ -232,6 +266,9 @@ class EmergencyRequest {
       clasificacionIa: json['clasificacion_ia'] as String?,
       prioridadIa: json['prioridad_ia'] as String?,
       resumenIa: json['resumen_ia'] as String?,
+      tallerNombre: json['taller_nombre'] as String?,
+      tecnicoNombre: json['tecnico_nombre'] as String?,
+      tecnicoEspecialidad: json['tecnico_especialidad'] as String?,
     );
   }
 }

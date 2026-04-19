@@ -3,7 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.db.session import get_session
+from app.api.deps import get_current_user
 from app.models.domain import Tecnico
+from app.models.user import User
 
 router = APIRouter()
 
@@ -22,14 +24,19 @@ class TecnicoIn(BaseModel):
     taller_id: int | None = None
 
 @router.post("/")
-def crear_tecnico(*, session: Session = Depends(get_session), tecnico_in: TecnicoIn):
+def crear_tecnico(
+    *,
+    session: Session = Depends(get_session),
+    tecnico_in: TecnicoIn,
+    current_user: User = Depends(get_current_user),
+):
     tecnico = Tecnico(
         nombre=tecnico_in.nombre,
         especialidad=tecnico_in.especialidad,
         disponible=tecnico_in.disponible,
         latitud=tecnico_in.latitud,
         longitud=tecnico_in.longitud,
-        taller_id=tecnico_in.taller_id,
+        taller_id=tecnico_in.taller_id or current_user.id,
     )
     session.add(tecnico)
     session.commit()

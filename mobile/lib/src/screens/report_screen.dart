@@ -64,7 +64,7 @@ class _ReportScreenState extends State<ReportScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Envia el reporte del cliente al backend actual. Las fotos y el audio quedan capturados localmente hasta que se habilite carga de evidencias en la API.',
+                'Completa la descripcion, ubicacion y adjuntos del incidente. Las fotos y el audio quedan visibles en el detalle mobile de la solicitud.',
                 style: TextStyle(color: Color(0xFF6F655B), height: 1.5),
               ),
               const SizedBox(height: 18),
@@ -146,12 +146,12 @@ class _ReportScreenState extends State<ReportScreen> {
                                 controller: _descriptionController,
                                 maxLines: 5,
                                 decoration: const InputDecoration(
-                                  labelText: 'Que esta pasando con el vehiculo',
+                                  labelText: 'Descripcion textual del incidente',
                                   hintText: 'Ejemplo: el auto no enciende y se escucha un click click',
                                 ),
                                 validator: (value) {
                                   if (value == null || value.trim().length < 12) {
-                                    return 'Describe mejor el incidente para ayudar al taller.';
+                                    return 'Ingresa al menos 12 caracteres para describir el incidente.';
                                   }
                                   return null;
                                 },
@@ -227,8 +227,13 @@ class _ReportScreenState extends State<ReportScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text(
-                                'Adjuntos capturados en mobile',
+                                'Adjuntos del incidente',
                                 style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Agrega fotografias del vehiculo y un audio descriptivo si lo tienes.',
+                                style: TextStyle(color: Color(0xFF6F655B), height: 1.4),
                               ),
                               const SizedBox(height: 14),
                               Wrap(
@@ -236,9 +241,14 @@ class _ReportScreenState extends State<ReportScreen> {
                                 runSpacing: 10,
                                 children: [
                                   FilledButton.tonalIcon(
-                                    onPressed: _pickImages,
+                                    onPressed: _pickImagesFromGallery,
                                     icon: const Icon(Icons.photo_library_outlined),
-                                    label: const Text('Fotos'),
+                                    label: const Text('Galeria'),
+                                  ),
+                                  FilledButton.tonalIcon(
+                                    onPressed: _pickImageFromCamera,
+                                    icon: const Icon(Icons.photo_camera_outlined),
+                                    label: const Text('Camara'),
                                   ),
                                   FilledButton.tonalIcon(
                                     onPressed: _pickAudio,
@@ -257,9 +267,8 @@ class _ReportScreenState extends State<ReportScreen> {
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    if (_imagePaths.isNotEmpty)
-                                      Text('Fotos: ${_imagePaths.length} seleccionada(s)'),
-                                    if (_audioPath != null) Text('Audio: ${_fileName(_audioPath!)}'),
+                                    if (_imagePaths.isNotEmpty) _AttachmentList(title: 'Fotografias', paths: _imagePaths),
+                                    if (_audioPath != null) _AttachmentList(title: 'Audio descriptivo', paths: [_audioPath!]),
                                   ],
                                 ),
                             ],
@@ -334,14 +343,25 @@ class _ReportScreenState extends State<ReportScreen> {
     setState(() {});
   }
 
-  Future<void> _pickImages() async {
+  Future<void> _pickImagesFromGallery() async {
     final picker = ImagePicker();
     final images = await picker.pickMultiImage(imageQuality: 85);
     if (images.isEmpty) {
       return;
     }
     setState(() {
-      _imagePaths = images.map((image) => image.path).toList();
+      _imagePaths = [..._imagePaths, ...images.map((image) => image.path)];
+    });
+  }
+
+  Future<void> _pickImageFromCamera() async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(source: ImageSource.camera, imageQuality: 85);
+    if (image == null) {
+      return;
+    }
+    setState(() {
+      _imagePaths = [..._imagePaths, image.path];
     });
   }
 
@@ -423,6 +443,41 @@ class _ReportScreenState extends State<ReportScreen> {
     }
     return null;
   }
+}
 
-  String _fileName(String path) => path.split(RegExp(r'[\\/]')).last;
+class _AttachmentList extends StatelessWidget {
+  const _AttachmentList({required this.title, required this.paths});
+
+  final String title;
+  final List<String> paths;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFAF5),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFF0E5D7)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('$title: ${paths.length}', style: const TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              ...paths.map(
+                (path) => Text(
+                  path.split(RegExp(r'[\\/]')).last,
+                  style: const TextStyle(color: Color(0xFF6F655B), fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
