@@ -105,6 +105,19 @@ Se encuentran armadas las bases estructurales funcionales y de orquestación loc
 - **Backend (FastAPI)**:
   - Repositorio con Dockerfile configurado y hot-reload habilitado (`uvicorn app.main:app`).
   - **Modelos de Dominio en Español**: Configuración de Base de Datos relacional usando SQLModel (`Usuario`, `Vehiculo`, `Tecnico`, `Solicitud`, `Evidencia`). Todo el flujo de persistencia está en español para alinear con el requerimiento.
+  - **Modelo Taller Implementado**: Nuevo modelo `Taller` separado con perfil completo (ubicación, especialidades, estadísticas, configuración de notificaciones). Relaciones actualizadas para que `Tecnico` y `Solicitud` apunten a `taller.id` en lugar de `user.id`.
+  - **API de Talleres Completa**: Endpoints RESTful implementados para gestión completa de talleres (`/api/v1/talleres/`):
+    - `POST /` - Crear taller (solo WORKSHOP)
+    - `GET /mi-taller` - Obtener perfil del taller
+    - `PUT /mi-taller` - Actualizar perfil del taller
+    - `GET /estadisticas` - Obtener métricas y KPIs
+  - **API de Técnicos Actualizada**: Endpoints modificados para trabajar con talleres (`/api/v1/tecnicos/`):
+    - `POST /` - Crear técnico (asociado automáticamente al taller del usuario)
+    - `GET /` - Listar técnicos del taller propio
+    - `PATCH /{id}/disponibilidad` - Cambiar disponibilidad (con validación de propiedad)
+  - **API de Solicitudes Extendida**: Nuevos endpoints para talleres (`/api/v1/solicitudes/`):
+    - `GET /mis-solicitudes` - Ver solicitudes asignadas al taller
+    - `PATCH /{id}/estado` - Actualizar estado y asignar técnicos
   - **Autenticación Base y Seed de DB**: Funcionalidad instalada de encriptación de Password con Hash `bcrypt` y JWT Tokens. Existe una generación automática de un usuario administrador inicial al levantar la DB.
   - **Inteligencia Artificial (Simulación Preparada)**: El endpoint `POST /api/v1/solicitudes` ya se encarga de parsear las transcripciones enviadas por el aplicativo móvil (para los casos de problema de batería, llanta y motor) clasificando automáticamente y determinando la prioridad y resumen de los mismos antes de asignarlos a los talleres.
   - **Motor Operacional de Asignación**: Preparación para que se crucen disponibilidades de los componentes `Tecnicos` dentro del `Taller`.
@@ -115,6 +128,8 @@ Se encuentran armadas las bases estructurales funcionales y de orquestación loc
   - **Representación de Datos Multimodales y Monetarios**: La interfaz del ticket muestra claramente los resultados de la analítica IA (Prioridad y Clasificador en base al transcrito) así como el cobro desglosado indicando el 10% de comisión reservado a la Plataforma por parte del Taller.
 - **Base de Datos (PostgreSQL)**:
   - Totalmente lista. Volumen persistente conectado (`postgres_data`) expuesto al puerto externo `5432`. El Backend hace drop/create de sus tablas en cada startup de manera limpia usando comandos cascade.
+  - **Nueva tabla `taller`**: Incluye campos para perfil completo, estadísticas, configuración de notificaciones y relación con propietario (usuario WORKSHOP).
+  - **Foreign Keys Actualizadas**: `tecnico.taller_id` y `solicitud.taller_id` ahora apuntan correctamente a `taller.id`.
 
 ## NOTAS TÉCNICAS ADICIONALES
 - La IA debe ser parte integral del flujo principal, manejando casos de incertidumbre si la información es ambigua.

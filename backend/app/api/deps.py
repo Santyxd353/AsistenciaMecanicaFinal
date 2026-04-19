@@ -9,7 +9,6 @@ from app.models.user import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
-
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     session: Session = Depends(get_session),
@@ -22,14 +21,19 @@ def get_current_user(
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("user_id")
-    except JWTError as exc:
-        raise credentials_exception from exc
 
-    if user_id is None:
+        user_id = payload.get("user_id")
+
+        if user_id is None:
+            raise credentials_exception
+
+        user_id = int(user_id)
+
+    except (JWTError, ValueError, TypeError):
         raise credentials_exception
 
     user = session.get(User, user_id)
+
     if not user:
         raise credentials_exception
 

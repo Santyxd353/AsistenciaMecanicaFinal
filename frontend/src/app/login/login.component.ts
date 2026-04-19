@@ -70,7 +70,10 @@ export class LoginComponent {
     if (this.mode === 'login') {
       const { username, password } = this.authForm.value;
       this.authService.login(username, password).subscribe({
-        next: (response) => this.finishAuth(response.role),
+        next: (response) => {
+          localStorage.setItem('access_token', response.access_token);
+          this.finishAuth(response.role);
+        },
         error: (err) => {
           this.loading = false;
           this.error = err?.error?.detail || 'Credenciales inválidas.';
@@ -91,7 +94,10 @@ export class LoginComponent {
       : this.authService.registerWorkshop(payload);
 
     request.subscribe({
-      next: (response) => this.finishAuth(response.role),
+      next: (response) => {
+        localStorage.setItem('access_token', response.access_token);
+        this.finishAuth(response.role);
+      },
       error: (err) => {
         this.loading = false;
         this.error = err?.error?.detail || 'No se pudo completar el registro.';

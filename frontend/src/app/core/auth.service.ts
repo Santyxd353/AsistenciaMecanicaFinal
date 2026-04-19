@@ -49,6 +49,10 @@ export class AuthService {
     }
   }
 
+  get currentUserValue(): AuthUser | null {
+    return this.currentUserSubject.value;
+  }
+
   login(username: string, password: string): Observable<AuthResponse> {
     const formData = new URLSearchParams();
     formData.set('username', username);
@@ -117,7 +121,19 @@ export class AuthService {
   }
 
   getDefaultRouteForRole(role: UserRole | null = this.getCurrentRole()): string {
-    return role === 'driver' ? '/cliente' : '/dashboard';
+    if (role === 'driver') {
+      return '/cliente';
+    }
+
+    if (role === 'workshop') {
+      return '/taller';
+    }
+
+    if (role === 'admin') {
+      return '/dashboard';
+    }
+
+    return '/login';
   }
 
   private persistSession(response: AuthResponse) {
