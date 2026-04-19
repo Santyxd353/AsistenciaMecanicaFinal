@@ -213,19 +213,35 @@ class ApiClient {
   }
 
   Map<String, dynamic> _decodeObject(http.Response response) {
-    final json = jsonDecode(utf8.decode(response.bodyBytes));
+    final body = utf8.decode(response.bodyBytes);
+    final json = _decodeJson(body);
     if (response.statusCode >= 400) {
       throw ApiException(_readDetail(json));
     }
-    return json as Map<String, dynamic>;
+    if (json is! Map<String, dynamic>) {
+      throw ApiException('El backend devolvio una respuesta inesperada.');
+    }
+    return json;
   }
 
   List<Map<String, dynamic>> _decodeList(http.Response response) {
-    final json = jsonDecode(utf8.decode(response.bodyBytes));
+    final body = utf8.decode(response.bodyBytes);
+    final json = _decodeJson(body);
     if (response.statusCode >= 400) {
       throw ApiException(_readDetail(json));
     }
-    return (json as List<dynamic>).map((item) => item as Map<String, dynamic>).toList();
+    if (json is! List<dynamic>) {
+      throw ApiException('El backend devolvio una respuesta inesperada.');
+    }
+    return json.map((item) => item as Map<String, dynamic>).toList();
+  }
+
+  Object? _decodeJson(String body) {
+    try {
+      return body.trim().isEmpty ? null : jsonDecode(body);
+    } on FormatException {
+      throw ApiException('El backend no devolvio JSON valido. Revisa que la API este levantada en $_baseUrl.');
+    }
   }
 
   String _readDetail(Object? payload) {

@@ -12,6 +12,20 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
+class _VehicleDraft {
+  const _VehicleDraft({
+    required this.placa,
+    required this.marca,
+    required this.modelo,
+    required this.color,
+  });
+
+  final String placa;
+  final String marca;
+  final String modelo;
+  final String color;
+}
+
 class _SettingsScreenState extends State<SettingsScreen> {
   final _baseUrlController = TextEditingController();
   final _nameController = TextEditingController();
@@ -263,28 +277,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showVehicleDialog() async {
+    final controller = context.read<AppController>();
     final plateController = TextEditingController();
     final brandController = TextEditingController();
     final modelController = TextEditingController();
     final colorController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
 
-    await showDialog<void>(
+    final draft = await showDialog<_VehicleDraft>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text('Registrar vehiculo'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: plateController, decoration: const InputDecoration(labelText: 'Placa')),
-                const SizedBox(height: 10),
-                TextField(controller: brandController, decoration: const InputDecoration(labelText: 'Marca')),
-                const SizedBox(height: 10),
-                TextField(controller: modelController, decoration: const InputDecoration(labelText: 'Modelo')),
-                const SizedBox(height: 10),
-                TextField(controller: colorController, decoration: const InputDecoration(labelText: 'Color')),
-              ],
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: plateController,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: const InputDecoration(labelText: 'Placa'),
+                    validator: _requiredField('Ingresa la placa.'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: brandController,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(labelText: 'Marca'),
+                    validator: _requiredField('Ingresa la marca.'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: modelController,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(labelText: 'Modelo'),
+                    validator: _requiredField('Ingresa el modelo.'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: colorController,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(labelText: 'Color'),
+                  ),
+                ],
+              ),
             ),
           ),
           actions: [
@@ -293,27 +331,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: const Text('Cancelar'),
             ),
             FilledButton(
-              onPressed: () async {
-                try {
-                  await context.read<AppController>().addVehicle(
+              onPressed: () {
+                if (!(formKey.currentState?.validate() ?? false)) {
+                  return;
+                }
+                Navigator.of(dialogContext).pop(
+                  _VehicleDraft(
                     placa: plateController.text.trim(),
                     marca: brandController.text.trim(),
                     modelo: modelController.text.trim(),
                     color: colorController.text.trim(),
-                  );
-                  if (!dialogContext.mounted) {
-                    return;
-                  }
-                  Navigator.of(dialogContext).pop();
-                  if (!mounted) {
-                    return;
-                  }
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Vehiculo registrado en el backend.')),
-                  );
-                } catch (error) {
-                  _showMessage(error.toString());
-                }
+                  ),
+                );
               },
               child: const Text('Guardar'),
             ),
@@ -326,6 +355,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
     brandController.dispose();
     modelController.dispose();
     colorController.dispose();
+
+    if (draft == null || !mounted) {
+      return;
+    }
+
+    try {
+      await controller.addVehicle(
+        placa: draft.placa,
+        marca: draft.marca,
+        modelo: draft.modelo,
+        color: draft.color,
+      );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vehiculo registrado en el backend.')),
+      );
+    } catch (error) {
+      _showMessage(error.toString());
+    }
+  }
+
+  FormFieldValidator<String> _requiredField(String message) {
+    return (value) => value == null || value.trim().isEmpty ? message : null;
   }
 
   void _showMessage(String raw) {

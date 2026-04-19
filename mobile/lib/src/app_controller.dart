@@ -165,15 +165,24 @@ class AppController extends ChangeNotifier {
       return;
     }
 
+    final normalizedPlate = placa.trim().toUpperCase();
+    final normalizedBrand = marca.trim();
+    final normalizedModel = modelo.trim();
+    final normalizedColor = color.trim();
+
+    if (normalizedPlate.isEmpty || normalizedBrand.isEmpty || normalizedModel.isEmpty) {
+      throw ApiException('Placa, marca y modelo son obligatorios.');
+    }
+
     await _executeWithLoading(() async {
       final prefs = await SharedPreferences.getInstance();
       final storage = LocalRepository(prefs);
       final draft = Vehicle(
         localId: 'vehicle-${DateTime.now().millisecondsSinceEpoch}',
-        placa: placa.trim().toUpperCase(),
-        marca: marca.trim(),
-        modelo: modelo.trim(),
-        color: color.trim(),
+        placa: normalizedPlate,
+        marca: normalizedBrand,
+        modelo: normalizedModel,
+        color: normalizedColor,
       );
       final created = await ApiClient(baseUrl: _baseUrl, token: _accessToken).createVehicle(draft);
       _vehicles = [created, ..._vehicles];
