@@ -15,6 +15,7 @@ class OverviewScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<AppController>();
     final requests = controller.requests;
+    final notifications = controller.notifications.take(4).toList();
     final activeCount = controller.activeRequests.length;
     final closedCount = requests.length - activeCount;
 
@@ -97,7 +98,7 @@ class OverviewScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'Desde la pestaña Reportar puedes enviar ubicación, descripción, fotos y audio local para que el taller web vea la solicitud en el backend.',
+                        'Desde la pestana Reportar puedes enviar ubicacion, descripcion, fotos y audio para que el sistema procese la solicitud.',
                       ),
                       const SizedBox(height: 18),
                       FilledButton.icon(
@@ -116,6 +117,8 @@ class OverviewScreen extends StatelessWidget {
                   child: _RequestCard(
                     request: request,
                     vehicleLabel: controller.vehicleLabelFor(request),
+                    etaLabel: controller.etaLabelFor(request),
+                    paymentLabel: controller.paymentLabelFor(request),
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
@@ -128,6 +131,22 @@ class OverviewScreen extends StatelessWidget {
                   ),
                 ),
               ),
+            if (notifications.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Text(
+                'Novedades recientes',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 10),
+              ...notifications.map(
+                (notification) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _NotificationCard(notification: notification),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -312,16 +331,20 @@ class _RequestCard extends StatelessWidget {
   const _RequestCard({
     required this.request,
     required this.vehicleLabel,
+    required this.etaLabel,
+    required this.paymentLabel,
     required this.onTap,
   });
 
   final EmergencyRequest request;
   final String vehicleLabel;
+  final String etaLabel;
+  final String paymentLabel;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final formatter = DateFormat('dd/MM · HH:mm');
+    final formatter = DateFormat('dd/MM - HH:mm');
     final statusColor = _statusColor(request.estado);
 
     return Card(
@@ -395,6 +418,25 @@ class _RequestCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _MiniMetaChip(
+                    icon: Icons.home_repair_service_outlined,
+                    label: request.tallerNombre ?? 'Taller pendiente',
+                  ),
+                  _MiniMetaChip(
+                    icon: Icons.av_timer_outlined,
+                    label: etaLabel,
+                  ),
+                  _MiniMetaChip(
+                    icon: Icons.payments_outlined,
+                    label: paymentLabel,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   const Icon(Icons.location_on_outlined, size: 18, color: Color(0xFF6F655B)),
@@ -409,6 +451,84 @@ class _RequestCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniMetaChip extends StatelessWidget {
+  const _MiniMetaChip({
+    required this.icon,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFF0E5D7)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: const Color(0xFF6F655B)),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(color: Color(0xFF5F554B), fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NotificationCard extends StatelessWidget {
+  const _NotificationCard({required this.notification});
+
+  final AppNotification notification;
+
+  @override
+  Widget build(BuildContext context) {
+    final formatter = DateFormat('dd/MM - HH:mm');
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.notifications_active_outlined, color: Color(0xFFC65A16)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    notification.title,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                Text(
+                  formatter.format(notification.createdAt.toLocal()),
+                  style: const TextStyle(color: Color(0xFF6F655B), fontSize: 12),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              notification.message,
+              style: const TextStyle(color: Color(0xFF5F554B), height: 1.4),
+            ),
+          ],
         ),
       ),
     );

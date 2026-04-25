@@ -37,6 +37,7 @@ class _FakeController extends AppController {
     required String marca,
     required String modelo,
     required String color,
+    String? photoPath,
   }) async {
     _loading = true;
     notifyListeners();
@@ -48,6 +49,7 @@ class _FakeController extends AppController {
         marca: marca,
         modelo: modelo,
         color: color,
+        photoPath: photoPath,
       ),
     );
     _loading = false;

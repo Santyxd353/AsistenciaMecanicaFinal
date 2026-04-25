@@ -13,6 +13,7 @@ class LocalRepository {
   static const _userKey = 'current_user';
   static const _vehiclesKey = 'vehicles';
   static const _requestMetasKey = 'request_metas';
+  static const _notificationsKey = 'notifications';
   static const defaultBaseUrl = 'http://10.0.2.2:8000';
 
   final SharedPreferences _prefs;
@@ -21,6 +22,7 @@ class LocalRepository {
     final userRaw = _prefs.getString(_userKey);
     final vehiclesRaw = _prefs.getString(_vehiclesKey);
     final requestsRaw = _prefs.getString(_requestMetasKey);
+    final notificationsRaw = _prefs.getString(_notificationsKey);
 
     final user = userRaw == null ? null : AppUser.fromJson(jsonDecode(userRaw) as Map<String, dynamic>);
     final vehicles = vehiclesRaw == null
@@ -33,6 +35,11 @@ class LocalRepository {
         : (jsonDecode(requestsRaw) as List<dynamic>)
             .map((item) => LocalRequestMeta.fromJson(item as Map<String, dynamic>))
             .toList();
+    final notifications = notificationsRaw == null
+        ? <AppNotification>[]
+        : (jsonDecode(notificationsRaw) as List<dynamic>)
+            .map((item) => AppNotification.fromJson(item as Map<String, dynamic>))
+            .toList();
 
     return AppSnapshot(
       baseUrl: normalizeBaseUrl(_prefs.getString(_baseUrlKey) ?? defaultBaseUrl),
@@ -40,6 +47,7 @@ class LocalRepository {
       currentUser: user,
       vehicles: vehicles,
       requestMetas: requestMetas,
+      notifications: notifications,
     );
   }
 
@@ -57,6 +65,7 @@ class LocalRepository {
     await _prefs.remove(_userKey);
     await _prefs.remove(_vehiclesKey);
     await _prefs.remove(_requestMetasKey);
+    await _prefs.remove(_notificationsKey);
   }
 
   Future<void> saveVehicles(List<Vehicle> vehicles) async {
@@ -70,6 +79,13 @@ class LocalRepository {
     await _prefs.setString(
       _requestMetasKey,
       jsonEncode(requestMetas.map((meta) => meta.toJson()).toList()),
+    );
+  }
+
+  Future<void> saveNotifications(List<AppNotification> notifications) async {
+    await _prefs.setString(
+      _notificationsKey,
+      jsonEncode(notifications.map((notification) => notification.toJson()).toList()),
     );
   }
 }
@@ -151,9 +167,13 @@ class ApiClient {
   Future<List<Vehicle>> fetchVehicles(List<Vehicle> localVehicles) async {
     final response = await http.get(_uri('/api/v1/vehiculos/'), headers: _headers()).timeout(const Duration(seconds: 12));
     final payload = _decodeList(response);
-    final localIdsByRemote = {
+    final localVehiclesByRemote = {
       for (final vehicle in localVehicles)
         if (vehicle.remoteId != null) vehicle.remoteId!: vehicle.localId,
+    };
+    final localPhotosByRemote = {
+      for (final vehicle in localVehicles)
+        if (vehicle.remoteId != null) vehicle.remoteId!: vehicle.photoPath,
     };
 
     return payload.map((item) {
@@ -161,7 +181,8 @@ class ApiClient {
       final fallbackLocalId = 'vehicle-${id ?? DateTime.now().millisecondsSinceEpoch}';
       return Vehicle.fromApi(
         item,
-        localId: id == null ? fallbackLocalId : (localIdsByRemote[id] ?? fallbackLocalId),
+        localId: id == null ? fallbackLocalId : (localVehiclesByRemote[id] ?? fallbackLocalId),
+        photoPath: id == null ? null : localPhotosByRemote[id],
       );
     }).toList();
   }
@@ -177,7 +198,33 @@ class ApiClient {
         'color': vehicle.color,
       }),
     ).timeout(const Duration(seconds: 12));
-    return Vehicle.fromApi(_decodeObject(response), localId: vehicle.localId);
+    return Vehicle.fromApi(
+      _decodeObject(response),
+      localId: vehicle.localId,
+      photoPath: vehicle.photoPath,
+    );
+  }
+
+  Future<Vehicle> updateVehicle(Vehicle vehicle) async {
+    if (vehicle.remoteId == null) {
+      throw ApiException('El vehiculo aun no tiene identificador remoto.');
+    }
+
+    final response = await http.put(
+      _uri('/api/v1/vehiculos/${vehicle.remoteId}'),
+      headers: _headers(json: true),
+      body: jsonEncode({
+        'placa': vehicle.placa,
+        'marca': vehicle.marca,
+        'modelo': vehicle.modelo,
+        'color': vehicle.color,
+      }),
+    ).timeout(const Duration(seconds: 12));
+    return Vehicle.fromApi(
+      _decodeObject(response),
+      localId: vehicle.localId,
+      photoPath: vehicle.photoPath,
+    );
   }
 
   Future<List<EmergencyRequest>> fetchRequests() async {
@@ -207,6 +254,25 @@ class ApiClient {
         'longitud': longitud,
         'estado': 'pendiente',
         if (vehiculoId != null) 'vehiculo_id': vehiculoId,
+      }),
+    ).timeout(const Duration(seconds: 12));
+    return EmergencyRequest.fromApi(_decodeObject(response));
+  }
+
+  Future<EmergencyRequest> cancelRequest(int requestId) async {
+    final response = await http.patch(
+      _uri('/api/v1/solicitudes/$requestId/cancelar'),
+      headers: _headers(json: true),
+    ).timeout(const Duration(seconds: 12));
+    return EmergencyRequest.fromApi(_decodeObject(response));
+  }
+
+  Future<EmergencyRequest> payRequest(int requestId, {double? amount}) async {
+    final response = await http.post(
+      _uri('/api/v1/solicitudes/$requestId/pago'),
+      headers: _headers(json: true),
+      body: jsonEncode({
+        if (amount != null) 'monto': amount,
       }),
     ).timeout(const Duration(seconds: 12));
     return EmergencyRequest.fromApi(_decodeObject(response));

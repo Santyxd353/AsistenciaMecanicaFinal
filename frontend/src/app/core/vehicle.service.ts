@@ -18,6 +18,13 @@ export interface CreateVehiclePayload {
   color?: string;
 }
 
+export interface UpdateVehiclePayload {
+  placa?: string;
+  marca?: string;
+  modelo?: string;
+  color?: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -32,5 +39,9 @@ export class VehicleService {
 
   createVehicle(payload: CreateVehiclePayload): Observable<Vehicle> {
     return this.http.post<Vehicle>(this.apiUrl, payload);
+  }
+
+  updateVehicle(vehicleId: number, payload: UpdateVehiclePayload): Observable<Vehicle> {
+    return this.http.put<Vehicle>(`${this.apiUrl}${vehicleId}`, payload);
   }
 }

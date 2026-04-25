@@ -23,6 +23,7 @@ class RequestDetailScreen extends StatelessWidget {
         body: const Center(child: Text('Solicitud no disponible. Actualiza el seguimiento.')),
       );
     }
+
     final meta = controller.metaFor(request.id);
     final vehicleLabel = controller.vehicleLabelFor(request);
     final technicianLabel = controller.technicianLabelFor(request);
@@ -60,6 +61,36 @@ class RequestDetailScreen extends StatelessWidget {
                   ),
                   _InfoLine(label: 'Taller asignado', value: workshopLabel),
                   _InfoLine(label: 'Tecnico asignado', value: technicianLabel),
+                  _InfoLine(label: 'ETA', value: controller.etaLabelFor(request)),
+                  _InfoLine(
+                    label: 'Pago',
+                    value: '${controller.paymentLabelFor(request)}${request.precioCobrado == null ? '' : ' - Bs ${request.precioCobrado!.toStringAsFixed(2)}'}',
+                  ),
+                  if (request.fechaPago != null)
+                    _InfoLine(
+                      label: 'Fecha de pago',
+                      value: formatter.format(request.fechaPago!.toLocal()),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _SectionCard(
+              title: 'Acciones del cliente',
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  if (request.canBeCancelled)
+                    FilledButton.tonal(
+                      onPressed: controller.loading ? null : () => _cancelRequest(context, controller, request),
+                      child: const Text('Cancelar solicitud'),
+                    ),
+                  if (request.canBePaid)
+                    FilledButton(
+                      onPressed: controller.loading ? null : () => _payRequest(context, controller, request),
+                      child: const Text('Pagar servicio'),
+                    ),
                 ],
               ),
             ),
@@ -111,7 +142,7 @@ class RequestDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Los adjuntos se conservan localmente en la app mientras el backend no tenga endpoint de carga de archivos.',
+                    'Los adjuntos se conservan localmente en la app mientras el backend no tenga un endpoint de carga de archivos.',
                     style: TextStyle(color: Color(0xFF6F655B), fontSize: 12, height: 1.4),
                   ),
                 ],
@@ -121,6 +152,44 @@ class RequestDetailScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _cancelRequest(BuildContext context, AppController controller, EmergencyRequest request) async {
+    try {
+      await controller.cancelRequest(request.id);
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Solicitud cancelada correctamente.')),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
+  Future<void> _payRequest(BuildContext context, AppController controller, EmergencyRequest request) async {
+    try {
+      await controller.payRequest(request.id, amount: request.precioCobrado);
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pago registrado correctamente.')),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
   }
 
   String _fileName(String path) => path.split(RegExp(r'[\\/]')).last;

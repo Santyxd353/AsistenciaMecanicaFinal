@@ -16,6 +16,14 @@ export interface Solicitud {
   clasificacion_ia?: string;
   prioridad_ia?: string;
   resumen_ia?: string;
+  tiempo_estimado_minutos?: number;
+  estado_pago?: string;
+  fecha_pago?: string | null;
+  taller_nombre?: string | null;
+  tecnico_nombre?: string | null;
+  tecnico_especialidad?: string | null;
+  vehiculo_placa?: string | null;
+  vehiculo_descripcion?: string | null;
   fecha_creacion: string;
 }
 
@@ -31,6 +39,10 @@ export class SolicitudService {
     return this.http.get<Solicitud[]>(this.apiUrl);
   }
 
+  getMyReports(): Observable<Solicitud[]> {
+    return this.http.get<Solicitud[]>(`${this.apiUrl}mis-reportes`);
+  }
+
   createSolicitud(solicitud: Partial<Solicitud>): Observable<Solicitud> {
     return this.http.post<Solicitud>(this.apiUrl, solicitud);
   }
@@ -39,5 +51,15 @@ export class SolicitudService {
     let url = `${this.apiUrl}${solicitudId}/estado?estado=${estado}`;
     if (tecnicoId) url += `&tecnico_id=${tecnicoId}`;
     return this.http.patch<Solicitud>(url, {});
+  }
+
+  cancelSolicitud(solicitudId: number): Observable<Solicitud> {
+    return this.http.patch<Solicitud>(`${this.apiUrl}${solicitudId}/cancelar`, {});
+  }
+
+  paySolicitud(solicitudId: number, monto?: number): Observable<Solicitud> {
+    return this.http.post<Solicitud>(`${this.apiUrl}${solicitudId}/pago`, {
+      monto
+    });
   }
 }

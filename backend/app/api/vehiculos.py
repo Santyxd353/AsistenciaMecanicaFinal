@@ -6,7 +6,7 @@ from sqlmodel import Session, select
 
 from app.api.deps import get_current_user
 from app.db.session import get_session
-from app.models.domain import Vehiculo, VehiculoCreate, VehiculoRead
+from app.models.domain import Vehiculo, VehiculoCreate, VehiculoRead, VehiculoUpdate
 from app.models.user import User
 
 router = APIRouter()
@@ -62,4 +62,34 @@ def obtener_vehiculo(
     vehiculo = session.get(Vehiculo, vehiculo_id)
     if not vehiculo or vehiculo.propietario_id != current_user.id:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
+    return vehiculo
+
+
+@router.put("/{vehiculo_id}", response_model=VehiculoRead)
+def actualizar_vehiculo(
+    *,
+    session: Session = Depends(get_session),
+    vehiculo_id: int,
+    vehiculo_in: VehiculoUpdate,
+    current_user: User = Depends(get_current_user),
+):
+    vehiculo = session.get(Vehiculo, vehiculo_id)
+    if not vehiculo or vehiculo.propietario_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
+
+    update_data = vehiculo_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(vehiculo, field, value)
+
+    session.add(vehiculo)
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="No se pudo actualizar el vehiculo. Verifica que la placa no este duplicada.",
+        ) from exc
+
+    session.refresh(vehiculo)
     return vehiculo

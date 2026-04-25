@@ -30,6 +30,13 @@ class VehiculoCreate(VehiculoBase):
 class VehiculoRead(VehiculoBase):
     id: int
 
+
+class VehiculoUpdate(SQLModel):
+    placa: Optional[str] = None
+    marca: Optional[str] = None
+    modelo: Optional[str] = None
+    color: Optional[str] = None
+
 class TecnicoBase(SQLModel):
     nombre: str
     especialidad: str
@@ -57,6 +64,9 @@ class SolicitudBase(SQLModel):
     clasificacion_ia: Optional[str] = None
     prioridad_ia: Optional[str] = None
     resumen_ia: Optional[str] = None
+    tiempo_estimado_minutos: Optional[int] = None
+    estado_pago: Optional[str] = "pendiente"
+    fecha_pago: Optional[datetime] = None
     
     vehiculo_id: Optional[int] = Field(default=None, foreign_key="vehiculo.id")
     taller_id: Optional[int] = Field(default=None, foreign_key="taller.id")
@@ -77,6 +87,8 @@ class SolicitudRead(SolicitudBase):
     taller_nombre: Optional[str] = None
     tecnico_nombre: Optional[str] = None
     tecnico_especialidad: Optional[str] = None
+    vehiculo_placa: Optional[str] = None
+    vehiculo_descripcion: Optional[str] = None
     
 class SolicitudCreate(SolicitudBase):
     pass

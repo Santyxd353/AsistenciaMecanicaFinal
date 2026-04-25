@@ -1,11 +1,14 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../app_controller.dart';
 import '../models.dart';
+import 'location_picker_screen.dart';
 
 class ReportScreen extends StatefulWidget {
   const ReportScreen({super.key});
@@ -26,20 +29,18 @@ class _ReportScreenState extends State<ReportScreen> {
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
   final _notesController = TextEditingController();
-  final _latController = TextEditingController();
-  final _lngController = TextEditingController();
 
   String _selectedIncident = _incidentTypes.first;
   String? _selectedVehicleId;
   List<String> _imagePaths = const [];
   String? _audioPath;
+  LatLng? _selectedLocation;
+  bool _loadingCurrentLocation = false;
 
   @override
   void dispose() {
     _descriptionController.dispose();
     _notesController.dispose();
-    _latController.dispose();
-    _lngController.dispose();
     super.dispose();
   }
 
@@ -64,7 +65,7 @@ class _ReportScreenState extends State<ReportScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Completa la descripcion, ubicacion y adjuntos del incidente. Las fotos y el audio quedan visibles en el detalle mobile de la solicitud.',
+                'Completa la descripcion, selecciona el vehiculo y fija la ubicacion exacta desde el mapa para que el taller llegue al punto correcto.',
                 style: TextStyle(color: Color(0xFF6F655B), height: 1.5),
               ),
               const SizedBox(height: 18),
@@ -77,8 +78,8 @@ class _ReportScreenState extends State<ReportScreen> {
                       !controller.isDriver
                           ? 'Solo una cuenta de cliente puede reportar emergencias desde mobile.'
                           : vehicles.isEmpty
-                          ? 'Antes de reportar debes registrar al menos un vehiculo en Config.'
-                          : 'Completa tu cuenta en Config para que el reporte tenga datos consistentes.',
+                              ? 'Antes de reportar debes registrar al menos un vehiculo en Config.'
+                              : 'Completa tu cuenta en Config para que el reporte tenga datos consistentes.',
                     ),
                   ),
                 )
@@ -176,45 +177,46 @@ class _ReportScreenState extends State<ReportScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
+                              const Text(
+                                'Ubicacion de asistencia',
+                                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                              ),
+                              const SizedBox(height: 6),
+                              const Text(
+                                'Puedes usar tu ubicacion actual o abrir el mapa y mover el pin hasta el punto exacto donde quieres la asistencia.',
+                                style: TextStyle(color: Color(0xFF6F655B), height: 1.4),
+                              ),
+                              const SizedBox(height: 14),
+                              Wrap(
+                                spacing: 10,
+                                runSpacing: 10,
                                 children: [
-                                  const Expanded(
-                                    child: Text(
-                                      'Ubicacion',
-                                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                                    ),
+                                  FilledButton.tonalIcon(
+                                    onPressed: _loadingCurrentLocation ? null : _loadCurrentLocation,
+                                    icon: _loadingCurrentLocation
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(strokeWidth: 2.1),
+                                          )
+                                        : const Icon(Icons.my_location),
+                                    label: Text(_loadingCurrentLocation ? 'Buscando...' : 'Usar mi ubicacion'),
                                   ),
                                   FilledButton.tonalIcon(
-                                    onPressed: _loadCurrentLocation,
-                                    icon: const Icon(Icons.my_location),
-                                    label: const Text('Usar actual'),
+                                    onPressed: _openMapPicker,
+                                    icon: const Icon(Icons.map_outlined),
+                                    label: const Text('Elegir en el mapa'),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 14),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: _latController,
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(decimal: true, signed: true),
-                                      decoration: const InputDecoration(labelText: 'Latitud'),
-                                      validator: _validateCoordinate,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: _lngController,
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(decimal: true, signed: true),
-                                      decoration: const InputDecoration(labelText: 'Longitud'),
-                                      validator: _validateCoordinate,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                              if (_selectedLocation == null)
+                                const _LocationPlaceholder()
+                              else
+                                _LocationPreview(
+                                  location: _selectedLocation!,
+                                  onEdit: _openMapPicker,
+                                ),
                             ],
                           ),
                         ),
@@ -232,7 +234,7 @@ class _ReportScreenState extends State<ReportScreen> {
                               ),
                               const SizedBox(height: 4),
                               const Text(
-                                'Agrega fotografias del vehiculo y un audio descriptivo si lo tienes.',
+                                'Agrega fotografias del incidente y un audio descriptivo si lo tienes.',
                                 style: TextStyle(color: Color(0xFF6F655B), height: 1.4),
                               ),
                               const SizedBox(height: 14),
@@ -313,12 +315,7 @@ class _ReportScreenState extends State<ReportScreen> {
   Future<void> _loadCurrentLocation() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Activa la ubicacion del dispositivo para continuar.')),
-      );
+      _showMessage('Activa la ubicacion del dispositivo para continuar.');
       return;
     }
 
@@ -328,19 +325,35 @@ class _ReportScreenState extends State<ReportScreen> {
     }
 
     if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se concedieron permisos de ubicacion.')),
-      );
+      _showMessage('No se concedieron permisos de ubicacion.');
       return;
     }
 
-    final position = await Geolocator.getCurrentPosition();
-    _latController.text = position.latitude.toStringAsFixed(6);
-    _lngController.text = position.longitude.toStringAsFixed(6);
-    setState(() {});
+    setState(() => _loadingCurrentLocation = true);
+    try {
+      final position = await Geolocator.getCurrentPosition();
+      setState(() {
+        _selectedLocation = LatLng(position.latitude, position.longitude);
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _loadingCurrentLocation = false);
+      }
+    }
+  }
+
+  Future<void> _openMapPicker() async {
+    final selected = await Navigator.of(context).push<LatLng>(
+      MaterialPageRoute<LatLng>(
+        builder: (_) => LocationPickerScreen(initialLocation: _selectedLocation),
+      ),
+    );
+
+    if (selected == null || !mounted) {
+      return;
+    }
+
+    setState(() => _selectedLocation = selected);
   }
 
   Future<void> _pickImagesFromGallery() async {
@@ -383,18 +396,13 @@ class _ReportScreenState extends State<ReportScreen> {
       return;
     }
     if (vehicle == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecciona un vehiculo antes de enviar la solicitud.')),
-      );
+      _showMessage('Selecciona un vehiculo antes de enviar la solicitud.');
       return;
     }
 
-    final latitud = double.tryParse(_latController.text.trim());
-    final longitud = double.tryParse(_lngController.text.trim());
-    if (latitud == null || longitud == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ingresa una ubicacion valida.')),
-      );
+    final location = _selectedLocation;
+    if (location == null) {
+      _showMessage('Selecciona la ubicacion exacta antes de enviar la solicitud.');
       return;
     }
 
@@ -403,8 +411,8 @@ class _ReportScreenState extends State<ReportScreen> {
         vehicle: vehicle,
         incidentType: _selectedIncident,
         description: _descriptionController.text,
-        latitud: latitud,
-        longitud: longitud,
+        latitud: location.latitude,
+        longitud: location.longitude,
         imagePaths: _imagePaths,
         audioPath: _audioPath,
         extraNotes: _notesController.text,
@@ -416,32 +424,155 @@ class _ReportScreenState extends State<ReportScreen> {
 
       _descriptionController.clear();
       _notesController.clear();
-      _latController.clear();
-      _lngController.clear();
       setState(() {
         _selectedIncident = _incidentTypes.first;
         _imagePaths = const [];
         _audioPath = null;
+        _selectedLocation = null;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Solicitud #${request.id} enviada correctamente.')),
       );
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
-      );
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
     }
   }
 
-  String? _validateCoordinate(String? value) {
-    if (value == null || double.tryParse(value.trim()) == null) {
-      return 'Valor invalido';
+  void _showMessage(String message) {
+    if (!mounted) {
+      return;
     }
-    return null;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+}
+
+class _LocationPlaceholder extends StatelessWidget {
+  const _LocationPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFF0E5D7)),
+      ),
+      child: const Padding(
+        padding: EdgeInsets.all(16),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: Color(0xFFFFE2CC),
+              child: Icon(Icons.location_searching_outlined),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Todavia no elegiste un punto.',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Usa tu ubicacion actual o abre el mapa para fijar el pin exactamente donde necesitas la asistencia.',
+                    style: TextStyle(color: Color(0xFF6F655B), height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LocationPreview extends StatelessWidget {
+  const _LocationPreview({
+    required this.location,
+    required this.onEdit,
+  });
+
+  final LatLng location;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFF0E5D7)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Punto confirmado',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_location_alt_outlined),
+                  label: const Text('Mover pin'),
+                ),
+              ],
+            ),
+            Text(
+              '${location.latitude.toStringAsFixed(6)}, ${location.longitude.toStringAsFixed(6)}',
+              style: const TextStyle(color: Color(0xFF6F655B)),
+            ),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: SizedBox(
+                height: 180,
+                child: IgnorePointer(
+                  child: FlutterMap(
+                    options: MapOptions(
+                      initialCenter: location,
+                      initialZoom: 16,
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'com.example.mobile',
+                        maxZoom: 19,
+                      ),
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: location,
+                            width: 54,
+                            height: 54,
+                            child: const Icon(
+                              Icons.location_pin,
+                              color: Color(0xFFC65A16),
+                              size: 44,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
