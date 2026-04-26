@@ -14,6 +14,7 @@ class AppController extends ChangeNotifier {
   List<LocalRequestMeta> _requestMetas = const [];
   List<EmergencyRequest> _requests = const [];
   List<Technician> _technicians = const [];
+  List<AppNotification> _notifications = const [];
   WorkshopProfile? _workshopProfile;
   WorkshopStats? _workshopStats;
 
@@ -30,6 +31,7 @@ class AppController extends ChangeNotifier {
   List<LocalRequestMeta> get requestMetas => List.unmodifiable(_requestMetas);
   List<EmergencyRequest> get requests => List.unmodifiable(_requests);
   List<Technician> get technicians => List.unmodifiable(_technicians);
+  List<AppNotification> get notifications => List.unmodifiable(_notifications);
   WorkshopProfile? get workshopProfile => _workshopProfile;
   WorkshopStats? get workshopStats => _workshopStats;
   bool get hasWorkshopProfile => _workshopProfile != null;
@@ -89,6 +91,7 @@ class AppController extends ChangeNotifier {
     _currentUser = snapshot.currentUser;
     _vehicles = snapshot.vehicles;
     _requestMetas = snapshot.requestMetas;
+    _notifications = snapshot.notifications;
 
     if (isAuthenticated) {
       try {
@@ -212,6 +215,7 @@ class AppController extends ChangeNotifier {
     _requestMetas = const [];
     _requests = const [];
     _technicians = const [];
+    _notifications = const [];
     _workshopProfile = null;
     _workshopStats = null;
     await storage.clearSession();
@@ -223,6 +227,7 @@ class AppController extends ChangeNotifier {
     required String marca,
     required String modelo,
     required String color,
+    String? photoPath,
   }) async {
     if (!isAuthenticated) {
       return;
@@ -248,12 +253,49 @@ class AppController extends ChangeNotifier {
         marca: normalizedBrand,
         modelo: normalizedModel,
         color: normalizedColor,
+        photoPath: photoPath,
       );
       final created = await ApiClient(
         baseUrl: _baseUrl,
         token: _accessToken,
       ).createVehicle(draft);
       _vehicles = [created, ..._vehicles];
+      await storage.saveVehicles(_vehicles);
+    });
+  }
+
+  Future<void> updateVehicle({
+    required Vehicle vehicle,
+    required String placa,
+    required String marca,
+    required String modelo,
+    required String color,
+    String? photoPath,
+  }) async {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    final updatedDraft = Vehicle(
+      localId: vehicle.localId,
+      remoteId: vehicle.remoteId,
+      placa: placa.trim().toUpperCase(),
+      marca: marca.trim(),
+      modelo: modelo.trim(),
+      color: color.trim(),
+      photoPath: photoPath,
+    );
+
+    await _executeWithLoading(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final storage = LocalRepository(prefs);
+      final updated = await ApiClient(
+        baseUrl: _baseUrl,
+        token: _accessToken,
+      ).updateVehicle(updatedDraft);
+      _vehicles = _vehicles
+          .map((item) => item.localId == updated.localId ? updated : item)
+          .toList();
       await storage.saveVehicles(_vehicles);
     });
   }
@@ -332,9 +374,10 @@ class AppController extends ChangeNotifier {
       }
 
       _workshopStats = await api.fetchWorkshopStats();
+      notifyListeners();
       await storage.saveVehicles(_vehicles);
       await storage.saveRequestMetas(_requestMetas);
-      notifyListeners();
+      await storage.saveNotifications(_notifications);
     });
   }
 
@@ -483,6 +526,50 @@ class AppController extends ChangeNotifier {
     return created;
   }
 
+  Future<void> cancelRequest(int requestId) async {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    await _executeWithLoading(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final storage = LocalRepository(prefs);
+      final updated = await ApiClient(
+        baseUrl: _baseUrl,
+        token: _accessToken,
+      ).cancelRequest(requestId);
+      _replaceRequest(updated);
+      _pushNotification(
+        title: 'Solicitud cancelada',
+        message: 'La solicitud #${updated.id} fue cancelada correctamente.',
+        requestId: updated.id,
+      );
+      await _persistDriverState(storage);
+    });
+  }
+
+  Future<void> payRequest(int requestId, {double? amount}) async {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    await _executeWithLoading(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final storage = LocalRepository(prefs);
+      final updated = await ApiClient(
+        baseUrl: _baseUrl,
+        token: _accessToken,
+      ).payRequest(requestId, amount: amount);
+      _replaceRequest(updated);
+      _pushNotification(
+        title: 'Pago registrado',
+        message: 'La solicitud #${updated.id} quedo marcada como pagada.',
+        requestId: updated.id,
+      );
+      await _persistDriverState(storage);
+    });
+  }
+
   LocalRequestMeta? metaFor(int requestId) {
     for (final meta in _requestMetas) {
       if (meta.requestId == requestId) {
@@ -493,6 +580,13 @@ class AppController extends ChangeNotifier {
   }
 
   String vehicleLabelFor(EmergencyRequest request) {
+    if ((request.vehiculoPlaca?.trim().isNotEmpty ?? false)) {
+      final detail = request.vehiculoDescripcion?.trim();
+      return detail == null || detail.isEmpty
+          ? request.vehiculoPlaca!.trim()
+          : '${request.vehiculoPlaca!.trim()} - $detail';
+    }
+
     if (request.vehiculoId != null) {
       for (final vehicle in _vehicles) {
         if (vehicle.remoteId == request.vehiculoId) {
@@ -540,6 +634,28 @@ class AppController extends ChangeNotifier {
     }
 
     return 'Pendiente de asignacion';
+  }
+
+  String etaLabelFor(EmergencyRequest request) {
+    if (request.estado == 'cancelada') {
+      return 'Cancelada';
+    }
+    if (request.estado == 'resuelta') {
+      return 'Finalizada';
+    }
+    if (request.tiempoEstimadoMinutos == null) {
+      return 'Pendiente';
+    }
+    if (request.tiempoEstimadoMinutos == 0) {
+      return 'En puerta';
+    }
+    return '${request.tiempoEstimadoMinutos} min';
+  }
+
+  String paymentLabelFor(EmergencyRequest request) {
+    return (request.estadoPago ?? 'pendiente') == 'pagado'
+        ? 'Pagado'
+        : 'Pendiente';
   }
 
   bool canWorkshopTakeRequest(EmergencyRequest request) {
@@ -600,6 +716,10 @@ class AppController extends ChangeNotifier {
       return;
     }
 
+    final previousRequests = {
+      for (final request in _requests) request.id: request,
+    };
+
     final api = ApiClient(baseUrl: _baseUrl, token: _accessToken);
     final remoteUser = await api.getMe();
     _currentUser = remoteUser;
@@ -618,6 +738,7 @@ class AppController extends ChangeNotifier {
                 remoteById.containsKey(vehicle.remoteId)) {
               return remoteById[vehicle.remoteId]!.copyWith(
                 localId: vehicle.localId,
+                photoPath: vehicle.photoPath,
               );
             }
             return vehicle;
@@ -641,17 +762,17 @@ class AppController extends ChangeNotifier {
       final requests = await api.fetchRequests();
       _technicians = await api.fetchTechnicians();
       final trackedIds = _requestMetas.map((meta) => meta.requestId).toSet();
-      _requests =
-          requests.where((request) => trackedIds.contains(request.id)).toList()
-            ..sort(
-              (left, right) =>
-                  right.fechaCreacion.compareTo(left.fechaCreacion),
-            );
+      _requests = requests
+          .where((request) => trackedIds.contains(request.id))
+          .toList()
+        ..sort(
+          (left, right) => right.fechaCreacion.compareTo(left.fechaCreacion),
+        );
       _workshopProfile = null;
       _workshopStats = null;
 
-      await storage.saveVehicles(_vehicles);
-      await storage.saveRequestMetas(_requestMetas);
+      _buildNotifications(previousRequests, _requests);
+      await _persistDriverState(storage);
     } else if (remoteUser.isWorkshopLike) {
       _vehicles = const [];
       _requestMetas = const [];
@@ -667,18 +788,102 @@ class AppController extends ChangeNotifier {
 
       await storage.saveVehicles(_vehicles);
       await storage.saveRequestMetas(_requestMetas);
+      await storage.saveNotifications(_notifications);
     } else {
       _vehicles = const [];
       _requests = const [];
       _requestMetas = const [];
       _technicians = const [];
+      _notifications = const [];
       _workshopProfile = null;
       _workshopStats = null;
       await storage.saveVehicles(_vehicles);
       await storage.saveRequestMetas(_requestMetas);
+      await storage.saveNotifications(_notifications);
     }
 
     notifyListeners();
+  }
+
+  void _buildNotifications(
+    Map<int, EmergencyRequest> previous,
+    List<EmergencyRequest> current,
+  ) {
+    for (final request in current) {
+      final old = previous[request.id];
+      if (old == null) {
+        _pushNotification(
+          title: 'Nueva solicitud visible',
+          message: 'La solicitud #${request.id} ya aparece en tu seguimiento.',
+          requestId: request.id,
+        );
+        continue;
+      }
+
+      if (old.estado != request.estado) {
+        _pushNotification(
+          title: 'Cambio de estado',
+          message: 'La solicitud #${request.id} cambio a ${request.statusLabel}.',
+          requestId: request.id,
+        );
+      }
+
+      if (old.tecnicoNombre != request.tecnicoNombre &&
+          request.tecnicoNombre != null) {
+        _pushNotification(
+          title: 'Tecnico asignado',
+          message:
+              'La solicitud #${request.id} fue asignada a ${request.tecnicoNombre}.',
+          requestId: request.id,
+        );
+      }
+
+      if (old.estadoPago != request.estadoPago && request.estadoPago == 'pagado') {
+        _pushNotification(
+          title: 'Pago confirmado',
+          message: 'La solicitud #${request.id} ya figura como pagada.',
+          requestId: request.id,
+        );
+      }
+    }
+  }
+
+  void _pushNotification({
+    required String title,
+    required String message,
+    int? requestId,
+  }) {
+    final duplicate = _notifications.any(
+      (item) =>
+          item.title == title &&
+          item.message == message &&
+          item.requestId == requestId,
+    );
+    if (duplicate) {
+      return;
+    }
+
+    _notifications = [
+      AppNotification(
+        id: 'notification-${DateTime.now().microsecondsSinceEpoch}',
+        title: title,
+        message: message,
+        createdAt: DateTime.now(),
+        requestId: requestId,
+      ),
+      ..._notifications,
+    ].take(20).toList();
+  }
+
+  void _replaceRequest(EmergencyRequest updated) {
+    _requests = _requests.map((item) => item.id == updated.id ? updated : item).toList()
+      ..sort((left, right) => right.fechaCreacion.compareTo(left.fechaCreacion));
+  }
+
+  Future<void> _persistDriverState(LocalRepository storage) async {
+    await storage.saveVehicles(_vehicles);
+    await storage.saveRequestMetas(_requestMetas);
+    await storage.saveNotifications(_notifications);
   }
 
   Future<void> _executeWithLoading(Future<void> Function() action) async {

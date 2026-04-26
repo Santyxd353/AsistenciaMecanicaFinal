@@ -74,6 +74,7 @@ class Vehicle {
     required this.marca,
     required this.modelo,
     this.color = '',
+    this.photoPath,
   });
 
   final String localId;
@@ -82,6 +83,7 @@ class Vehicle {
   final String marca;
   final String modelo;
   final String color;
+  final String? photoPath;
 
   String get label {
     final colorPart = color.trim().isEmpty ? '' : ' - $color';
@@ -95,6 +97,7 @@ class Vehicle {
     String? marca,
     String? modelo,
     String? color,
+    String? photoPath,
   }) {
     return Vehicle(
       localId: localId ?? this.localId,
@@ -103,6 +106,7 @@ class Vehicle {
       marca: marca ?? this.marca,
       modelo: modelo ?? this.modelo,
       color: color ?? this.color,
+      photoPath: photoPath ?? this.photoPath,
     );
   }
 
@@ -114,6 +118,7 @@ class Vehicle {
       'marca': marca,
       'modelo': modelo,
       'color': color,
+      'photo_path': photoPath,
     };
   }
 
@@ -125,12 +130,14 @@ class Vehicle {
       marca: json['marca'] as String? ?? '',
       modelo: json['modelo'] as String? ?? '',
       color: json['color'] as String? ?? '',
+      photoPath: json['photo_path'] as String?,
     );
   }
 
   factory Vehicle.fromApi(
     Map<String, dynamic> json, {
     required String localId,
+    String? photoPath,
   }) {
     return Vehicle(
       localId: localId,
@@ -139,6 +146,7 @@ class Vehicle {
       marca: json['marca'] as String? ?? '',
       modelo: json['modelo'] as String? ?? '',
       color: json['color'] as String? ?? '',
+      photoPath: photoPath,
     );
   }
 }
@@ -347,9 +355,14 @@ class EmergencyRequest {
     this.clasificacionIa,
     this.prioridadIa,
     this.resumenIa,
+    this.tiempoEstimadoMinutos,
+    this.estadoPago,
+    this.fechaPago,
     this.tallerNombre,
     this.tecnicoNombre,
     this.tecnicoEspecialidad,
+    this.vehiculoPlaca,
+    this.vehiculoDescripcion,
   });
 
   final int id;
@@ -366,11 +379,21 @@ class EmergencyRequest {
   final String? clasificacionIa;
   final String? prioridadIa;
   final String? resumenIa;
+  final int? tiempoEstimadoMinutos;
+  final String? estadoPago;
+  final DateTime? fechaPago;
   final String? tallerNombre;
   final String? tecnicoNombre;
   final String? tecnicoEspecialidad;
+  final String? vehiculoPlaca;
+  final String? vehiculoDescripcion;
 
   bool get isClosed => estado == 'resuelta' || estado == 'cancelada';
+  bool get canBeCancelled => !isClosed;
+  bool get canBePaid =>
+      !isClosed &&
+      precioCobrado != null &&
+      (estadoPago ?? 'pendiente') != 'pagado';
   bool get paymentReady => estado == 'en_progreso' || estado == 'resuelta';
   bool get serviceInProgress => estado == 'asignada' || estado == 'en_progreso';
 
@@ -432,9 +455,54 @@ class EmergencyRequest {
       clasificacionIa: json['clasificacion_ia'] as String?,
       prioridadIa: json['prioridad_ia'] as String?,
       resumenIa: json['resumen_ia'] as String?,
+      tiempoEstimadoMinutos: json['tiempo_estimado_minutos'] as int?,
+      estadoPago: json['estado_pago'] as String?,
+      fechaPago: json['fecha_pago'] == null
+          ? null
+          : DateTime.tryParse(json['fecha_pago'].toString()),
       tallerNombre: json['taller_nombre'] as String?,
       tecnicoNombre: json['tecnico_nombre'] as String?,
       tecnicoEspecialidad: json['tecnico_especialidad'] as String?,
+      vehiculoPlaca: json['vehiculo_placa'] as String?,
+      vehiculoDescripcion: json['vehiculo_descripcion'] as String?,
+    );
+  }
+}
+
+class AppNotification {
+  const AppNotification({
+    required this.id,
+    required this.title,
+    required this.message,
+    required this.createdAt,
+    this.requestId,
+  });
+
+  final String id;
+  final String title;
+  final String message;
+  final DateTime createdAt;
+  final int? requestId;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'message': message,
+      'created_at': createdAt.toIso8601String(),
+      'request_id': requestId,
+    };
+  }
+
+  factory AppNotification.fromJson(Map<String, dynamic> json) {
+    return AppNotification(
+      id: json['id'] as String? ?? '',
+      title: json['title'] as String? ?? 'Novedad',
+      message: json['message'] as String? ?? '',
+      createdAt:
+          DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+          DateTime.now(),
+      requestId: json['request_id'] as int?,
     );
   }
 }
@@ -488,6 +556,7 @@ class AppSnapshot {
     required this.currentUser,
     required this.vehicles,
     required this.requestMetas,
+    required this.notifications,
   });
 
   final String baseUrl;
@@ -495,4 +564,5 @@ class AppSnapshot {
   final AppUser? currentUser;
   final List<Vehicle> vehicles;
   final List<LocalRequestMeta> requestMetas;
+  final List<AppNotification> notifications;
 }
