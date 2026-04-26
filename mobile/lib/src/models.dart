@@ -17,7 +17,8 @@ class AppUser {
 
   bool get isDriver => role == 'driver';
   bool get isWorkshopLike => role == 'workshop' || role == 'admin';
-  String get displayName => (fullName?.trim().isNotEmpty ?? false) ? fullName!.trim() : username;
+  String get displayName =>
+      (fullName?.trim().isNotEmpty ?? false) ? fullName!.trim() : username;
 
   Map<String, dynamic> toJson() {
     return {
@@ -73,7 +74,6 @@ class Vehicle {
     required this.marca,
     required this.modelo,
     this.color = '',
-    this.photoPath,
   });
 
   final String localId;
@@ -82,7 +82,6 @@ class Vehicle {
   final String marca;
   final String modelo;
   final String color;
-  final String? photoPath;
 
   String get label {
     final colorPart = color.trim().isEmpty ? '' : ' - $color';
@@ -96,7 +95,6 @@ class Vehicle {
     String? marca,
     String? modelo,
     String? color,
-    String? photoPath,
   }) {
     return Vehicle(
       localId: localId ?? this.localId,
@@ -105,7 +103,6 @@ class Vehicle {
       marca: marca ?? this.marca,
       modelo: modelo ?? this.modelo,
       color: color ?? this.color,
-      photoPath: photoPath ?? this.photoPath,
     );
   }
 
@@ -117,7 +114,6 @@ class Vehicle {
       'marca': marca,
       'modelo': modelo,
       'color': color,
-      'photo_path': photoPath,
     };
   }
 
@@ -129,14 +125,12 @@ class Vehicle {
       marca: json['marca'] as String? ?? '',
       modelo: json['modelo'] as String? ?? '',
       color: json['color'] as String? ?? '',
-      photoPath: json['photo_path'] as String?,
     );
   }
 
   factory Vehicle.fromApi(
     Map<String, dynamic> json, {
     required String localId,
-    String? photoPath,
   }) {
     return Vehicle(
       localId: localId,
@@ -145,7 +139,6 @@ class Vehicle {
       marca: json['marca'] as String? ?? '',
       modelo: json['modelo'] as String? ?? '',
       color: json['color'] as String? ?? '',
-      photoPath: photoPath,
     );
   }
 }
@@ -167,6 +160,22 @@ class Technician {
 
   String get label => '$nombre - $especialidad';
 
+  Technician copyWith({
+    int? id,
+    String? nombre,
+    String? especialidad,
+    bool? disponible,
+    int? tallerId,
+  }) {
+    return Technician(
+      id: id ?? this.id,
+      nombre: nombre ?? this.nombre,
+      especialidad: especialidad ?? this.especialidad,
+      disponible: disponible ?? this.disponible,
+      tallerId: tallerId ?? this.tallerId,
+    );
+  }
+
   factory Technician.fromApi(Map<String, dynamic> json) {
     return Technician(
       id: json['id'] as int,
@@ -174,6 +183,150 @@ class Technician {
       especialidad: json['especialidad'] as String? ?? 'General',
       disponible: json['disponible'] as bool? ?? false,
       tallerId: json['taller_id'] as int?,
+    );
+  }
+}
+
+class WorkshopProfile {
+  const WorkshopProfile({
+    required this.id,
+    required this.nombreComercial,
+    required this.direccion,
+    required this.telefono,
+    required this.horarioAtencion,
+    required this.especialidades,
+    this.emailContacto,
+    this.descripcion,
+    this.sitioWeb,
+    this.latitud,
+    this.longitud,
+    this.calificacionPromedio = 0,
+    this.totalServiciosCompletados = 0,
+    this.tiempoRespuestaPromedio,
+    this.notificacionesNuevasAsignaciones = true,
+    this.notificacionesPush = true,
+    this.notificacionesRecordatorios = true,
+    this.notificacionesPagos = true,
+    this.reportesSemanales = false,
+  });
+
+  final int id;
+  final String nombreComercial;
+  final String direccion;
+  final String telefono;
+  final String horarioAtencion;
+  final String especialidades;
+  final String? emailContacto;
+  final String? descripcion;
+  final String? sitioWeb;
+  final double? latitud;
+  final double? longitud;
+  final double calificacionPromedio;
+  final int totalServiciosCompletados;
+  final int? tiempoRespuestaPromedio;
+  final bool notificacionesNuevasAsignaciones;
+  final bool notificacionesPush;
+  final bool notificacionesRecordatorios;
+  final bool notificacionesPagos;
+  final bool reportesSemanales;
+
+  List<String> get specialtyTags => especialidades
+      .split(',')
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty)
+      .toList();
+
+  factory WorkshopProfile.fromApi(Map<String, dynamic> json) {
+    double readDouble(dynamic value) {
+      if (value is int) {
+        return value.toDouble();
+      }
+      if (value is double) {
+        return value;
+      }
+      return double.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    return WorkshopProfile(
+      id: json['id'] as int,
+      nombreComercial: json['nombre_comercial'] as String? ?? '',
+      direccion: json['direccion'] as String? ?? '',
+      telefono: json['telefono'] as String? ?? '',
+      horarioAtencion: json['horario_atencion'] as String? ?? '',
+      especialidades: json['especialidades'] as String? ?? '',
+      emailContacto: json['email_contacto'] as String?,
+      descripcion: json['descripcion'] as String?,
+      sitioWeb: json['sitio_web'] as String?,
+      latitud: json['latitud'] == null ? null : readDouble(json['latitud']),
+      longitud: json['longitud'] == null ? null : readDouble(json['longitud']),
+      calificacionPromedio: readDouble(json['calificacion_promedio']),
+      totalServiciosCompletados:
+          json['total_servicios_completados'] as int? ?? 0,
+      tiempoRespuestaPromedio: json['tiempo_respuesta_promedio'] as int?,
+      notificacionesNuevasAsignaciones:
+          json['notificaciones_nuevas_asignaciones'] as bool? ?? true,
+      notificacionesPush: json['notificaciones_push'] as bool? ?? true,
+      notificacionesRecordatorios:
+          json['notificaciones_recordatorios'] as bool? ?? true,
+      notificacionesPagos: json['notificaciones_pagos'] as bool? ?? true,
+      reportesSemanales: json['reportes_semanales'] as bool? ?? false,
+    );
+  }
+}
+
+class WorkshopStats {
+  const WorkshopStats({
+    required this.workshopId,
+    required this.workshopName,
+    required this.workshopRating,
+    required this.workshopCompletedServices,
+    required this.totalCompleted,
+    required this.averageIncome,
+    required this.totalCommissions,
+    required this.totalTechnicians,
+    required this.availableTechnicians,
+    this.averageResponseMinutes,
+  });
+
+  final int workshopId;
+  final String workshopName;
+  final double workshopRating;
+  final int workshopCompletedServices;
+  final int totalCompleted;
+  final double averageIncome;
+  final double totalCommissions;
+  final int totalTechnicians;
+  final int availableTechnicians;
+  final int? averageResponseMinutes;
+
+  factory WorkshopStats.fromApi(Map<String, dynamic> json) {
+    double readDouble(dynamic value) {
+      if (value is int) {
+        return value.toDouble();
+      }
+      if (value is double) {
+        return value;
+      }
+      return double.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    final workshopInfo =
+        json['taller_info'] as Map<String, dynamic>? ?? const {};
+    final services = json['servicios'] as Map<String, dynamic>? ?? const {};
+    final technicians = json['tecnicos'] as Map<String, dynamic>? ?? const {};
+
+    return WorkshopStats(
+      workshopId: workshopInfo['id'] as int? ?? 0,
+      workshopName: workshopInfo['nombre_comercial'] as String? ?? 'Taller',
+      workshopRating: readDouble(workshopInfo['calificacion_promedio']),
+      workshopCompletedServices:
+          workshopInfo['total_servicios_completados'] as int? ?? 0,
+      totalCompleted: services['total_completados'] as int? ?? 0,
+      averageIncome: readDouble(services['ingreso_promedio_por_servicio']),
+      totalCommissions: readDouble(services['comisiones_totales_pagadas']),
+      totalTechnicians: technicians['total_tecnicos'] as int? ?? 0,
+      availableTechnicians: technicians['tecnicos_disponibles'] as int? ?? 0,
+      averageResponseMinutes: json['tiempo_respuesta_promedio'] as int?,
     );
   }
 }
@@ -194,14 +347,9 @@ class EmergencyRequest {
     this.clasificacionIa,
     this.prioridadIa,
     this.resumenIa,
-    this.tiempoEstimadoMinutos,
-    this.estadoPago,
-    this.fechaPago,
     this.tallerNombre,
     this.tecnicoNombre,
     this.tecnicoEspecialidad,
-    this.vehiculoPlaca,
-    this.vehiculoDescripcion,
   });
 
   final int id;
@@ -218,18 +366,13 @@ class EmergencyRequest {
   final String? clasificacionIa;
   final String? prioridadIa;
   final String? resumenIa;
-  final int? tiempoEstimadoMinutos;
-  final String? estadoPago;
-  final DateTime? fechaPago;
   final String? tallerNombre;
   final String? tecnicoNombre;
   final String? tecnicoEspecialidad;
-  final String? vehiculoPlaca;
-  final String? vehiculoDescripcion;
 
   bool get isClosed => estado == 'resuelta' || estado == 'cancelada';
-  bool get canBeCancelled => !isClosed;
-  bool get canBePaid => !isClosed && precioCobrado != null && (estadoPago ?? 'pendiente') != 'pagado';
+  bool get paymentReady => estado == 'en_progreso' || estado == 'resuelta';
+  bool get serviceInProgress => estado == 'asignada' || estado == 'en_progreso';
 
   String get statusLabel {
     switch (estado) {
@@ -289,50 +432,9 @@ class EmergencyRequest {
       clasificacionIa: json['clasificacion_ia'] as String?,
       prioridadIa: json['prioridad_ia'] as String?,
       resumenIa: json['resumen_ia'] as String?,
-      tiempoEstimadoMinutos: json['tiempo_estimado_minutos'] as int?,
-      estadoPago: json['estado_pago'] as String?,
-      fechaPago: json['fecha_pago'] == null ? null : DateTime.tryParse(json['fecha_pago'].toString()),
       tallerNombre: json['taller_nombre'] as String?,
       tecnicoNombre: json['tecnico_nombre'] as String?,
       tecnicoEspecialidad: json['tecnico_especialidad'] as String?,
-      vehiculoPlaca: json['vehiculo_placa'] as String?,
-      vehiculoDescripcion: json['vehiculo_descripcion'] as String?,
-    );
-  }
-}
-
-class AppNotification {
-  const AppNotification({
-    required this.id,
-    required this.title,
-    required this.message,
-    required this.createdAt,
-    this.requestId,
-  });
-
-  final String id;
-  final String title;
-  final String message;
-  final DateTime createdAt;
-  final int? requestId;
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'title': title,
-      'message': message,
-      'created_at': createdAt.toIso8601String(),
-      'request_id': requestId,
-    };
-  }
-
-  factory AppNotification.fromJson(Map<String, dynamic> json) {
-    return AppNotification(
-      id: json['id'] as String? ?? '',
-      title: json['title'] as String? ?? 'Novedad',
-      message: json['message'] as String? ?? '',
-      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
-      requestId: json['request_id'] as int?,
     );
   }
 }
@@ -386,7 +488,6 @@ class AppSnapshot {
     required this.currentUser,
     required this.vehicles,
     required this.requestMetas,
-    required this.notifications,
   });
 
   final String baseUrl;
@@ -394,5 +495,4 @@ class AppSnapshot {
   final AppUser? currentUser;
   final List<Vehicle> vehicles;
   final List<LocalRequestMeta> requestMetas;
-  final List<AppNotification> notifications;
 }

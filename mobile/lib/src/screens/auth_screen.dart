@@ -57,20 +57,28 @@ class _AuthScreenState extends State<AuthScreen> {
                       children: [
                         Text(
                           _isLogin ? 'Acceso mobile' : 'Crear cuenta',
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 8),
                         const Text(
                           'Cliente y taller comparten autenticacion con el backend del proyecto.',
-                          style: TextStyle(color: Color(0xFF6F655B), height: 1.5),
+                          style: TextStyle(
+                            color: Color(0xFF6F655B),
+                            height: 1.5,
+                          ),
                         ),
                         const SizedBox(height: 18),
                         SegmentedButton<bool>(
                           segments: const [
-                            ButtonSegment<bool>(value: true, label: Text('Iniciar sesion')),
-                            ButtonSegment<bool>(value: false, label: Text('Registrarse')),
+                            ButtonSegment<bool>(
+                              value: true,
+                              label: Text('Iniciar sesion'),
+                            ),
+                            ButtonSegment<bool>(
+                              value: false,
+                              label: Text('Registrarse'),
+                            ),
                           ],
                           selected: {_isLogin},
                           onSelectionChanged: (value) {
@@ -84,8 +92,14 @@ class _AuthScreenState extends State<AuthScreen> {
                           const SizedBox(height: 12),
                           SegmentedButton<String>(
                             segments: const [
-                              ButtonSegment<String>(value: 'client', label: Text('Cliente')),
-                              ButtonSegment<String>(value: 'workshop', label: Text('Taller')),
+                              ButtonSegment<String>(
+                                value: 'client',
+                                label: Text('Cliente'),
+                              ),
+                              ButtonSegment<String>(
+                                value: 'workshop',
+                                label: Text('Taller'),
+                              ),
                             ],
                             selected: {_registerRole},
                             onSelectionChanged: (value) {
@@ -105,10 +119,14 @@ class _AuthScreenState extends State<AuthScreen> {
                                 TextFormField(
                                   controller: _fullNameController,
                                   decoration: InputDecoration(
-                                    labelText: _registerRole == 'client' ? 'Nombre completo' : 'Nombre del taller',
+                                    labelText: _registerRole == 'client'
+                                        ? 'Nombre completo'
+                                        : 'Nombre del taller',
                                   ),
                                   validator: (value) {
-                                    if (!_isLogin && (value == null || value.trim().isEmpty)) {
+                                    if (!_isLogin &&
+                                        (value == null ||
+                                            value.trim().isEmpty)) {
                                       return 'Este campo es obligatorio.';
                                     }
                                     return null;
@@ -118,7 +136,9 @@ class _AuthScreenState extends State<AuthScreen> {
                               ],
                               TextFormField(
                                 controller: _usernameController,
-                                decoration: const InputDecoration(labelText: 'Usuario'),
+                                decoration: const InputDecoration(
+                                  labelText: 'Usuario',
+                                ),
                                 validator: (value) {
                                   if (value == null || value.trim().isEmpty) {
                                     return 'Ingresa un usuario.';
@@ -130,9 +150,13 @@ class _AuthScreenState extends State<AuthScreen> {
                               if (!_isLogin) ...[
                                 TextFormField(
                                   controller: _emailController,
-                                  decoration: const InputDecoration(labelText: 'Correo'),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Correo',
+                                  ),
                                   validator: (value) {
-                                    if (!_isLogin && (value == null || !value.contains('@'))) {
+                                    if (!_isLogin &&
+                                        (value == null ||
+                                            !value.contains('@'))) {
                                       return 'Ingresa un correo valido.';
                                     }
                                     return null;
@@ -142,7 +166,9 @@ class _AuthScreenState extends State<AuthScreen> {
                               ],
                               TextFormField(
                                 controller: _passwordController,
-                                decoration: const InputDecoration(labelText: 'Contrasena'),
+                                decoration: const InputDecoration(
+                                  labelText: 'Contrasena',
+                                ),
                                 obscureText: true,
                                 validator: (value) {
                                   if (value == null || value.length < 6) {
@@ -162,9 +188,14 @@ class _AuthScreenState extends State<AuthScreen> {
                             decoration: BoxDecoration(
                               color: const Color(0xFFFFF1F0),
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: const Color(0xFFF1C7C5)),
+                              border: Border.all(
+                                color: const Color(0xFFF1C7C5),
+                              ),
                             ),
-                            child: Text(_error, style: const TextStyle(color: Color(0xFFB3261E))),
+                            child: Text(
+                              _error,
+                              style: const TextStyle(color: Color(0xFFB3261E)),
+                            ),
                           ),
                         ],
                         const SizedBox(height: 18),
@@ -176,8 +207,10 @@ class _AuthScreenState extends State<AuthScreen> {
                               controller.loading
                                   ? 'Procesando...'
                                   : (_isLogin
-                                      ? 'Entrar'
-                                      : (_registerRole == 'client' ? 'Crear cliente' : 'Crear taller')),
+                                        ? 'Entrar'
+                                        : (_registerRole == 'client'
+                                              ? 'Crear cliente'
+                                              : 'Crear taller')),
                             ),
                           ),
                         ),

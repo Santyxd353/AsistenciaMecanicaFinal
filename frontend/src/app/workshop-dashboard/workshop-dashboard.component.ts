@@ -325,6 +325,15 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     :host {
       display: block;
       min-height: 100vh;
+      font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+    }
+
+    h1,
+    h2,
+    h3 {
+      font-family: inherit;
+      font-weight: 800;
+      letter-spacing: -0.02em;
     }
 
     .dashboard-shell {

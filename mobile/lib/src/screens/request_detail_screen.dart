@@ -6,10 +6,7 @@ import '../app_controller.dart';
 import '../models.dart';
 
 class RequestDetailScreen extends StatelessWidget {
-  const RequestDetailScreen({
-    super.key,
-    required this.requestId,
-  });
+  const RequestDetailScreen({super.key, required this.requestId});
 
   final int requestId;
 
@@ -20,10 +17,11 @@ class RequestDetailScreen extends StatelessWidget {
     if (request == null) {
       return Scaffold(
         appBar: AppBar(title: Text('Solicitud #$requestId')),
-        body: const Center(child: Text('Solicitud no disponible. Actualiza el seguimiento.')),
+        body: const Center(
+          child: Text('Solicitud no disponible. Actualiza el seguimiento.'),
+        ),
       );
     }
-
     final meta = controller.metaFor(request.id);
     final vehicleLabel = controller.vehicleLabelFor(request);
     final technicianLabel = controller.technicianLabelFor(request);
@@ -51,46 +49,23 @@ class RequestDetailScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _StatusPill(status: request.estado, label: request.statusLabel),
+                  _StatusPill(
+                    status: request.estado,
+                    label: request.statusLabel,
+                  ),
                   const SizedBox(height: 14),
                   _InfoLine(label: 'Vehiculo', value: vehicleLabel),
-                  _InfoLine(label: 'Fecha', value: formatter.format(request.fechaCreacion.toLocal())),
+                  _InfoLine(
+                    label: 'Fecha',
+                    value: formatter.format(request.fechaCreacion.toLocal()),
+                  ),
                   _InfoLine(
                     label: 'Ubicacion',
-                    value: '${request.latitud.toStringAsFixed(6)}, ${request.longitud.toStringAsFixed(6)}',
+                    value:
+                        '${request.latitud.toStringAsFixed(6)}, ${request.longitud.toStringAsFixed(6)}',
                   ),
                   _InfoLine(label: 'Taller asignado', value: workshopLabel),
                   _InfoLine(label: 'Tecnico asignado', value: technicianLabel),
-                  _InfoLine(label: 'ETA', value: controller.etaLabelFor(request)),
-                  _InfoLine(
-                    label: 'Pago',
-                    value: '${controller.paymentLabelFor(request)}${request.precioCobrado == null ? '' : ' - Bs ${request.precioCobrado!.toStringAsFixed(2)}'}',
-                  ),
-                  if (request.fechaPago != null)
-                    _InfoLine(
-                      label: 'Fecha de pago',
-                      value: formatter.format(request.fechaPago!.toLocal()),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            _SectionCard(
-              title: 'Acciones del cliente',
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  if (request.canBeCancelled)
-                    FilledButton.tonal(
-                      onPressed: controller.loading ? null : () => _cancelRequest(context, controller, request),
-                      child: const Text('Cancelar solicitud'),
-                    ),
-                  if (request.canBePaid)
-                    FilledButton(
-                      onPressed: controller.loading ? null : () => _payRequest(context, controller, request),
-                      child: const Text('Pagar servicio'),
-                    ),
                 ],
               ),
             ),
@@ -100,11 +75,19 @@ class RequestDetailScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _InfoLine(label: 'Tipo reportado', value: meta?.issueType ?? 'No registrado'),
-                  _InfoLine(label: 'Descripcion enviada', value: request.descripcion),
+                  _InfoLine(
+                    label: 'Tipo reportado',
+                    value: meta?.issueType ?? 'No registrado',
+                  ),
+                  _InfoLine(
+                    label: 'Descripcion enviada',
+                    value: request.descripcion,
+                  ),
                   _InfoLine(
                     label: 'Notas adicionales',
-                    value: meta?.extraNotes.trim().isEmpty ?? true ? 'Sin notas adicionales' : meta!.extraNotes,
+                    value: meta?.extraNotes.trim().isEmpty ?? true
+                        ? 'Sin notas adicionales'
+                        : meta!.extraNotes,
                   ),
                 ],
               ),
@@ -115,9 +98,69 @@ class RequestDetailScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _InfoLine(label: 'Clasificacion IA', value: request.clasificacionIa ?? 'Sin clasificar'),
-                  _InfoLine(label: 'Prioridad', value: request.prioridadIa ?? 'Sin prioridad'),
-                  _InfoLine(label: 'Resumen', value: request.resumenIa ?? 'Sin resumen'),
+                  _InfoLine(
+                    label: 'Clasificacion IA',
+                    value: request.clasificacionIa ?? 'Sin clasificar',
+                  ),
+                  _InfoLine(
+                    label: 'Prioridad',
+                    value: request.prioridadIa ?? 'Sin prioridad',
+                  ),
+                  _InfoLine(
+                    label: 'Resumen',
+                    value: request.resumenIa ?? 'Sin resumen',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _SectionCard(
+              title: 'Pago del servicio',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFAF5),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFFF0E5D7)),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _InfoLine(
+                            label: 'Monto estimado',
+                            value: request.precioCobrado == null
+                                ? 'El taller aun no definio el monto'
+                                : 'Bs ${request.precioCobrado!.toStringAsFixed(2)}',
+                          ),
+                          _InfoLine(
+                            label: 'Estado de checkout',
+                            value: request.paymentReady
+                                ? 'Listo para integrar pasarela'
+                                : 'Se habilitara cuando el tecnico este en camino o finalice el trabajo',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Este es el espacio donde se conectara la pasarela real. Tu companero solo tendra que enlazar el proveedor y la confirmacion del pago.',
+                    style: TextStyle(
+                      color: Color(0xFF6F655B),
+                      fontSize: 12,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.tonalIcon(
+                    onPressed: () => _showPaymentPlaceholder(context),
+                    icon: const Icon(Icons.payment_outlined),
+                    label: const Text('Ver checkout preparado'),
+                  ),
                 ],
               ),
             ),
@@ -137,13 +180,21 @@ class RequestDetailScreen extends StatelessWidget {
                   _AttachmentSummary(
                     icon: Icons.mic_none_outlined,
                     title: 'Audio descriptivo',
-                    value: meta?.audioPath == null ? 'Sin audio' : _fileName(meta!.audioPath!),
-                    items: meta?.audioPath == null ? const [] : [meta!.audioPath!],
+                    value: meta?.audioPath == null
+                        ? 'Sin audio'
+                        : _fileName(meta!.audioPath!),
+                    items: meta?.audioPath == null
+                        ? const []
+                        : [meta!.audioPath!],
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Los adjuntos se conservan localmente en la app mientras el backend no tenga un endpoint de carga de archivos.',
-                    style: TextStyle(color: Color(0xFF6F655B), fontSize: 12, height: 1.4),
+                    'Los adjuntos se conservan localmente mientras el backend no tenga carga de archivos.',
+                    style: TextStyle(
+                      color: Color(0xFF6F655B),
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
                   ),
                 ],
               ),
@@ -154,53 +205,36 @@ class RequestDetailScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _cancelRequest(BuildContext context, AppController controller, EmergencyRequest request) async {
-    try {
-      await controller.cancelRequest(request.id);
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Solicitud cancelada correctamente.')),
-      );
-    } catch (error) {
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
-      );
-    }
-  }
-
-  Future<void> _payRequest(BuildContext context, AppController controller, EmergencyRequest request) async {
-    try {
-      await controller.payRequest(request.id, amount: request.precioCobrado);
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pago registrado correctamente.')),
-      );
-    } catch (error) {
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
-      );
-    }
-  }
-
   String _fileName(String path) => path.split(RegExp(r'[\\/]')).last;
 
-  EmergencyRequest? _findRequest(List<EmergencyRequest> requests, int requestId) {
+  EmergencyRequest? _findRequest(
+    List<EmergencyRequest> requests,
+    int requestId,
+  ) {
     for (final request in requests) {
       if (request.id == requestId) {
         return request;
       }
     }
     return null;
+  }
+
+  void _showPaymentPlaceholder(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Checkout pendiente'),
+        content: const Text(
+          'Aqui se abrira la pasarela cuando el proveedor real este conectado. La interfaz ya esta reservada para ese paso.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -218,7 +252,10 @@ class _SectionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
             const SizedBox(height: 14),
             child,
           ],
@@ -241,9 +278,15 @@ class _InfoLine extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: Color(0xFF6F655B), fontSize: 12)),
+          Text(
+            label,
+            style: const TextStyle(color: Color(0xFF6F655B), fontSize: 12),
+          ),
           const SizedBox(height: 4),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w600, height: 1.4)),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w600, height: 1.4),
+          ),
         ],
       ),
     );
@@ -281,7 +324,10 @@ class _AttachmentSummary extends StatelessWidget {
                 Icon(icon, color: const Color(0xFFC65A16)),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+                  child: Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
                 ),
                 Text(value, style: const TextStyle(color: Color(0xFF6F655B))),
               ],
@@ -293,7 +339,10 @@ class _AttachmentSummary extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
                     path.split(RegExp(r'[\\/]')).last,
-                    style: const TextStyle(color: Color(0xFF5F554B), fontSize: 12),
+                    style: const TextStyle(
+                      color: Color(0xFF5F554B),
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ),

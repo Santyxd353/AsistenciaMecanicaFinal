@@ -69,9 +69,9 @@ class OverviewScreen extends StatelessWidget {
             const SizedBox(height: 20),
             Text(
               'Mis emergencias',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
@@ -94,7 +94,10 @@ class OverviewScreen extends StatelessWidget {
                     children: [
                       const Text(
                         'Todavia no registraste ninguna solicitud.',
-                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       const Text(
@@ -122,9 +125,8 @@ class OverviewScreen extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
-                          builder: (_) => RequestDetailScreen(
-                            requestId: request.id,
-                          ),
+                          builder: (_) =>
+                              RequestDetailScreen(requestId: request.id),
                         ),
                       );
                     },
@@ -203,8 +205,14 @@ class _HeroCard extends StatelessWidget {
               spacing: 10,
               runSpacing: 10,
               children: [
-                _HeroTag(icon: Icons.directions_car_filled_outlined, label: '$vehicleCount vehiculo(s)'),
-                _HeroTag(icon: Icons.bolt_outlined, label: '$activeCount alerta(s) activas'),
+                _HeroTag(
+                  icon: Icons.directions_car_filled_outlined,
+                  label: '$vehicleCount vehiculo(s)',
+                ),
+                _HeroTag(
+                  icon: Icons.bolt_outlined,
+                  label: '$activeCount alerta(s) activas',
+                ),
               ],
             ),
             const SizedBox(height: 22),
@@ -276,12 +284,15 @@ class _MetricCard extends StatelessWidget {
             const SizedBox(height: 14),
             Text(
               value,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
-            Text(caption, style: const TextStyle(color: Color(0xFF6F655B), fontSize: 12)),
+            Text(
+              caption,
+              style: const TextStyle(color: Color(0xFF6F655B), fontSize: 12),
+            ),
           ],
         ),
       ),
@@ -301,7 +312,8 @@ class _SetupWarning extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final messages = <String>[
-      if (missingProfile) 'Completa tu perfil local antes de enviar solicitudes.',
+      if (missingProfile)
+        'Completa tu perfil local antes de enviar solicitudes.',
       if (missingVehicles) 'Registra al menos un vehiculo desde Config.',
     ];
 
@@ -370,7 +382,10 @@ class _RequestCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       child: Text(
                         request.statusLabel,
                         style: TextStyle(
@@ -386,9 +401,9 @@ class _RequestCard extends StatelessWidget {
               const SizedBox(height: 10),
               Text(
                 request.clasificacionIa ?? 'Emergencia enviada',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 6),
               Text(
@@ -400,18 +415,29 @@ class _RequestCard extends StatelessWidget {
               const SizedBox(height: 14),
               Row(
                 children: [
-                  const Icon(Icons.schedule, size: 18, color: Color(0xFF6F655B)),
+                  const Icon(
+                    Icons.schedule,
+                    size: 18,
+                    color: Color(0xFF6F655B),
+                  ),
                   const SizedBox(width: 6),
                   Text(
                     formatter.format(request.fechaCreacion.toLocal()),
                     style: const TextStyle(color: Color(0xFF6F655B)),
                   ),
                   const SizedBox(width: 16),
-                  const Icon(Icons.engineering_outlined, size: 18, color: Color(0xFF6F655B)),
+                  const Icon(
+                    Icons.engineering_outlined,
+                    size: 18,
+                    color: Color(0xFF6F655B),
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      request.tecnicoNombre ?? (request.tecnicoId == null ? 'Sin tecnico' : 'Tecnico #${request.tecnicoId}'),
+                      request.tecnicoNombre ??
+                          (request.tecnicoId == null
+                              ? 'Sin tecnico'
+                              : 'Tecnico #${request.tecnicoId}'),
                       style: const TextStyle(color: Color(0xFF6F655B)),
                     ),
                   ),
@@ -439,7 +465,11 @@ class _RequestCard extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Icon(Icons.location_on_outlined, size: 18, color: Color(0xFF6F655B)),
+                  const Icon(
+                    Icons.location_on_outlined,
+                    size: 18,
+                    color: Color(0xFF6F655B),
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(

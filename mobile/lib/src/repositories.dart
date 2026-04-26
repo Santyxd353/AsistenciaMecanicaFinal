@@ -13,7 +13,6 @@ class LocalRepository {
   static const _userKey = 'current_user';
   static const _vehiclesKey = 'vehicles';
   static const _requestMetasKey = 'request_metas';
-  static const _notificationsKey = 'notifications';
   static const defaultBaseUrl = 'http://10.0.2.2:8000';
 
   final SharedPreferences _prefs;
@@ -22,32 +21,32 @@ class LocalRepository {
     final userRaw = _prefs.getString(_userKey);
     final vehiclesRaw = _prefs.getString(_vehiclesKey);
     final requestsRaw = _prefs.getString(_requestMetasKey);
-    final notificationsRaw = _prefs.getString(_notificationsKey);
 
-    final user = userRaw == null ? null : AppUser.fromJson(jsonDecode(userRaw) as Map<String, dynamic>);
+    final user = userRaw == null
+        ? null
+        : AppUser.fromJson(jsonDecode(userRaw) as Map<String, dynamic>);
     final vehicles = vehiclesRaw == null
         ? <Vehicle>[]
         : (jsonDecode(vehiclesRaw) as List<dynamic>)
-            .map((item) => Vehicle.fromJson(item as Map<String, dynamic>))
-            .toList();
+              .map((item) => Vehicle.fromJson(item as Map<String, dynamic>))
+              .toList();
     final requestMetas = requestsRaw == null
         ? <LocalRequestMeta>[]
         : (jsonDecode(requestsRaw) as List<dynamic>)
-            .map((item) => LocalRequestMeta.fromJson(item as Map<String, dynamic>))
-            .toList();
-    final notifications = notificationsRaw == null
-        ? <AppNotification>[]
-        : (jsonDecode(notificationsRaw) as List<dynamic>)
-            .map((item) => AppNotification.fromJson(item as Map<String, dynamic>))
-            .toList();
+              .map(
+                (item) =>
+                    LocalRequestMeta.fromJson(item as Map<String, dynamic>),
+              )
+              .toList();
 
     return AppSnapshot(
-      baseUrl: normalizeBaseUrl(_prefs.getString(_baseUrlKey) ?? defaultBaseUrl),
+      baseUrl: normalizeBaseUrl(
+        _prefs.getString(_baseUrlKey) ?? defaultBaseUrl,
+      ),
       accessToken: _prefs.getString(_tokenKey),
       currentUser: user,
       vehicles: vehicles,
       requestMetas: requestMetas,
-      notifications: notifications,
     );
   }
 
@@ -55,7 +54,10 @@ class LocalRepository {
     await _prefs.setString(_baseUrlKey, normalizeBaseUrl(value));
   }
 
-  Future<void> saveSession({required String token, required AppUser user}) async {
+  Future<void> saveSession({
+    required String token,
+    required AppUser user,
+  }) async {
     await _prefs.setString(_tokenKey, token);
     await _prefs.setString(_userKey, jsonEncode(user.toJson()));
   }
@@ -65,7 +67,6 @@ class LocalRepository {
     await _prefs.remove(_userKey);
     await _prefs.remove(_vehiclesKey);
     await _prefs.remove(_requestMetasKey);
-    await _prefs.remove(_notificationsKey);
   }
 
   Future<void> saveVehicles(List<Vehicle> vehicles) async {
@@ -81,17 +82,11 @@ class LocalRepository {
       jsonEncode(requestMetas.map((meta) => meta.toJson()).toList()),
     );
   }
-
-  Future<void> saveNotifications(List<AppNotification> notifications) async {
-    await _prefs.setString(
-      _notificationsKey,
-      jsonEncode(notifications.map((notification) => notification.toJson()).toList()),
-    );
-  }
 }
 
 class ApiClient {
-  ApiClient({required String baseUrl, this.token}) : _baseUrl = normalizeBaseUrl(baseUrl);
+  ApiClient({required String baseUrl, this.token})
+    : _baseUrl = normalizeBaseUrl(baseUrl);
 
   final String _baseUrl;
   final String? token;
@@ -106,7 +101,9 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> ping() async {
-    final response = await http.get(_uri('/')).timeout(const Duration(seconds: 8));
+    final response = await http
+        .get(_uri('/'))
+        .timeout(const Duration(seconds: 8));
     return _decodeObject(response);
   }
 
@@ -114,11 +111,14 @@ class ApiClient {
     required String username,
     required String password,
   }) async {
-    final response = await http.post(
-      _uri('/api/v1/auth/login'),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: 'username=${Uri.encodeQueryComponent(username)}&password=${Uri.encodeQueryComponent(password)}',
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .post(
+          _uri('/api/v1/auth/login'),
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body:
+              'username=${Uri.encodeQueryComponent(username)}&password=${Uri.encodeQueryComponent(password)}',
+        )
+        .timeout(const Duration(seconds: 12));
     return AuthPayload.fromJson(_decodeObject(response));
   }
 
@@ -129,21 +129,25 @@ class ApiClient {
     required String fullName,
     required String password,
   }) async {
-    final response = await http.post(
-      _uri(path),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'username': username,
-        'email': email,
-        'full_name': fullName,
-        'password': password,
-      }),
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .post(
+          _uri(path),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'username': username,
+            'email': email,
+            'full_name': fullName,
+            'password': password,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
     return AuthPayload.fromJson(_decodeObject(response));
   }
 
   Future<AppUser> getMe() async {
-    final response = await http.get(_uri('/api/v1/auth/me'), headers: _headers()).timeout(const Duration(seconds: 12));
+    final response = await http
+        .get(_uri('/api/v1/auth/me'), headers: _headers())
+        .timeout(const Duration(seconds: 12));
     return AppUser.fromJson(_decodeObject(response));
   }
 
@@ -152,91 +156,171 @@ class ApiClient {
     required String email,
     required String fullName,
   }) async {
-    final response = await http.put(
-      _uri('/api/v1/auth/me'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'username': username,
-        'email': email,
-        'full_name': fullName,
-      }),
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .put(
+          _uri('/api/v1/auth/me'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'username': username,
+            'email': email,
+            'full_name': fullName,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
     return AppUser.fromJson(_decodeObject(response));
   }
 
   Future<List<Vehicle>> fetchVehicles(List<Vehicle> localVehicles) async {
-    final response = await http.get(_uri('/api/v1/vehiculos/'), headers: _headers()).timeout(const Duration(seconds: 12));
+    final response = await http
+        .get(_uri('/api/v1/vehiculos/'), headers: _headers())
+        .timeout(const Duration(seconds: 12));
     final payload = _decodeList(response);
-    final localVehiclesByRemote = {
+    final localIdsByRemote = {
       for (final vehicle in localVehicles)
         if (vehicle.remoteId != null) vehicle.remoteId!: vehicle.localId,
-    };
-    final localPhotosByRemote = {
-      for (final vehicle in localVehicles)
-        if (vehicle.remoteId != null) vehicle.remoteId!: vehicle.photoPath,
     };
 
     return payload.map((item) {
       final id = item['id'] as int?;
-      final fallbackLocalId = 'vehicle-${id ?? DateTime.now().millisecondsSinceEpoch}';
+      final fallbackLocalId =
+          'vehicle-${id ?? DateTime.now().millisecondsSinceEpoch}';
       return Vehicle.fromApi(
         item,
-        localId: id == null ? fallbackLocalId : (localVehiclesByRemote[id] ?? fallbackLocalId),
-        photoPath: id == null ? null : localPhotosByRemote[id],
+        localId: id == null
+            ? fallbackLocalId
+            : (localIdsByRemote[id] ?? fallbackLocalId),
       );
     }).toList();
   }
 
   Future<Vehicle> createVehicle(Vehicle vehicle) async {
-    final response = await http.post(
-      _uri('/api/v1/vehiculos/'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'placa': vehicle.placa,
-        'marca': vehicle.marca,
-        'modelo': vehicle.modelo,
-        'color': vehicle.color,
-      }),
-    ).timeout(const Duration(seconds: 12));
-    return Vehicle.fromApi(
-      _decodeObject(response),
-      localId: vehicle.localId,
-      photoPath: vehicle.photoPath,
-    );
-  }
-
-  Future<Vehicle> updateVehicle(Vehicle vehicle) async {
-    if (vehicle.remoteId == null) {
-      throw ApiException('El vehiculo aun no tiene identificador remoto.');
-    }
-
-    final response = await http.put(
-      _uri('/api/v1/vehiculos/${vehicle.remoteId}'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'placa': vehicle.placa,
-        'marca': vehicle.marca,
-        'modelo': vehicle.modelo,
-        'color': vehicle.color,
-      }),
-    ).timeout(const Duration(seconds: 12));
-    return Vehicle.fromApi(
-      _decodeObject(response),
-      localId: vehicle.localId,
-      photoPath: vehicle.photoPath,
-    );
+    final response = await http
+        .post(
+          _uri('/api/v1/vehiculos/'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'placa': vehicle.placa,
+            'marca': vehicle.marca,
+            'modelo': vehicle.modelo,
+            'color': vehicle.color,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    return Vehicle.fromApi(_decodeObject(response), localId: vehicle.localId);
   }
 
   Future<List<EmergencyRequest>> fetchRequests() async {
-    final response = await http.get(_uri('/api/v1/solicitudes/'), headers: _headers()).timeout(const Duration(seconds: 12));
+    final response = await http
+        .get(_uri('/api/v1/solicitudes/'), headers: _headers())
+        .timeout(const Duration(seconds: 12));
     final payload = _decodeList(response);
     return payload.map(EmergencyRequest.fromApi).toList();
   }
 
   Future<List<Technician>> fetchTechnicians() async {
-    final response = await http.get(_uri('/api/v1/tecnicos/'), headers: _headers()).timeout(const Duration(seconds: 12));
+    final response = await http
+        .get(_uri('/api/v1/tecnicos/'), headers: _headers())
+        .timeout(const Duration(seconds: 12));
     final payload = _decodeList(response);
     return payload.map(Technician.fromApi).toList();
+  }
+
+  Future<WorkshopProfile?> fetchMyWorkshop() async {
+    final response = await http
+        .get(_uri('/api/v1/talleres/mi-taller'), headers: _headers())
+        .timeout(const Duration(seconds: 12));
+    if (response.statusCode == 404) {
+      return null;
+    }
+    return WorkshopProfile.fromApi(_decodeObject(response));
+  }
+
+  Future<WorkshopProfile> createWorkshop({
+    required String nombreComercial,
+    required String direccion,
+    required String telefono,
+    String? emailContacto,
+    required String horarioAtencion,
+    required String especialidades,
+    String? descripcion,
+    String? sitioWeb,
+    double? latitud,
+    double? longitud,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/v1/talleres/'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'nombre_comercial': nombreComercial,
+            'direccion': direccion,
+            'telefono': telefono,
+            'email_contacto': emailContacto,
+            'horario_atencion': horarioAtencion,
+            'especialidades': especialidades,
+            'descripcion': descripcion,
+            'sitio_web': sitioWeb,
+            'latitud': latitud,
+            'longitud': longitud,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    return WorkshopProfile.fromApi(_decodeObject(response));
+  }
+
+  Future<WorkshopProfile> updateWorkshop(Map<String, dynamic> payload) async {
+    final response = await http
+        .put(
+          _uri('/api/v1/talleres/mi-taller'),
+          headers: _headers(json: true),
+          body: jsonEncode(payload),
+        )
+        .timeout(const Duration(seconds: 12));
+    return WorkshopProfile.fromApi(_decodeObject(response));
+  }
+
+  Future<WorkshopStats?> fetchWorkshopStats() async {
+    final response = await http
+        .get(_uri('/api/v1/talleres/estadisticas'), headers: _headers())
+        .timeout(const Duration(seconds: 12));
+    if (response.statusCode == 404) {
+      return null;
+    }
+    return WorkshopStats.fromApi(_decodeObject(response));
+  }
+
+  Future<Technician> createTechnician({
+    required String nombre,
+    required String especialidad,
+    bool disponible = true,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/v1/tecnicos/'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'nombre': nombre,
+            'especialidad': especialidad,
+            'disponible': disponible,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    return Technician.fromApi(_decodeObject(response));
+  }
+
+  Future<Technician> updateTechnicianAvailability({
+    required int tecnicoId,
+    required bool disponible,
+  }) async {
+    final response = await http
+        .patch(
+          _uri(
+            '/api/v1/tecnicos/$tecnicoId/disponibilidad?disponible=$disponible',
+          ),
+          headers: _headers(json: true),
+        )
+        .timeout(const Duration(seconds: 12));
+    return Technician.fromApi(_decodeObject(response));
   }
 
   Future<EmergencyRequest> createRequest({
@@ -245,36 +329,35 @@ class ApiClient {
     required double longitud,
     int? vehiculoId,
   }) async {
-    final response = await http.post(
-      _uri('/api/v1/solicitudes/'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'descripcion': descripcion,
-        'latitud': latitud,
-        'longitud': longitud,
-        'estado': 'pendiente',
-        if (vehiculoId != null) 'vehiculo_id': vehiculoId,
-      }),
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .post(
+          _uri('/api/v1/solicitudes/'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'descripcion': descripcion,
+            'latitud': latitud,
+            'longitud': longitud,
+            'estado': 'pendiente',
+            if (vehiculoId != null) 'vehiculo_id': vehiculoId,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
     return EmergencyRequest.fromApi(_decodeObject(response));
   }
 
-  Future<EmergencyRequest> cancelRequest(int requestId) async {
-    final response = await http.patch(
-      _uri('/api/v1/solicitudes/$requestId/cancelar'),
-      headers: _headers(json: true),
-    ).timeout(const Duration(seconds: 12));
-    return EmergencyRequest.fromApi(_decodeObject(response));
-  }
-
-  Future<EmergencyRequest> payRequest(int requestId, {double? amount}) async {
-    final response = await http.post(
-      _uri('/api/v1/solicitudes/$requestId/pago'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        if (amount != null) 'monto': amount,
-      }),
-    ).timeout(const Duration(seconds: 12));
+  Future<EmergencyRequest> updateRequestStatus({
+    required int requestId,
+    required String estado,
+    int? tecnicoId,
+  }) async {
+    var path =
+        '/api/v1/solicitudes/$requestId/estado?estado=${Uri.encodeQueryComponent(estado)}';
+    if (tecnicoId != null) {
+      path += '&tecnico_id=$tecnicoId';
+    }
+    final response = await http
+        .patch(_uri(path), headers: _headers(json: true), body: jsonEncode({}))
+        .timeout(const Duration(seconds: 12));
     return EmergencyRequest.fromApi(_decodeObject(response));
   }
 
@@ -306,7 +389,9 @@ class ApiClient {
     try {
       return body.trim().isEmpty ? null : jsonDecode(body);
     } on FormatException {
-      throw ApiException('El backend no devolvio JSON valido. Revisa que la API este levantada en $_baseUrl.');
+      throw ApiException(
+        'El backend no devolvio JSON valido. Revisa que la API este levantada en $_baseUrl.',
+      );
     }
   }
 
@@ -332,5 +417,7 @@ String normalizeBaseUrl(String value) {
   if (trimmed.isEmpty) {
     return LocalRepository.defaultBaseUrl;
   }
-  return trimmed.endsWith('/') ? trimmed.substring(0, trimmed.length - 1) : trimmed;
+  return trimmed.endsWith('/')
+      ? trimmed.substring(0, trimmed.length - 1)
+      : trimmed;
 }

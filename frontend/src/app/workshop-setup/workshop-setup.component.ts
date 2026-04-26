@@ -262,10 +262,19 @@ import {
     :host {
       display: block;
       min-height: 100vh;
+      font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
       background:
         radial-gradient(circle at top left, rgba(218, 119, 30, 0.18), transparent 34%),
         linear-gradient(180deg, #f9efe2 0%, #f5f7fb 48%, #ffffff 100%);
       color: #1a1410;
+    }
+
+    h1,
+    h2,
+    h3 {
+      font-family: inherit;
+      font-weight: 800;
+      letter-spacing: -0.02em;
     }
 
     .shell {
