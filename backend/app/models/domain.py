@@ -14,7 +14,9 @@ class VehiculoBase(SQLModel):
     placa: str = Field(index=True, unique=True)
     marca: str
     modelo: str
+    anio: Optional[int] = None
     color: Optional[str] = None
+    foto_url: Optional[str] = None
     propietario_id: Optional[int] = Field(default=None, foreign_key="user.id")
 
 class Vehiculo(VehiculoBase, table=True):
@@ -35,7 +37,9 @@ class VehiculoUpdate(SQLModel):
     placa: Optional[str] = None
     marca: Optional[str] = None
     modelo: Optional[str] = None
+    anio: Optional[int] = None
     color: Optional[str] = None
+    foto_url: Optional[str] = None
 
 class TecnicoBase(SQLModel):
     nombre: str
@@ -64,6 +68,7 @@ class SolicitudBase(SQLModel):
     clasificacion_ia: Optional[str] = None
     prioridad_ia: Optional[str] = None
     resumen_ia: Optional[str] = None
+    especialidad_requerida_ia: Optional[str] = None
     tiempo_estimado_minutos: Optional[int] = None
     estado_pago: Optional[str] = "pendiente"
     fecha_pago: Optional[datetime] = None

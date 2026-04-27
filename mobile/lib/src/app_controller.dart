@@ -226,6 +226,7 @@ class AppController extends ChangeNotifier {
     required String placa,
     required String marca,
     required String modelo,
+    int? anio,
     required String color,
     String? photoPath,
   }) async {
@@ -252,6 +253,7 @@ class AppController extends ChangeNotifier {
         placa: normalizedPlate,
         marca: normalizedBrand,
         modelo: normalizedModel,
+        anio: anio,
         color: normalizedColor,
         photoPath: photoPath,
       );
@@ -269,6 +271,7 @@ class AppController extends ChangeNotifier {
     required String placa,
     required String marca,
     required String modelo,
+    int? anio,
     required String color,
     String? photoPath,
   }) async {
@@ -282,8 +285,10 @@ class AppController extends ChangeNotifier {
       placa: placa.trim().toUpperCase(),
       marca: marca.trim(),
       modelo: modelo.trim(),
+      anio: anio,
       color: color.trim(),
       photoPath: photoPath,
+      photoUrl: vehicle.photoUrl,
     );
 
     await _executeWithLoading(() async {
@@ -505,6 +510,10 @@ class AppController extends ChangeNotifier {
             latitud: latitud,
             longitud: longitud,
             vehiculoId: vehicle.remoteId,
+            incidentType: incidentType,
+            extraNotes: extraNotes.trim(),
+            imagePaths: imagePaths,
+            audioPath: audioPath,
           );
 
       final meta = LocalRequestMeta(
@@ -568,6 +577,21 @@ class AppController extends ChangeNotifier {
       );
       await _persistDriverState(storage);
     });
+  }
+
+  Future<VehiclePhotoPreview> previewVehicleFromPhotos(List<String> imagePaths) async {
+    if (!isAuthenticated) {
+      throw ApiException('Debes iniciar sesion para analizar fotos del vehiculo.');
+    }
+
+    late final VehiclePhotoPreview preview;
+    await _executeWithLoading(() async {
+      preview = await ApiClient(
+        baseUrl: _baseUrl,
+        token: _accessToken,
+      ).previewVehicleFromPhotos(imagePaths);
+    });
+    return preview;
   }
 
   LocalRequestMeta? metaFor(int requestId) {
@@ -739,6 +763,7 @@ class AppController extends ChangeNotifier {
               return remoteById[vehicle.remoteId]!.copyWith(
                 localId: vehicle.localId,
                 photoPath: vehicle.photoPath,
+                photoUrl: remoteById[vehicle.remoteId]!.photoUrl,
               );
             }
             return vehicle;

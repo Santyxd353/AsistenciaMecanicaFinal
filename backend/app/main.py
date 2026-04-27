@@ -1,9 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.db.session import init_db
 from app.models.user import User
-from app.models.domain import Vehiculo, Solicitud, Evidencia, Tecnico, Taller, Taller
+from app.models.domain import Vehiculo, Solicitud, Evidencia, Tecnico, Taller
 from app.api import auth, solicitudes, tecnicos, vehiculos, talleres
+from app.services.storage import UPLOAD_ROOT, ensure_upload_root
 
 app = FastAPI(
     title="Plataforma Inteligente de Emergencias Vehiculares",
@@ -24,6 +26,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+ensure_upload_root()
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_ROOT)), name="uploads")
 
 @app.get("/")
 async def root():

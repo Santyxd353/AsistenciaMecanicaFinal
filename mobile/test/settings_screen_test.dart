@@ -36,6 +36,7 @@ class _FakeController extends AppController {
     required String placa,
     required String marca,
     required String modelo,
+    int? anio,
     required String color,
     String? photoPath,
   }) async {
@@ -48,6 +49,7 @@ class _FakeController extends AppController {
         placa: placa.toUpperCase(),
         marca: marca,
         modelo: modelo,
+        anio: anio,
         color: color,
         photoPath: photoPath,
       ),

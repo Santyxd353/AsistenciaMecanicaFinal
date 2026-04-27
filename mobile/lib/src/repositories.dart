@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -103,6 +104,15 @@ class ApiClient {
   final String? token;
 
   Uri _uri(String path) => Uri.parse('$_baseUrl$path');
+  String? resolveAssetUrl(String? relativeUrl) {
+    if (relativeUrl == null || relativeUrl.trim().isEmpty) {
+      return null;
+    }
+    if (relativeUrl.startsWith('http://') || relativeUrl.startsWith('https://')) {
+      return relativeUrl;
+    }
+    return '$_baseUrl${relativeUrl.startsWith('/') ? relativeUrl : '/$relativeUrl'}';
+  }
 
   Map<String, String> _headers({bool json = false}) {
     return {
@@ -194,25 +204,34 @@ class ApiClient {
         item,
         localId: id == null ? fallbackLocalId : (localVehiclesByRemote[id] ?? fallbackLocalId),
         photoPath: id == null ? null : localPhotosByRemote[id],
+        photoUrl: resolveAssetUrl(item['foto_url']?.toString()),
       );
     }).toList();
   }
 
   Future<Vehicle> createVehicle(Vehicle vehicle) async {
-    final response = await http.post(
-      _uri('/api/v1/vehiculos/'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'placa': vehicle.placa,
-        'marca': vehicle.marca,
-        'modelo': vehicle.modelo,
-        'color': vehicle.color,
-      }),
-    ).timeout(const Duration(seconds: 12));
+    final request = http.MultipartRequest('POST', _uri('/api/v1/vehiculos/'));
+    request.headers.addAll(_headers());
+    request.fields.addAll({
+      'placa': vehicle.placa,
+      'marca': vehicle.marca,
+      'modelo': vehicle.modelo,
+      'anio': vehicle.anio?.toString() ?? '',
+      'color': vehicle.color,
+    });
+    if (vehicle.photoPath != null && vehicle.photoPath!.isNotEmpty) {
+      final file = File(vehicle.photoPath!);
+      if (file.existsSync()) {
+        request.files.add(await http.MultipartFile.fromPath('foto', file.path));
+      }
+    }
+    final response = await request.send().timeout(const Duration(seconds: 20));
+    final payload = await _decodeObjectFromStream(response);
     return Vehicle.fromApi(
-      _decodeObject(response),
+      payload,
       localId: vehicle.localId,
       photoPath: vehicle.photoPath,
+      photoUrl: resolveAssetUrl(payload['foto_url']?.toString()),
     );
   }
 
@@ -221,21 +240,49 @@ class ApiClient {
       throw ApiException('El vehiculo aun no tiene identificador remoto.');
     }
 
-    final response = await http.put(
-      _uri('/api/v1/vehiculos/${vehicle.remoteId}'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'placa': vehicle.placa,
-        'marca': vehicle.marca,
-        'modelo': vehicle.modelo,
-        'color': vehicle.color,
-      }),
-    ).timeout(const Duration(seconds: 12));
+    final request = http.MultipartRequest('PUT', _uri('/api/v1/vehiculos/${vehicle.remoteId}'));
+    request.headers.addAll(_headers());
+    request.fields.addAll({
+      'placa': vehicle.placa,
+      'marca': vehicle.marca,
+      'modelo': vehicle.modelo,
+      'anio': vehicle.anio?.toString() ?? '',
+      'color': vehicle.color,
+    });
+    if (vehicle.photoPath != null && vehicle.photoPath!.isNotEmpty) {
+      final file = File(vehicle.photoPath!);
+      if (file.existsSync()) {
+        request.files.add(await http.MultipartFile.fromPath('foto', file.path));
+      }
+    }
+    final response = await request.send().timeout(const Duration(seconds: 20));
+    final payload = await _decodeObjectFromStream(response);
     return Vehicle.fromApi(
-      _decodeObject(response),
+      payload,
       localId: vehicle.localId,
       photoPath: vehicle.photoPath,
+      photoUrl: resolveAssetUrl(payload['foto_url']?.toString()),
     );
+  }
+
+  Future<VehiclePhotoPreview> previewVehicleFromPhotos(List<String> imagePaths) async {
+    if (imagePaths.isEmpty) {
+      throw ApiException('Debes seleccionar al menos una foto del vehiculo.');
+    }
+
+    final request = http.MultipartRequest(
+      'POST',
+      _uri('/api/v1/vehiculos/preview-from-photo'),
+    );
+    request.headers.addAll(_headers());
+    for (final path in imagePaths.take(4)) {
+      final file = File(path);
+      if (file.existsSync()) {
+        request.files.add(await http.MultipartFile.fromPath('fotos', file.path));
+      }
+    }
+    final response = await request.send().timeout(const Duration(seconds: 45));
+    return VehiclePhotoPreview.fromApi(await _decodeObjectFromStream(response));
   }
 
   Future<List<EmergencyRequest>> fetchRequests() async {
@@ -347,19 +394,36 @@ class ApiClient {
     required double latitud,
     required double longitud,
     int? vehiculoId,
+    String? incidentType,
+    String? extraNotes,
+    List<String> imagePaths = const [],
+    String? audioPath,
   }) async {
-    final response = await http.post(
-      _uri('/api/v1/solicitudes/'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'descripcion': descripcion,
-        'latitud': latitud,
-        'longitud': longitud,
-        'estado': 'pendiente',
-        if (vehiculoId != null) 'vehiculo_id': vehiculoId,
-      }),
-    ).timeout(const Duration(seconds: 12));
-    return EmergencyRequest.fromApi(_decodeObject(response));
+    final request = http.MultipartRequest('POST', _uri('/api/v1/solicitudes/'));
+    request.headers.addAll(_headers());
+    request.fields.addAll({
+      'descripcion': descripcion,
+      'latitud': latitud.toString(),
+      'longitud': longitud.toString(),
+      'estado': 'pendiente',
+      if (vehiculoId != null) 'vehiculo_id': vehiculoId.toString(),
+      if (incidentType != null && incidentType.trim().isNotEmpty) 'incident_type': incidentType.trim(),
+      if (extraNotes != null && extraNotes.trim().isNotEmpty) 'extra_notes': extraNotes.trim(),
+    });
+    for (final path in imagePaths) {
+      final file = File(path);
+      if (file.existsSync()) {
+        request.files.add(await http.MultipartFile.fromPath('images', file.path));
+      }
+    }
+    if (audioPath != null && audioPath.trim().isNotEmpty) {
+      final file = File(audioPath);
+      if (file.existsSync()) {
+        request.files.add(await http.MultipartFile.fromPath('audio', file.path));
+      }
+    }
+    final response = await request.send().timeout(const Duration(seconds: 30));
+    return EmergencyRequest.fromApi(await _decodeObjectFromStream(response));
   }
 
   Future<EmergencyRequest> updateRequestStatus({
@@ -401,6 +465,18 @@ class ApiClient {
 
   Map<String, dynamic> _decodeObject(http.Response response) {
     final body = utf8.decode(response.bodyBytes);
+    final json = _decodeJson(body);
+    if (response.statusCode >= 400) {
+      throw ApiException(_readDetail(json));
+    }
+    if (json is! Map<String, dynamic>) {
+      throw ApiException('El backend devolvio una respuesta inesperada.');
+    }
+    return json;
+  }
+
+  Future<Map<String, dynamic>> _decodeObjectFromStream(http.StreamedResponse response) async {
+    final body = await response.stream.bytesToString();
     final json = _decodeJson(body);
     if (response.statusCode >= 400) {
       throw ApiException(_readDetail(json));

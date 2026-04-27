@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import math
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -10,14 +12,18 @@ from app.api.deps import get_current_user
 from app.db.session import get_session
 from app.models.domain import (
     EstadoSolicitud,
+    Evidencia,
     Solicitud,
     SolicitudCreate,
     SolicitudRead,
     Taller,
     Tecnico,
+    TipoEvidencia,
     Vehiculo,
 )
 from app.models.user import User, UserRole
+from app.services.ai import analyze_incident
+from app.services.storage import save_upload_file, url_to_path
 
 router = APIRouter()
 
@@ -25,29 +31,6 @@ router = APIRouter()
 class PagoPayload(BaseModel):
     monto: Optional[float] = None
     metodo: Optional[str] = "tarjeta"
-
-
-def simular_procesamiento_ia(descripcion: str):
-    clasificacion = "General"
-    prioridad = "Baja"
-    resumen = "El cliente reporta un problema no clasificado."
-
-    desc_eval = descripcion.lower()
-
-    if "no enciende" in desc_eval or "bateria" in desc_eval or "batería" in desc_eval or "click click" in desc_eval or "arranca" in desc_eval:
-        clasificacion = "Problema de Bateria / Electrico"
-        prioridad = "Media"
-        resumen = "El vehiculo no responde al arranque, posible descarga de bateria o falla en el alternador. Requiere auxilio electrico."
-    elif "pinchada" in desc_eval or "llanta" in desc_eval:
-        clasificacion = "Neumaticos"
-        prioridad = "Baja"
-        resumen = "Vehiculo inmovilizado por llanta pinchada. Requiere taller movil o grua para cambio."
-    elif "humo" in desc_eval or "recalentado" in desc_eval:
-        clasificacion = "Problema de Motor / Recalentamiento"
-        prioridad = "Alta"
-        resumen = "Alerta critica: posible fuga de refrigerante o problema grave de motor. Riesgo de dano permanente."
-
-    return clasificacion, prioridad, resumen
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -76,12 +59,17 @@ def estimate_eta_minutes(solicitud: Solicitud, tecnico: Optional[Tecnico], talle
 def estimate_pricing(clasificacion: Optional[str], prioridad: Optional[str]) -> tuple[float, float]:
     base_amount = 120.0
 
-    if clasificacion == "Problema de Bateria / Electrico":
+    clasificacion_eval = (clasificacion or "").lower()
+    if "bateria" in clasificacion_eval or "electrico" in clasificacion_eval:
         base_amount = 150.0
-    elif clasificacion == "Neumaticos":
+    elif "llanta" in clasificacion_eval or "neumatic" in clasificacion_eval:
         base_amount = 110.0
-    elif clasificacion == "Problema de Motor / Recalentamiento":
+    elif "motor" in clasificacion_eval or "recalent" in clasificacion_eval:
         base_amount = 220.0
+    elif "cerrajer" in clasificacion_eval:
+        base_amount = 140.0
+    elif "choque" in clasificacion_eval or "colision" in clasificacion_eval:
+        base_amount = 260.0
 
     if prioridad == "Alta":
         base_amount += 70.0
@@ -93,9 +81,7 @@ def estimate_pricing(clasificacion: Optional[str], prioridad: Optional[str]) -> 
 
 
 def obtener_taller_del_usuario(session: Session, current_user: User) -> Taller | None:
-    return session.exec(
-        select(Taller).where(Taller.propietario_id == current_user.id)
-    ).first()
+    return session.exec(select(Taller).where(Taller.propietario_id == current_user.id)).first()
 
 
 def request_vehicle(session: Session, solicitud: Solicitud) -> Optional[Vehiculo]:
@@ -154,13 +140,25 @@ def ensure_request_visible_to_user(session: Session, solicitud: Solicitud, curre
         raise HTTPException(status_code=403, detail="No tienes permisos para ver esta solicitud")
 
 
+def _normalize_specialty(value: Optional[str]) -> str:
+    return (value or "").strip().lower()
+
+
+def _specialty_penalty(required_specialty: Optional[str], current_specialty: Optional[str]) -> float:
+    required = _normalize_specialty(required_specialty)
+    current = _normalize_specialty(current_specialty)
+    if not required or required == "general":
+        return 0.0
+    return 0.0 if required in current else 18.0
+
+
 def assign_best_technician(session: Session, solicitud: Solicitud) -> tuple[Optional[Tecnico], Optional[Taller]]:
     tecnicos = session.exec(select(Tecnico).where(Tecnico.disponible == True)).all()
     if not tecnicos:
         return None, None
 
     best_tecnico: Optional[Tecnico] = None
-    best_distance = float("inf")
+    best_score = float("inf")
 
     for tecnico in tecnicos:
         if tecnico.latitud is None or tecnico.longitud is None:
@@ -168,8 +166,9 @@ def assign_best_technician(session: Session, solicitud: Solicitud) -> tuple[Opti
         else:
             distance = haversine_km(solicitud.latitud, solicitud.longitud, tecnico.latitud, tecnico.longitud)
 
-        if distance < best_distance:
-            best_distance = distance
+        score = distance + _specialty_penalty(solicitud.especialidad_requerida_ia, tecnico.especialidad)
+        if score < best_score:
+            best_score = score
             best_tecnico = tecnico
 
     if not best_tecnico:
@@ -185,7 +184,7 @@ def assign_best_workshop(session: Session, solicitud: Solicitud) -> Optional[Tal
         return None
 
     best_taller: Optional[Taller] = None
-    best_distance = float("inf")
+    best_score = float("inf")
 
     for taller in talleres:
         if taller.latitud is None or taller.longitud is None:
@@ -193,8 +192,9 @@ def assign_best_workshop(session: Session, solicitud: Solicitud) -> Optional[Tal
         else:
             distance = haversine_km(solicitud.latitud, solicitud.longitud, taller.latitud, taller.longitud)
 
-        if distance < best_distance:
-            best_distance = distance
+        score = distance + _specialty_penalty(solicitud.especialidad_requerida_ia, taller.especialidades)
+        if score < best_score:
+            best_score = score
             best_taller = taller
 
     return best_taller
@@ -212,27 +212,155 @@ def update_service_totals(session: Session, solicitud: Solicitud, was_resolved: 
     session.add(taller)
 
 
+def _optional_int(value: Any) -> Optional[int]:
+    if value in (None, "", "null"):
+        return None
+    return int(value)
+
+
+async def _read_creation_payload(
+    request: Request,
+) -> tuple[dict[str, Any], list[UploadFile], list[UploadFile], Optional[str], Optional[str]]:
+    content_type = request.headers.get("content-type", "")
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        images = [
+            file
+            for file in form.getlist("images")
+            if isinstance(file, UploadFile) and file.filename
+        ]
+        audios = [
+            file
+            for file in form.getlist("audio")
+            if isinstance(file, UploadFile) and file.filename
+        ]
+        payload = {
+            "descripcion": str(form.get("descripcion", "")).strip(),
+            "latitud": str(form.get("latitud", "")).strip(),
+            "longitud": str(form.get("longitud", "")).strip(),
+            "estado": str(form.get("estado", "pendiente")).strip() or "pendiente",
+            "vehiculo_id": _optional_int(form.get("vehiculo_id")),
+        }
+        incident_type = str(form.get("incident_type", "")).strip() or None
+        extra_notes = str(form.get("extra_notes", "")).strip() or None
+        return payload, images, audios, incident_type, extra_notes
+
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="No se pudo leer el payload de la solicitud.") from exc
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Payload invalido para solicitud.")
+    incident_type = payload.get("incident_type")
+    extra_notes = payload.get("extra_notes")
+    return payload, [], [], incident_type, extra_notes
+
+
+def _compose_ai_description(
+    *,
+    descripcion: str,
+    incident_type: Optional[str],
+    extra_notes: Optional[str],
+    vehiculo: Optional[Vehiculo],
+) -> str:
+    parts = []
+    if vehiculo:
+        parts.append(f"Vehiculo: {vehiculo.placa} {vehiculo.marca} {vehiculo.modelo}")
+        if vehiculo.color:
+            parts.append(f"Color: {vehiculo.color}")
+    if incident_type:
+        parts.append(f"Tipo declarado: {incident_type}")
+    parts.append(f"Descripcion: {descripcion}")
+    if extra_notes:
+        parts.append(f"Notas extra: {extra_notes}")
+    return ". ".join(parts)
+
+
 @router.post("/", response_model=SolicitudRead)
-def crear_solicitud(
+async def crear_solicitud(
+    request: Request,
     *,
     session: Session = Depends(get_session),
-    solicitud_in: SolicitudCreate,
     current_user: User = Depends(get_current_user),
 ):
+    payload, image_uploads, audio_uploads, incident_type, extra_notes = await _read_creation_payload(request)
+    solicitud_in = SolicitudCreate.model_validate(payload)
     solicitud = Solicitud.model_validate(solicitud_in)
-    clasif, prio, resm = simular_procesamiento_ia(solicitud.descripcion)
-    solicitud.clasificacion_ia = clasif
-    solicitud.prioridad_ia = prio
-    solicitud.resumen_ia = resm
     solicitud.estado_pago = "pendiente"
-    solicitud.precio_cobrado, solicitud.comision_plataforma = estimate_pricing(clasif, prio)
 
+    vehiculo: Optional[Vehiculo] = None
     if solicitud.vehiculo_id:
         vehiculo = session.get(Vehiculo, solicitud.vehiculo_id)
         if not vehiculo:
             raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
         if current_user.role == UserRole.DRIVER and vehiculo.propietario_id != current_user.id:
             raise HTTPException(status_code=403, detail="No puedes reportar con un vehiculo de otro usuario")
+
+    session.add(solicitud)
+    session.flush()
+
+    saved_image_paths: list[str] = []
+    saved_audio_paths: list[str] = []
+
+    for upload in image_uploads:
+        relative_url = await save_upload_file(
+            upload=upload,
+            category="requests",
+            prefix=f"solicitud-{solicitud.id}-imagen",
+        )
+        saved_image_paths.append(str(url_to_path(relative_url)))
+        session.add(
+            Evidencia(
+                solicitud_id=solicitud.id,
+                tipo_evidencia=TipoEvidencia.IMAGEN,
+                ruta_archivo=relative_url,
+            )
+        )
+
+    for upload in audio_uploads[:1]:
+        relative_url = await save_upload_file(
+            upload=upload,
+            category="requests",
+            prefix=f"solicitud-{solicitud.id}-audio",
+        )
+        saved_audio_paths.append(str(url_to_path(relative_url)))
+        session.add(
+            Evidencia(
+                solicitud_id=solicitud.id,
+                tipo_evidencia=TipoEvidencia.AUDIO,
+                ruta_archivo=relative_url,
+            )
+        )
+
+    vehicle_photo_path: Optional[str] = None
+    if vehiculo and vehiculo.foto_url:
+        local_photo = url_to_path(vehiculo.foto_url)
+        if local_photo:
+            vehicle_photo_path = str(local_photo)
+
+    ai_input = _compose_ai_description(
+        descripcion=solicitud.descripcion,
+        incident_type=incident_type,
+        extra_notes=extra_notes,
+        vehiculo=vehiculo,
+    )
+    analysis = analyze_incident(
+        descripcion=ai_input,
+        incident_type=incident_type,
+        image_paths=saved_image_paths,
+        audio_paths=saved_audio_paths,
+        vehicle_photo_path=vehicle_photo_path,
+    )
+
+    solicitud.clasificacion_ia = analysis.clasificacion
+    solicitud.prioridad_ia = analysis.prioridad
+    solicitud.resumen_ia = analysis.resumen
+    solicitud.especialidad_requerida_ia = analysis.especialidad_requerida
+    solicitud.precio_cobrado, solicitud.comision_plataforma = estimate_pricing(
+        analysis.clasificacion,
+        analysis.prioridad,
+    )
 
     tecnico, taller = assign_best_technician(session, solicitud)
     if tecnico:

@@ -7,9 +7,14 @@ import '../models.dart';
 import 'request_detail_screen.dart';
 
 class OverviewScreen extends StatelessWidget {
-  const OverviewScreen({super.key, required this.onCreateReport});
+  const OverviewScreen({
+    super.key,
+    required this.onCreateReport,
+    required this.onRegisterVehicle,
+  });
 
   final VoidCallback onCreateReport;
+  final VoidCallback onRegisterVehicle;
 
   @override
   Widget build(BuildContext context) {
@@ -30,12 +35,14 @@ class OverviewScreen extends StatelessWidget {
               vehicleCount: controller.vehicles.length,
               activeCount: activeCount,
               onCreateReport: onCreateReport,
+              onRegisterVehicle: onRegisterVehicle,
             ),
             const SizedBox(height: 16),
             if (controller.currentUser == null || controller.vehicles.isEmpty)
               _SetupWarning(
                 missingProfile: controller.currentUser == null,
                 missingVehicles: controller.vehicles.isEmpty,
+                onRegisterVehicle: onRegisterVehicle,
               ),
             if (controller.currentUser == null || controller.vehicles.isEmpty)
               const SizedBox(height: 16),
@@ -162,12 +169,14 @@ class _HeroCard extends StatelessWidget {
     required this.vehicleCount,
     required this.activeCount,
     required this.onCreateReport,
+    required this.onRegisterVehicle,
   });
 
   final AppUser? user;
   final int vehicleCount;
   final int activeCount;
   final VoidCallback onCreateReport;
+  final VoidCallback onRegisterVehicle;
 
   @override
   Widget build(BuildContext context) {
@@ -224,6 +233,16 @@ class _HeroCard extends StatelessWidget {
               onPressed: onCreateReport,
               icon: const Icon(Icons.sos),
               label: const Text('Reportar emergencia'),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white54),
+              ),
+              onPressed: onRegisterVehicle,
+              icon: const Icon(Icons.directions_car_filled_outlined),
+              label: const Text('Registrar vehiculo'),
             ),
           ],
         ),
@@ -304,34 +323,53 @@ class _SetupWarning extends StatelessWidget {
   const _SetupWarning({
     required this.missingProfile,
     required this.missingVehicles,
+    required this.onRegisterVehicle,
   });
 
   final bool missingProfile;
   final bool missingVehicles;
+  final VoidCallback onRegisterVehicle;
 
   @override
   Widget build(BuildContext context) {
     final messages = <String>[
       if (missingProfile)
         'Completa tu perfil local antes de enviar solicitudes.',
-      if (missingVehicles) 'Registra al menos un vehiculo desde Config.',
+      if (missingVehicles)
+        'Registra al menos un vehiculo antes de reportar una emergencia.',
     ];
 
     return Card(
       color: const Color(0xFFFFF3E6),
       child: Padding(
         padding: const EdgeInsets.all(18),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.warning_amber_rounded, color: Color(0xFFC65A16)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                messages.join(' '),
-                style: const TextStyle(height: 1.45),
-              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.warning_amber_rounded,
+                  color: Color(0xFFC65A16),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    messages.join(' '),
+                    style: const TextStyle(height: 1.45),
+                  ),
+                ),
+              ],
             ),
+            if (missingVehicles) ...[
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                onPressed: onRegisterVehicle,
+                icon: const Icon(Icons.directions_car_filled_outlined),
+                label: const Text('Registrar vehiculo'),
+              ),
+            ],
           ],
         ),
       ),

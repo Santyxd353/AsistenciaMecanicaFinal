@@ -16,6 +16,7 @@ export interface Solicitud {
   clasificacion_ia?: string;
   prioridad_ia?: string;
   resumen_ia?: string;
+  especialidad_requerida_ia?: string;
   taller_nombre?: string;
   tecnico_nombre?: string;
   tecnico_especialidad?: string;

@@ -73,8 +73,10 @@ class Vehicle {
     required this.placa,
     required this.marca,
     required this.modelo,
+    this.anio,
     this.color = '',
     this.photoPath,
+    this.photoUrl,
   });
 
   final String localId;
@@ -82,12 +84,15 @@ class Vehicle {
   final String placa;
   final String marca;
   final String modelo;
+  final int? anio;
   final String color;
   final String? photoPath;
+  final String? photoUrl;
 
   String get label {
     final colorPart = color.trim().isEmpty ? '' : ' - $color';
-    return '$placa - $marca $modelo$colorPart';
+    final yearPart = anio == null ? '' : ' $anio';
+    return '$placa - $marca $modelo$yearPart$colorPart';
   }
 
   Vehicle copyWith({
@@ -96,8 +101,10 @@ class Vehicle {
     String? placa,
     String? marca,
     String? modelo,
+    int? anio,
     String? color,
     String? photoPath,
+    String? photoUrl,
   }) {
     return Vehicle(
       localId: localId ?? this.localId,
@@ -105,8 +112,10 @@ class Vehicle {
       placa: placa ?? this.placa,
       marca: marca ?? this.marca,
       modelo: modelo ?? this.modelo,
+      anio: anio ?? this.anio,
       color: color ?? this.color,
       photoPath: photoPath ?? this.photoPath,
+      photoUrl: photoUrl ?? this.photoUrl,
     );
   }
 
@@ -117,8 +126,10 @@ class Vehicle {
       'placa': placa,
       'marca': marca,
       'modelo': modelo,
+      'anio': anio,
       'color': color,
       'photo_path': photoPath,
+      'photo_url': photoUrl,
     };
   }
 
@@ -129,8 +140,10 @@ class Vehicle {
       placa: json['placa'] as String? ?? '',
       marca: json['marca'] as String? ?? '',
       modelo: json['modelo'] as String? ?? '',
+      anio: json['anio'] as int?,
       color: json['color'] as String? ?? '',
       photoPath: json['photo_path'] as String?,
+      photoUrl: json['photo_url'] as String?,
     );
   }
 
@@ -138,6 +151,7 @@ class Vehicle {
     Map<String, dynamic> json, {
     required String localId,
     String? photoPath,
+    String? photoUrl,
   }) {
     return Vehicle(
       localId: localId,
@@ -145,8 +159,42 @@ class Vehicle {
       placa: json['placa'] as String? ?? '',
       marca: json['marca'] as String? ?? '',
       modelo: json['modelo'] as String? ?? '',
+      anio: json['anio'] as int?,
       color: json['color'] as String? ?? '',
       photoPath: photoPath,
+      photoUrl: photoUrl ?? json['foto_url'] as String?,
+    );
+  }
+}
+
+class VehiclePhotoPreview {
+  const VehiclePhotoPreview({
+    required this.placa,
+    required this.marca,
+    required this.modelo,
+    required this.anio,
+    required this.color,
+    required this.resumen,
+    required this.source,
+  });
+
+  final String placa;
+  final String marca;
+  final String modelo;
+  final int? anio;
+  final String color;
+  final String resumen;
+  final String source;
+
+  factory VehiclePhotoPreview.fromApi(Map<String, dynamic> json) {
+    return VehiclePhotoPreview(
+      placa: json['placa'] as String? ?? '',
+      marca: json['marca'] as String? ?? '',
+      modelo: json['modelo'] as String? ?? '',
+      anio: json['anio'] as int?,
+      color: json['color'] as String? ?? '',
+      resumen: json['resumen'] as String? ?? '',
+      source: json['source'] as String? ?? 'fallback',
     );
   }
 }
@@ -355,6 +403,7 @@ class EmergencyRequest {
     this.clasificacionIa,
     this.prioridadIa,
     this.resumenIa,
+    this.especialidadRequeridaIa,
     this.tiempoEstimadoMinutos,
     this.estadoPago,
     this.fechaPago,
@@ -379,6 +428,7 @@ class EmergencyRequest {
   final String? clasificacionIa;
   final String? prioridadIa;
   final String? resumenIa;
+  final String? especialidadRequeridaIa;
   final int? tiempoEstimadoMinutos;
   final String? estadoPago;
   final DateTime? fechaPago;
@@ -455,6 +505,7 @@ class EmergencyRequest {
       clasificacionIa: json['clasificacion_ia'] as String?,
       prioridadIa: json['prioridad_ia'] as String?,
       resumenIa: json['resumen_ia'] as String?,
+      especialidadRequeridaIa: json['especialidad_requerida_ia'] as String?,
       tiempoEstimadoMinutos: json['tiempo_estimado_minutos'] as int?,
       estadoPago: json['estado_pago'] as String?,
       fechaPago: json['fecha_pago'] == null

@@ -11,7 +11,6 @@ class WorkshopAccountScreen extends StatefulWidget {
 }
 
 class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
-  final _baseUrlController = TextEditingController();
   final _nameController = TextEditingController();
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -36,7 +35,6 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
 
   @override
   void dispose() {
-    _baseUrlController.dispose();
     _nameController.dispose();
     _usernameController.dispose();
     _emailController.dispose();
@@ -60,7 +58,6 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
     final workshop = controller.workshopProfile;
 
     if (_syncedUserId != user?.id) {
-      _baseUrlController.text = controller.baseUrl;
       _nameController.text = user?.fullName ?? '';
       _usernameController.text = user?.username ?? '';
       _emailController.text = user?.email ?? '';
@@ -100,53 +97,6 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
         children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Backend',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _baseUrlController,
-                    decoration: const InputDecoration(
-                      labelText: 'Base URL',
-                      hintText: 'http://10.0.2.2:8000',
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'En Android Emulator usa 10.0.2.2. En dispositivo fisico reemplaza por la IP de tu computadora.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF6F655B),
-                      height: 1.45,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      FilledButton(
-                        onPressed: controller.loading ? null : _saveBaseUrl,
-                        child: const Text('Guardar URL'),
-                      ),
-                      FilledButton.tonal(
-                        onPressed: controller.loading ? null : _pingBackend,
-                        child: const Text('Probar conexion'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(18),
@@ -336,36 +286,6 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _saveBaseUrl() async {
-    final controller = context.read<AppController>();
-    try {
-      await controller.saveBaseUrl(_baseUrlController.text);
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('URL del backend guardada.')),
-      );
-    } catch (error) {
-      _showMessage(error.toString());
-    }
-  }
-
-  Future<void> _pingBackend() async {
-    final controller = context.read<AppController>();
-    try {
-      final message = await controller.testConnection();
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
-    } catch (error) {
-      _showMessage(error.toString());
-    }
   }
 
   Future<void> _saveAccount() async {

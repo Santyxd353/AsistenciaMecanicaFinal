@@ -109,10 +109,13 @@ class _AppShellState extends State<AppShell> {
     }
 
     final pages = [
-      OverviewScreen(onCreateReport: () => setState(() => _currentIndex = 1)),
+      OverviewScreen(
+        onCreateReport: () => setState(() => _currentIndex = 1),
+        onRegisterVehicle: () => setState(() => _currentIndex = 2),
+      ),
       const ReportScreen(),
       const SettingsScreen(),
-      ];
+    ];
     final selectedIndex = _normalizeIndex(pages.length);
 
     return Scaffold(
