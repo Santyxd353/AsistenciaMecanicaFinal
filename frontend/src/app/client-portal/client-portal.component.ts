@@ -1,8 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { finalize, timeout } from 'rxjs';
+import * as L from 'leaflet';
 
 import { AuthService } from '../core/auth.service';
 import { Solicitud, SolicitudService } from '../core/incident.service';
@@ -164,6 +165,62 @@ import { Vehicle, VehicleService } from '../core/vehicle.service';
           </ng-template>
         </section>
 
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Emergencia</p>
+              <h2>Reportar accidente o falla</h2>
+              <p>Crea la solicitud desde web y fija el punto exacto dejando el pin sobre el mapa.</p>
+            </div>
+            <span class="badge">{{ reports.length }} historial</span>
+          </div>
+
+          <form [formGroup]="reportForm" (ngSubmit)="saveReport()" class="form-layout">
+            <label class="field field-wide">
+              <span>Vehiculo registrado</span>
+              <select formControlName="vehiculo_id">
+                <option [ngValue]="null">Selecciona un vehiculo</option>
+                <option *ngFor="let vehicle of vehicles" [ngValue]="vehicle.id">
+                  {{ vehicle.placa }} - {{ vehicle.marca }} {{ vehicle.modelo }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field field-wide">
+              <span>Descripcion del incidente</span>
+              <textarea
+                formControlName="descripcion"
+                rows="4"
+                placeholder="Ejemplo: choque leve, bateria descargada, llanta pinchada..."
+              ></textarea>
+            </label>
+
+            <div class="field-wide location-box">
+              <div>
+                <span class="location-title">Ubicacion seleccionada</span>
+                <p>{{ locationSummary }}</p>
+              </div>
+              <div class="location-actions">
+                <button class="btn-secondary" type="button" (click)="useCurrentLocation()">Usar actual</button>
+                <button class="btn-primary" type="button" (click)="openMapPicker()">Abrir mapa</button>
+              </div>
+            </div>
+
+            <div class="panel-actions">
+              <button
+                class="btn-primary"
+                type="submit"
+                [disabled]="reportForm.invalid || savingReport || !vehicles.length"
+              >
+                {{ savingReport ? 'Creando...' : 'Crear solicitud' }}
+              </button>
+            </div>
+          </form>
+
+          <p class="message success" *ngIf="reportMessage">{{ reportMessage }}</p>
+          <p class="message error" *ngIf="reportError">{{ reportError }}</p>
+        </section>
+
         <section class="panel panel-payments">
           <div class="panel-head">
             <div>
@@ -279,6 +336,38 @@ import { Vehicle, VehicleService } from '../core/vehicle.service';
 
           <div class="panel-actions">
             <button class="btn-secondary" type="button" (click)="closePaymentPlaceholder()">Cerrar</button>
+          </div>
+        </section>
+      </div>
+
+      <div class="modal-backdrop" *ngIf="mapPickerOpen" (click)="closeMapPicker()">
+        <section class="payment-modal map-modal" (click)="$event.stopPropagation()">
+          <p class="eyebrow">Mapa</p>
+          <h3>Fija el pin del incidente</h3>
+          <p>Mueve el mapa hasta dejar el pin central en el lugar exacto donde necesitas la asistencia.</p>
+
+          <div class="map-frame">
+            <div id="client-report-map"></div>
+            <div class="center-pin" aria-hidden="true">
+              <span class="pin-head">📍</span>
+              <span class="pin-shadow"></span>
+            </div>
+          </div>
+
+          <div class="modal-grid">
+            <div class="modal-item">
+              <span>Latitud</span>
+              <strong>{{ selectedLat?.toFixed(6) || 'Pendiente' }}</strong>
+            </div>
+            <div class="modal-item">
+              <span>Longitud</span>
+              <strong>{{ selectedLng?.toFixed(6) || 'Pendiente' }}</strong>
+            </div>
+          </div>
+
+          <div class="panel-actions">
+            <button class="btn-secondary" type="button" (click)="useCurrentLocation()">Usar actual</button>
+            <button class="btn-primary" type="button" (click)="confirmMapLocation()">Confirmar pin</button>
           </div>
         </section>
       </div>
@@ -534,7 +623,9 @@ import { Vehicle, VehicleService } from '../core/vehicle.service';
       color: #5e4a39;
     }
 
-    input {
+    input,
+    select,
+    textarea {
       width: 100%;
       box-sizing: border-box;
       border: 1px solid rgba(131, 97, 62, 0.18);
@@ -545,10 +636,51 @@ import { Vehicle, VehicleService } from '../core/vehicle.service';
       font: inherit;
     }
 
-    input:focus {
+    textarea {
+      resize: vertical;
+      min-height: 120px;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
       outline: none;
       border-color: rgba(191, 93, 36, 0.66);
       box-shadow: 0 0 0 4px rgba(191, 93, 36, 0.10);
+    }
+
+    .location-box {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      padding: 16px 18px;
+      border-radius: 22px;
+      border: 1px solid #efdfcd;
+      background: #fff8ef;
+    }
+
+    .location-title {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #8a6544;
+    }
+
+    .location-box p {
+      margin: 0;
+      color: #6d5c4d;
+      line-height: 1.6;
+    }
+
+    .location-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
 
     .panel-actions {
@@ -850,6 +982,51 @@ import { Vehicle, VehicleService } from '../core/vehicle.service';
       line-height: 1.45;
     }
 
+    .map-modal {
+      width: min(920px, 100%);
+    }
+
+    .map-frame {
+      position: relative;
+      height: 420px;
+      border-radius: 24px;
+      overflow: hidden;
+      border: 1px solid #efdfcd;
+      margin: 16px 0;
+    }
+
+    .map-frame #client-report-map {
+      width: 100%;
+      height: 100%;
+    }
+
+    .center-pin {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      transform: translateY(-16px);
+      z-index: 500;
+    }
+
+    .pin-head {
+      font-size: 34px;
+      line-height: 1;
+      text-shadow: 0 6px 12px rgba(0, 0, 0, 0.22);
+    }
+
+    .pin-shadow {
+      width: 18px;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.18);
+      filter: blur(1px);
+      margin-top: 6px;
+    }
+
     @media (max-width: 1080px) {
       .hero-grid,
       .dashboard-grid,
@@ -889,6 +1066,11 @@ import { Vehicle, VehicleService } from '../core/vehicle.service';
         grid-template-columns: 1fr;
       }
 
+      .location-box {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
       .panel-head,
       .report-top {
         flex-direction: column;
@@ -902,19 +1084,26 @@ import { Vehicle, VehicleService } from '../core/vehicle.service';
     }
   `]
 })
-export class ClientPortalComponent implements OnInit {
+export class ClientPortalComponent implements OnInit, OnDestroy {
   profileForm: FormGroup;
   vehicleForm: FormGroup;
+  reportForm: FormGroup;
   vehicles: Vehicle[] = [];
   reports: Solicitud[] = [];
   selectedReportForPayment: Solicitud | null = null;
+  selectedLat: number | null = null;
+  selectedLng: number | null = null;
+  mapPickerOpen = false;
+  private mapInstance: L.Map | null = null;
 
   savingProfile = false;
   savingVehicle = false;
+  savingReport = false;
   profileMessage = '';
   profileError = '';
   vehicleMessage = '';
   vehicleError = '';
+  reportMessage = '';
   reportError = '';
 
   constructor(
@@ -936,6 +1125,11 @@ export class ClientPortalComponent implements OnInit {
       modelo: ['', Validators.required],
       color: ['']
     });
+
+    this.reportForm = this.fb.group({
+      vehiculo_id: [null, Validators.required],
+      descripcion: ['', [Validators.required, Validators.minLength(12)]]
+    });
   }
 
   get displayName(): string {
@@ -944,6 +1138,13 @@ export class ClientPortalComponent implements OnInit {
 
   get payableReports(): Solicitud[] {
     return this.reports.filter((report) => this.canOpenGateway(report));
+  }
+
+  get locationSummary(): string {
+    if (this.selectedLat == null || this.selectedLng == null) {
+      return 'Ubicacion pendiente. Usa tu GPS o mueve el mapa hasta el punto exacto.';
+    }
+    return `${this.selectedLat.toFixed(6)}, ${this.selectedLng.toFixed(6)}`;
   }
 
   ngOnInit() {
@@ -961,6 +1162,10 @@ export class ClientPortalComponent implements OnInit {
     this.loadVehicles();
   }
 
+  ngOnDestroy() {
+    this.destroyMapPicker();
+  }
+
   loadProfile() {
     this.authService.getProfile().pipe(timeout(10000)).subscribe({
       next: (user) => {
@@ -976,6 +1181,10 @@ export class ClientPortalComponent implements OnInit {
     this.vehicleService.getVehicles().pipe(timeout(10000)).subscribe({
       next: (vehicles) => {
         this.vehicles = vehicles;
+        const currentVehicle = this.reportForm.value.vehiculo_id;
+        if (!currentVehicle && vehicles.length) {
+          this.reportForm.patchValue({ vehiculo_id: vehicles[0].id });
+        }
         this.loadReports();
       },
       error: () => {
@@ -1050,6 +1259,9 @@ export class ClientPortalComponent implements OnInit {
       next: (vehicle) => {
         this.vehicles = [vehicle, ...this.vehicles];
         this.vehicleForm.reset({ placa: '', marca: '', modelo: '', color: '' });
+        if (!this.reportForm.value.vehiculo_id) {
+          this.reportForm.patchValue({ vehiculo_id: vehicle.id });
+        }
         this.vehicleMessage = 'Vehiculo registrado correctamente.';
         this.loadReports();
       },
@@ -1057,6 +1269,130 @@ export class ClientPortalComponent implements OnInit {
         this.vehicleError = error?.error?.detail || 'No se pudo registrar el vehiculo.';
       }
     });
+  }
+
+  saveReport() {
+    if (this.reportForm.invalid) {
+      this.reportForm.markAllAsTouched();
+      return;
+    }
+    if (this.selectedLat == null || this.selectedLng == null) {
+      this.reportError = 'Selecciona una ubicacion valida usando el mapa o tu ubicacion actual.';
+      this.reportMessage = '';
+      return;
+    }
+
+    this.reportError = '';
+    this.reportMessage = '';
+    this.savingReport = true;
+
+    this.solicitudService.createSolicitud({
+      vehiculo_id: this.reportForm.value.vehiculo_id,
+      descripcion: this.reportForm.value.descripcion,
+      latitud: this.selectedLat,
+      longitud: this.selectedLng
+    }).pipe(
+      timeout(10000),
+      finalize(() => {
+        this.savingReport = false;
+      })
+    ).subscribe({
+      next: (report) => {
+        this.reports = [report, ...this.reports].sort((left, right) => right.id - left.id);
+        this.reportForm.reset({
+          vehiculo_id: this.vehicles[0]?.id ?? null,
+          descripcion: ''
+        });
+        this.selectedLat = null;
+        this.selectedLng = null;
+        this.reportMessage = 'Solicitud creada correctamente.';
+      },
+      error: (error) => {
+        this.reportError = error?.error?.detail || 'No se pudo crear la solicitud.';
+      }
+    });
+  }
+
+  useCurrentLocation() {
+    this.reportError = '';
+    if (!navigator.geolocation) {
+      this.reportError = 'Tu navegador no permite obtener la ubicacion actual.';
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        this.selectedLat = Number(position.coords.latitude.toFixed(6));
+        this.selectedLng = Number(position.coords.longitude.toFixed(6));
+        if (this.mapInstance) {
+          this.mapInstance.setView([this.selectedLat, this.selectedLng], 16);
+        }
+      },
+      () => {
+        this.reportError = 'No se pudo obtener la ubicacion actual.';
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  openMapPicker() {
+    this.mapPickerOpen = true;
+    setTimeout(() => this.initializeMapPicker(), 0);
+  }
+
+  closeMapPicker() {
+    this.destroyMapPicker();
+    this.mapPickerOpen = false;
+  }
+
+  confirmMapLocation() {
+    this.closeMapPicker();
+  }
+
+  private initializeMapPicker() {
+    const host = document.getElementById('client-report-map');
+    if (!host) {
+      return;
+    }
+
+    const lat = this.selectedLat ?? -16.5;
+    const lng = this.selectedLng ?? -68.15;
+    this.selectedLat = lat;
+    this.selectedLng = lng;
+
+    if (!this.mapInstance) {
+      this.mapInstance = L.map(host, {
+        zoomControl: true,
+        attributionControl: true
+      }).setView([lat, lng], 15);
+
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(this.mapInstance);
+
+      this.mapInstance.on('moveend', () => {
+        if (!this.mapInstance) {
+          return;
+        }
+        const center = this.mapInstance.getCenter();
+        this.selectedLat = Number(center.lat.toFixed(6));
+        this.selectedLng = Number(center.lng.toFixed(6));
+      });
+    } else {
+      this.mapInstance.setView([lat, lng], this.mapInstance.getZoom() || 15);
+    }
+
+    setTimeout(() => this.mapInstance?.invalidateSize(), 50);
+    setTimeout(() => this.mapInstance?.invalidateSize(), 250);
+  }
+
+  private destroyMapPicker() {
+    if (!this.mapInstance) {
+      return;
+    }
+    this.mapInstance.remove();
+    this.mapInstance = null;
   }
 
   canOpenGateway(report: Solicitud): boolean {

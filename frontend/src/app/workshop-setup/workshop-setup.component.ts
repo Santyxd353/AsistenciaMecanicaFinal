@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { finalize, timeout } from 'rxjs';
+import * as L from 'leaflet';
 
 import {
   CreateTallerPayload,
@@ -75,11 +76,64 @@ import { WorkshopSpecialtyService } from '../core/workshop-specialty.service';
               <small *ngIf="showError('direccion')">La dirección ayuda a contextualizar el taller.</small>
             </label>
 
-            <label [class.invalid]="showError('horario_atencion')">
+            <div class="full schedule-field" [class.invalid]="scheduleError">
               <span>Horario de atención</span>
-              <input type="text" formControlName="horario_atencion" placeholder="Lunes a Domingo 07:00 - 22:00" />
-              <small *ngIf="showError('horario_atencion')">Indica cuándo puede responder el taller.</small>
-            </label>
+              <p class="helper-note">Selecciona los días de atención general y agrega un horario especial si un día atiendes distinto.</p>
+              <div class="day-chip-list">
+                <button
+                  *ngFor="let day of workshopDays"
+                  type="button"
+                  class="day-chip"
+                  [class.selected]="generalDays.includes(day)"
+                  (click)="toggleGeneralDay(day)"
+                >
+                  {{ day }}
+                </button>
+              </div>
+
+              <div class="time-grid">
+                <label class="time-field">
+                  <span>Apertura general</span>
+                  <input type="time" [value]="generalOpen" (change)="generalOpen = readTime($event)" />
+                </label>
+                <label class="time-field">
+                  <span>Cierre general</span>
+                  <input type="time" [value]="generalClose" (change)="generalClose = readTime($event)" />
+                </label>
+              </div>
+
+              <label class="special-toggle">
+                <input type="checkbox" [checked]="specialEnabled" (change)="specialEnabled = $any($event.target).checked" />
+                <div>
+                  <strong>Agregar horario especial</strong>
+                  <small>Ejemplo: Domingo de 07:00 a 13:00.</small>
+                </div>
+              </label>
+
+              <div class="time-grid" *ngIf="specialEnabled">
+                <label class="time-field">
+                  <span>Día especial</span>
+                  <select [value]="specialDay" (change)="specialDay = $any($event.target).value">
+                    <option *ngFor="let day of workshopDays" [value]="day">{{ day }}</option>
+                  </select>
+                </label>
+                <div></div>
+                <label class="time-field">
+                  <span>Apertura especial</span>
+                  <input type="time" [value]="specialOpen" (change)="specialOpen = readTime($event)" />
+                </label>
+                <label class="time-field">
+                  <span>Cierre especial</span>
+                  <input type="time" [value]="specialClose" (change)="specialClose = readTime($event)" />
+                </label>
+              </div>
+
+              <div class="schedule-summary-box">
+                <strong>Resumen</strong>
+                <p>{{ scheduleSummary }}</p>
+              </div>
+              <small *ngIf="scheduleError">{{ scheduleError }}</small>
+            </div>
 
             <label [class.invalid]="showError('email_contacto')">
               <span>Email de contacto</span>
@@ -167,16 +221,15 @@ import { WorkshopSpecialtyService } from '../core/workshop-specialty.service';
             <p>Estas coordenadas son opcionales, pero dejan preparado el taller para futuras reglas de asignación.</p>
           </div>
 
-          <div class="field-grid">
-            <label>
-              <span>Latitud</span>
-              <input type="number" formControlName="latitud" step="any" placeholder="-16.5" />
-            </label>
-
-            <label>
-              <span>Longitud</span>
-              <input type="number" formControlName="longitud" step="any" placeholder="-68.1" />
-            </label>
+          <div class="location-box">
+            <div>
+              <strong>Punto seleccionado</strong>
+              <p>{{ locationSummary }}</p>
+            </div>
+            <div class="location-actions">
+              <button type="button" class="btn-secondary" (click)="useCurrentLocation()">Usar ubicación actual</button>
+              <button type="button" class="btn-primary" (click)="openMapPicker()">Abrir mapa</button>
+            </div>
           </div>
 
           <div class="divider" *ngIf="editMode"></div>
@@ -255,7 +308,7 @@ import { WorkshopSpecialtyService } from '../core/workshop-specialty.service';
               </div>
               <div>
                 <span>Horario</span>
-                <strong>{{ form.value.horario_atencion || 'Pendiente' }}</strong>
+                <strong>{{ scheduleSummary || 'Pendiente' }}</strong>
               </div>
               <div>
                 <span>Dirección</span>
@@ -277,13 +330,42 @@ import { WorkshopSpecialtyService } from '../core/workshop-specialty.service';
             <ul>
               <li [class.done]="!!form.value.nombre_comercial">Nombre comercial definido</li>
               <li [class.done]="!!form.value.direccion">Dirección registrada</li>
-              <li [class.done]="!!form.value.horario_atencion">Horario de atención cargado</li>
+              <li [class.done]="!scheduleError && !!scheduleSummary">Horario de atención cargado</li>
               <li [class.done]="specialtyTags.length > 0">Especialidades identificadas</li>
               <li [class.done]="!!form.value.descripcion">Descripción comercial añadida</li>
             </ul>
           </div>
         </aside>
       </section>
+
+      <div class="map-modal-backdrop" *ngIf="mapPickerOpen" (click)="closeMapPicker()">
+        <section class="map-modal" (click)="$event.stopPropagation()">
+          <div class="map-modal-head">
+            <div>
+              <p class="section-kicker">Mapa</p>
+              <h3>Fija el pin del taller</h3>
+              <p>Mueve el mapa hasta dejar el pin central sobre la ubicación exacta del taller y luego confirma.</p>
+            </div>
+            <button type="button" class="btn-link" (click)="closeMapPicker()">Cerrar</button>
+          </div>
+
+          <div class="map-frame">
+            <div id="workshop-location-map"></div>
+            <div class="center-pin" aria-hidden="true">
+              <span class="pin-head">📍</span>
+              <span class="pin-shadow"></span>
+            </div>
+          </div>
+
+          <div class="map-modal-footer">
+            <span>Lat {{ selectedLat?.toFixed(6) ?? 'Pendiente' }} | Lng {{ selectedLng?.toFixed(6) ?? 'Pendiente' }}</span>
+            <div class="location-actions">
+              <button type="button" class="btn-secondary" (click)="useCurrentLocation()">Usar actual</button>
+              <button type="button" class="btn-primary" (click)="confirmMapLocation()">Confirmar pin</button>
+            </div>
+          </div>
+        </section>
+      </div>
 
       <ng-template #loadingTpl>
         <section class="panel loading-panel">
@@ -584,6 +666,191 @@ import { WorkshopSpecialtyService } from '../core/workshop-specialty.service';
       margin-top: 4px;
     }
 
+    .schedule-field {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #44362a;
+    }
+
+    .day-chip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .day-chip {
+      border: 1px solid #d9c9b3;
+      background: #fffaf4;
+      color: #4f4032;
+      padding: 10px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+    }
+
+    .day-chip.selected {
+      background: #1f1712;
+      color: #fff;
+      border-color: #1f1712;
+    }
+
+    .time-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .time-field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .special-toggle {
+      display: flex;
+      flex-direction: row;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: #fffaf5;
+      border: 1px solid #ecdcc8;
+      font-weight: 600;
+    }
+
+    .special-toggle input {
+      width: auto;
+      margin-top: 4px;
+    }
+
+    .special-toggle div {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .schedule-summary-box,
+    .location-box {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      padding: 16px;
+      border-radius: 18px;
+      background: #fff8ef;
+      border: 1px solid #efe2d3;
+    }
+
+    .schedule-summary-box p,
+    .location-box p {
+      margin: 6px 0 0;
+      color: #6d5c4d;
+      line-height: 1.5;
+      font-weight: 500;
+    }
+
+    .location-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .map-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(20, 16, 13, 0.55);
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      z-index: 60;
+    }
+
+    .map-modal {
+      width: min(980px, 100%);
+      background: #fff;
+      border-radius: 28px;
+      padding: 24px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+    }
+
+    .map-modal-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .map-modal-head h3 {
+      margin: 4px 0 8px;
+      font-size: 30px;
+    }
+
+    .map-modal-head p {
+      margin: 0;
+      color: #6d5c4d;
+      line-height: 1.5;
+    }
+
+    .btn-link {
+      border: none;
+      background: transparent;
+      color: #9a6133;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .map-frame {
+      position: relative;
+      border-radius: 22px;
+      overflow: hidden;
+      border: 1px solid #eadcca;
+      margin-bottom: 16px;
+    }
+
+    #workshop-location-map {
+      width: 100%;
+      height: 420px;
+      display: block;
+    }
+
+    .center-pin {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      pointer-events: none;
+    }
+
+    .center-pin .pin-head {
+      transform: translateY(-16px);
+      font-size: 38px;
+      filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.2));
+    }
+
+    .center-pin .pin-shadow {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      background: #221912;
+      display: block;
+      transform: translateY(-18px);
+    }
+
+    .map-modal-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+      color: #6d5c4d;
+      font-weight: 700;
+    }
+
     .divider {
       height: 1px;
       background: linear-gradient(90deg, #efe2d3 0%, rgba(239, 226, 211, 0.1) 100%);
@@ -840,6 +1107,18 @@ import { WorkshopSpecialtyService } from '../core/workshop-specialty.service';
         align-items: stretch;
       }
 
+      .time-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .schedule-summary-box,
+      .location-box,
+      .map-modal-head,
+      .map-modal-footer {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
       .hero-copy,
       .hero-aside,
       .panel,
@@ -852,6 +1131,7 @@ import { WorkshopSpecialtyService } from '../core/workshop-specialty.service';
   `]
 })
 export class WorkshopSetupComponent implements OnInit {
+  readonly workshopDays = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo'];
   form: FormGroup;
   loading = true;
   loadingSlow = false;
@@ -868,6 +1148,18 @@ export class WorkshopSetupComponent implements OnInit {
   showNewSpecialtyForm = false;
   availableSpecialties: EspecialidadTaller[] = [];
   selectedSpecialties: EspecialidadTaller[] = [];
+  generalDays = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+  generalOpen = '08:00';
+  generalClose = '18:00';
+  specialEnabled = false;
+  specialDay = 'Domingo';
+  specialOpen = '07:00';
+  specialClose = '13:00';
+  selectedLat: number | null = null;
+  selectedLng: number | null = null;
+  scheduleError = '';
+  mapPickerOpen = false;
+  private mapInstance: L.Map | null = null;
   private slowLoadingTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly createRoutePath = 'crear-taller';
   private readonly editRoutePath = 'taller/perfil'; 
@@ -917,7 +1209,7 @@ export class WorkshopSetupComponent implements OnInit {
       !!this.form.value.nombre_comercial,
       !!this.form.value.direccion,
       !!this.form.value.telefono,
-      !!this.form.value.horario_atencion,
+      !this.scheduleError && !!this.buildScheduleValue(),
       this.specialtyTags.length > 0,
       !!this.form.value.descripcion
     ];
@@ -951,6 +1243,27 @@ export class WorkshopSetupComponent implements OnInit {
 
   get specialtyTags(): EspecialidadTaller[] {
     return this.selectedSpecialties.slice(0, 6);
+  }
+
+  get scheduleSummary(): string {
+    const scheduleValue = this.buildScheduleValue();
+    if (!scheduleValue) {
+      return 'Selecciona dias y horario general.';
+    }
+
+    const days = this.generalDays.join(', ');
+    const parts = [`Dias generales: ${days}`, `Horario general: ${this.generalOpen}-${this.generalClose}`];
+    if (this.specialEnabled) {
+      parts.push(`Horario especial: ${this.specialDay} ${this.specialOpen}-${this.specialClose}`);
+    }
+    return parts.join(' | ');
+  }
+
+  get locationSummary(): string {
+    if (this.selectedLat == null || this.selectedLng == null) {
+      return 'Ubicación pendiente';
+    }
+    return `${this.selectedLat.toFixed(6)}, ${this.selectedLng.toFixed(6)}`;
   }
 
   handleSpecialtySelection(value: string): void {
@@ -1043,6 +1356,13 @@ export class WorkshopSetupComponent implements OnInit {
   save(): void {
     this.syncSpecialtiesControl();
 
+    if (!this.validateSchedule()) {
+      this.form.markAllAsTouched();
+      return;
+    }
+
+    this.syncScheduleAndLocation();
+
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       return;
@@ -1087,7 +1407,207 @@ export class WorkshopSetupComponent implements OnInit {
     const control = this.form.get(controlName);
     return !!control && control.invalid && (control.dirty || control.touched);
   }
+
+  toggleGeneralDay(day: string): void {
+    this.scheduleError = '';
+    if (this.generalDays.includes(day)) {
+      this.generalDays = this.generalDays.filter((item) => item !== day);
+      return;
+    }
+    this.generalDays = [...this.generalDays, day].sort(
+      (left, right) => this.workshopDays.indexOf(left) - this.workshopDays.indexOf(right)
+    );
+  }
+
+  readTime(event: Event): string {
+    return ((event.target as HTMLInputElement).value || '').trim();
+  }
+
+  openMapPicker(): void {
+    this.mapPickerOpen = true;
+    setTimeout(() => this.initializeMapPicker(), 0);
+  }
+
+  closeMapPicker(): void {
+    this.destroyMapPicker();
+    this.mapPickerOpen = false;
+  }
+
+  confirmMapLocation(): void {
+    this.form.patchValue({
+      latitud: this.selectedLat,
+      longitud: this.selectedLng
+    });
+    this.closeMapPicker();
+  }
+
+  useCurrentLocationOld(): void {
+    if (!navigator.geolocation) {
+      this.errorMessage = 'Tu navegador no permite obtener la ubicación actual.';
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition({
+      next: undefined as never
+    } as never);
+  }
   
+  useCurrentLocation(): void {
+    if (!navigator.geolocation) {
+      this.errorMessage = 'Tu navegador no permite obtener la ubicacion actual.';
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        this.selectedLat = Number(position.coords.latitude.toFixed(6));
+        this.selectedLng = Number(position.coords.longitude.toFixed(6));
+        this.form.patchValue({
+          latitud: this.selectedLat,
+          longitud: this.selectedLng
+        });
+        if (this.mapInstance) {
+          this.mapInstance.setView([this.selectedLat, this.selectedLng], 16);
+        }
+        this.cdr.detectChanges();
+      },
+      () => {
+        this.errorMessage = 'No se pudo obtener la ubicacion actual del taller.';
+        this.cdr.detectChanges();
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  private validateSchedule(): boolean {
+    if (!this.generalDays.length) {
+      this.scheduleError = 'Selecciona al menos un dia de atencion.';
+      return false;
+    }
+    if (!this.generalOpen || !this.generalClose) {
+      this.scheduleError = 'Debes completar el horario general de apertura y cierre.';
+      return false;
+    }
+    if (this.generalOpen >= this.generalClose) {
+      this.scheduleError = 'La apertura general debe ser anterior al cierre.';
+      return false;
+    }
+    if (this.specialEnabled) {
+      if (!this.specialDay || !this.specialOpen || !this.specialClose) {
+        this.scheduleError = 'Completa el horario especial antes de guardar.';
+        return false;
+      }
+      if (this.specialOpen >= this.specialClose) {
+        this.scheduleError = 'La apertura especial debe ser anterior al cierre especial.';
+        return false;
+      }
+    }
+    this.scheduleError = '';
+    return true;
+  }
+
+  private syncScheduleAndLocation(): void {
+    this.form.patchValue({
+      horario_atencion: this.buildScheduleValue(),
+      latitud: this.selectedLat,
+      longitud: this.selectedLng
+    });
+  }
+
+  private buildScheduleValue(): string {
+    if (!this.generalDays.length || !this.generalOpen || !this.generalClose) {
+      return '';
+    }
+    const generalLabel = `${this.generalDays.join(', ')} ${this.generalOpen}-${this.generalClose}`;
+    if (!this.specialEnabled || !this.specialDay || !this.specialOpen || !this.specialClose) {
+      return generalLabel;
+    }
+    return `${generalLabel} | ${this.specialDay} ${this.specialOpen}-${this.specialClose}`;
+  }
+
+  private initializeMapPicker(): void {
+    const host = document.getElementById('workshop-location-map');
+    if (!host) {
+      return;
+    }
+
+    const lat = this.selectedLat ?? this.normalizeNumber(this.form.value.latitud) ?? -16.5;
+    const lng = this.selectedLng ?? this.normalizeNumber(this.form.value.longitud) ?? -68.15;
+    this.selectedLat = lat;
+    this.selectedLng = lng;
+
+    if (!this.mapInstance) {
+      this.mapInstance = L.map(host, {
+        zoomControl: true,
+        attributionControl: true
+      }).setView([lat, lng], 15);
+
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(this.mapInstance);
+
+      this.mapInstance.on('moveend', () => {
+        if (!this.mapInstance) {
+          return;
+        }
+        const center = this.mapInstance.getCenter();
+        this.selectedLat = Number(center.lat.toFixed(6));
+        this.selectedLng = Number(center.lng.toFixed(6));
+        this.cdr.detectChanges();
+      });
+    } else {
+      this.mapInstance.setView([lat, lng], this.mapInstance.getZoom() || 15);
+    }
+
+    setTimeout(() => this.mapInstance?.invalidateSize(), 50);
+    setTimeout(() => this.mapInstance?.invalidateSize(), 250);
+  }
+
+  private destroyMapPicker(): void {
+    if (!this.mapInstance) {
+      return;
+    }
+    this.mapInstance.remove();
+    this.mapInstance = null;
+  }
+
+  private applySchedule(schedule: string | undefined | null): void {
+    if (!schedule || !schedule.trim()) {
+      return;
+    }
+
+    const trimmed = schedule.trim();
+    const [generalPart, specialPart] = trimmed.split('|').map((part) => part.trim());
+    const generalMatch = generalPart.match(/^(.*)\s(\d{2}:\d{2})-(\d{2}:\d{2})$/);
+    if (generalMatch) {
+      const dayChunk = generalMatch[1].trim();
+      const parsedDays = dayChunk
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => this.workshopDays.includes(item));
+      if (parsedDays.length) {
+        this.generalDays = parsedDays;
+      } else if (/lunes a domingo/i.test(dayChunk)) {
+        this.generalDays = [...this.workshopDays];
+      }
+      this.generalOpen = generalMatch[2];
+      this.generalClose = generalMatch[3];
+    }
+
+    if (specialPart) {
+      const specialMatch = specialPart.match(/^([A-Za-zÁÉÍÓÚáéíóú]+)\s(\d{2}:\d{2})-(\d{2}:\d{2})$/);
+      if (specialMatch) {
+        this.specialEnabled = true;
+        this.specialDay = specialMatch[1];
+        this.specialOpen = specialMatch[2];
+        this.specialClose = specialMatch[3];
+      }
+    } else {
+      this.specialEnabled = false;
+    }
+  }
+
   private loadWorkshop(): void {
     this.clearSlowLoadingTimer();
     this.loading = true;
@@ -1129,6 +1649,9 @@ export class WorkshopSetupComponent implements OnInit {
           notificaciones_pagos: taller.notificaciones_pagos,
           reportes_semanales: taller.reportes_semanales
         });
+        this.selectedLat = taller.latitud ?? null;
+        this.selectedLng = taller.longitud ?? null;
+        this.applySchedule(taller.horario_atencion);
         
         this.initialLoadResolved = true;
         this.loading = false;
@@ -1173,6 +1696,15 @@ export class WorkshopSetupComponent implements OnInit {
     this.selectedSpecialtyId = '';
     this.showNewSpecialtyForm = false;
     this.selectedSpecialties = [];
+    this.generalDays = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+    this.generalOpen = '08:00';
+    this.generalClose = '18:00';
+    this.specialEnabled = false;
+    this.specialDay = 'Domingo';
+    this.specialOpen = '07:00';
+    this.specialClose = '13:00';
+    this.selectedLat = null;
+    this.selectedLng = null;
     this.loadingMessage = 'Listo para crear tu taller.';
     this.clearSlowLoadingTimer();
     this.form.reset({

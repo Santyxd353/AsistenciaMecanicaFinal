@@ -15,7 +15,8 @@ class LocalRepository {
   static const _vehiclesKey = 'vehicles';
   static const _requestMetasKey = 'request_metas';
   static const _notificationsKey = 'notifications';
-  static const defaultBaseUrl = 'http://localhost:8000';
+  static const defaultBaseUrl =
+      'https://backend-958497253028.europe-west1.run.app';
 
   final SharedPreferences _prefs;
 
@@ -44,8 +45,15 @@ class LocalRepository {
             .map((item) => AppNotification.fromJson(item as Map<String, dynamic>))
             .toList();
 
+    final storedBaseUrl = _prefs.getString(_baseUrlKey);
+    final normalizedBaseUrl = normalizeBaseUrl(storedBaseUrl ?? defaultBaseUrl);
+
+    if (storedBaseUrl != null && normalizedBaseUrl != storedBaseUrl) {
+      _prefs.setString(_baseUrlKey, normalizedBaseUrl);
+    }
+
     return AppSnapshot(
-      baseUrl: normalizeBaseUrl(_prefs.getString(_baseUrlKey) ?? defaultBaseUrl),
+      baseUrl: normalizedBaseUrl,
       accessToken: _prefs.getString(_tokenKey),
       currentUser: user,
       vehicles: vehicles,
@@ -506,7 +514,16 @@ String normalizeBaseUrl(String value) {
   if (trimmed.isEmpty) {
     return LocalRepository.defaultBaseUrl;
   }
-  return trimmed.endsWith('/')
+
+  final normalized = trimmed.endsWith('/')
       ? trimmed.substring(0, trimmed.length - 1)
       : trimmed;
+
+  if (normalized == 'http://localhost:8000' ||
+      normalized == 'http://127.0.0.1:8000' ||
+      normalized == 'http://10.0.2.2:8000') {
+    return LocalRepository.defaultBaseUrl;
+  }
+
+  return normalized;
 }

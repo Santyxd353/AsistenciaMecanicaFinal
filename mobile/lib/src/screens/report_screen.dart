@@ -2,10 +2,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../app_controller.dart';
 import '../models.dart';
+import 'location_picker_screen.dart';
 
 class ReportScreen extends StatefulWidget {
   const ReportScreen({super.key});
@@ -26,20 +28,18 @@ class _ReportScreenState extends State<ReportScreen> {
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
   final _notesController = TextEditingController();
-  final _latController = TextEditingController();
-  final _lngController = TextEditingController();
 
   String _selectedIncident = _incidentTypes.first;
   String? _selectedVehicleId;
   List<String> _imagePaths = const [];
   String? _audioPath;
+  double? _selectedLat;
+  double? _selectedLng;
 
   @override
   void dispose() {
     _descriptionController.dispose();
     _notesController.dispose();
-    _latController.dispose();
-    _lngController.dispose();
     super.dispose();
   }
 
@@ -210,38 +210,43 @@ class _ReportScreenState extends State<ReportScreen> {
                                 ],
                               ),
                               const SizedBox(height: 14),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: _latController,
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                            decimal: true,
-                                            signed: true,
-                                          ),
-                                      decoration: const InputDecoration(
-                                        labelText: 'Latitud',
-                                      ),
-                                      validator: _validateCoordinate,
-                                    ),
+                              FilledButton.tonalIcon(
+                                onPressed: _openMapPicker,
+                                icon: const Icon(Icons.map_outlined),
+                                label: const Text('Elegir en mapa'),
+                              ),
+                              const SizedBox(height: 14),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFFAF5),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: const Color(0xFFF0E5D7),
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: _lngController,
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                            decimal: true,
-                                            signed: true,
-                                          ),
-                                      decoration: const InputDecoration(
-                                        labelText: 'Longitud',
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Punto seleccionado',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
                                       ),
-                                      validator: _validateCoordinate,
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      _selectedLat == null || _selectedLng == null
+                                          ? 'Todavia no elegiste una ubicacion.'
+                                          : '${_selectedLat!.toStringAsFixed(6)}, ${_selectedLng!.toStringAsFixed(6)}',
+                                      style: const TextStyle(
+                                        color: Color(0xFF6F655B),
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
@@ -392,9 +397,29 @@ class _ReportScreenState extends State<ReportScreen> {
     }
 
     final position = await Geolocator.getCurrentPosition();
-    _latController.text = position.latitude.toStringAsFixed(6);
-    _lngController.text = position.longitude.toStringAsFixed(6);
-    setState(() {});
+    setState(() {
+      _selectedLat = position.latitude;
+      _selectedLng = position.longitude;
+    });
+  }
+
+  Future<void> _openMapPicker() async {
+    final picked = await Navigator.of(context).push<LatLng>(
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(
+          initialLocation: _selectedLat != null && _selectedLng != null
+              ? LatLng(_selectedLat!, _selectedLng!)
+              : null,
+        ),
+      ),
+    );
+    if (picked == null) {
+      return;
+    }
+    setState(() {
+      _selectedLat = picked.latitude;
+      _selectedLng = picked.longitude;
+    });
   }
 
   Future<void> _pickImagesFromGallery() async {
@@ -448,11 +473,13 @@ class _ReportScreenState extends State<ReportScreen> {
       return;
     }
 
-    final latitud = double.tryParse(_latController.text.trim());
-    final longitud = double.tryParse(_lngController.text.trim());
+    final latitud = _selectedLat;
+    final longitud = _selectedLng;
     if (latitud == null || longitud == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ingresa una ubicacion valida.')),
+        const SnackBar(
+          content: Text('Selecciona una ubicacion valida usando GPS o el mapa.'),
+        ),
       );
       return;
     }
@@ -475,12 +502,12 @@ class _ReportScreenState extends State<ReportScreen> {
 
       _descriptionController.clear();
       _notesController.clear();
-      _latController.clear();
-      _lngController.clear();
       setState(() {
         _selectedIncident = _incidentTypes.first;
         _imagePaths = const [];
         _audioPath = null;
+        _selectedLat = null;
+        _selectedLng = null;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -500,12 +527,6 @@ class _ReportScreenState extends State<ReportScreen> {
     }
   }
 
-  String? _validateCoordinate(String? value) {
-    if (value == null || double.tryParse(value.trim()) == null) {
-      return 'Valor invalido';
-    }
-    return null;
-  }
 }
 
 class _AttachmentList extends StatelessWidget {

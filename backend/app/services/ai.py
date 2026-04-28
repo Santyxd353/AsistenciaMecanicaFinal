@@ -124,12 +124,34 @@ def analyze_vehicle_photos(*, image_paths: list[str], file_names: Optional[list[
             source="fallback",
         )
     if not GEMINI_API_KEY:
-        return _analyze_vehicle_with_best_fallback(image_paths=image_paths, file_names=file_names or [])
+        try:
+            return _analyze_vehicle_with_best_fallback(image_paths=image_paths, file_names=file_names or [])
+        except Exception:
+            return VehiclePhotoAnalysis(
+                placa="",
+                marca="",
+                modelo="",
+                anio=None,
+                color="",
+                resumen="No se pudo completar el analisis local del vehiculo. Completa los datos manualmente.",
+                source="safe-fallback",
+            )
 
     try:
         return _analyze_vehicle_with_gemini(image_paths=image_paths, file_names=file_names or [])
     except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
-        return _analyze_vehicle_with_best_fallback(image_paths=image_paths, file_names=file_names or [])
+        try:
+            return _analyze_vehicle_with_best_fallback(image_paths=image_paths, file_names=file_names or [])
+        except Exception:
+            return VehiclePhotoAnalysis(
+                placa="",
+                marca="",
+                modelo="",
+                anio=None,
+                color="",
+                resumen="La IA no pudo generar una sugerencia automatica. Completa el formulario manualmente.",
+                source="safe-fallback",
+            )
 
 
 def warm_vehicle_ai() -> None:
@@ -388,7 +410,10 @@ def _analyze_vehicle_locally(*, image_paths: list[str], file_names: list[str]) -
     hinted_year = _find_year(hint_text.upper())
 
     for index, path in enumerate(image_paths):
-        image = Image.open(path).convert("RGB")
+        try:
+            image = Image.open(path).convert("RGB")
+        except Exception:
+            continue
         if not detected_color:
             detected_color = _detect_color(image)
         if not (hinted_brand or hinted_model or hinted_year):
@@ -519,7 +544,10 @@ def _extract_candidate_text(image: Image.Image) -> list[str]:
     texts: list[str] = []
     for variant in variants:
         for config in ("--psm 6", "--psm 11"):
-            text = pytesseract.image_to_string(variant, config=config)
+            try:
+                text = pytesseract.image_to_string(variant, config=config)
+            except Exception:
+                continue
             cleaned = " ".join(text.split())
             if cleaned:
                 texts.append(cleaned)
@@ -675,7 +703,10 @@ def _extract_plate_candidate_text(image: Image.Image) -> list[str]:
         for threshold in (145,):
             binary = grayscale.point(lambda pixel, t=threshold: 255 if pixel > t else 0)
             for config in ("--psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-",):
-                text = pytesseract.image_to_string(binary, config=config)
+                try:
+                    text = pytesseract.image_to_string(binary, config=config)
+                except Exception:
+                    continue
                 cleaned = " ".join(text.split())
                 if cleaned:
                     texts.append(cleaned)
