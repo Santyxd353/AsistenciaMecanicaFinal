@@ -1,0 +1,345 @@
+<section class="taller-solicitudes-shell">
+  <div class="taller-solicitudes-hero">
+    <div class="taller-solicitudes-hero-acciones">
+      <a routerLink="/taller" class="taller-solicitudes-volver">Volver al panel del taller</a>
+      <button type="button" class="taller-solicitudes-accion-principal" (click)="abrirNuevaSolicitud()">
+        Nueva solicitud de prueba
+      </button>
+    </div>
+    <p class="taller-solicitudes-kicker">Operacion del taller</p>
+    <h1>Solicitudes del taller</h1>
+    <p>
+      Gestiona las solicitudes disponibles, las que ya fueron tomadas por tu taller y prepara la asignacion de tecnicos.
+    </p>
+  </div>
+
+  <section *ngIf="cargando" class="taller-solicitudes-bloque taller-solicitudes-estado">
+    Cargando solicitudes del taller...
+  </section>
+
+  <section *ngIf="error" class="taller-solicitudes-bloque taller-solicitudes-error">
+    {{ error }}
+  </section>
+
+  <div *ngIf="!cargando && !error" class="taller-solicitudes-operacion">
+    <section class="taller-solicitudes-bloque">
+      <div class="taller-solicitudes-tabs">
+        <button
+          type="button"
+          class="taller-solicitudes-tab"
+          [class.activa]="vistaActiva === 'pendientes'"
+          (click)="cambiarVista('pendientes')"
+        >
+          Pendientes
+          <span>{{ pendientes.length }}</span>
+        </button>
+        <button
+          type="button"
+          class="taller-solicitudes-tab"
+          [class.activa]="vistaActiva === 'mis-solicitudes'"
+          (click)="cambiarVista('mis-solicitudes')"
+        >
+          Mis solicitudes
+          <span>{{ misSolicitudes.length }}</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="taller-solicitudes-bloque taller-solicitudes-panel">
+      <div class="taller-solicitudes-bloque-header" *ngIf="vistaActiva === 'pendientes'">
+        <div>
+          <p class="taller-solicitudes-kicker">Pendientes</p>
+          <h2>Solicitudes disponibles</h2>
+          <p class="taller-solicitudes-subtexto">
+            Solicitudes que aun no fueron tomadas por ningun taller.
+          </p>
+        </div>
+        <span class="taller-solicitudes-total">{{ pendientes.length }}</span>
+      </div>
+
+      <div class="taller-solicitudes-bloque-header" *ngIf="vistaActiva === 'mis-solicitudes'">
+        <div>
+          <p class="taller-solicitudes-kicker">Seguimiento</p>
+          <h2>Mis solicitudes</h2>
+          <p class="taller-solicitudes-subtexto">
+            Solicitudes que ya fueron aceptadas por tu taller.
+          </p>
+        </div>
+        <span class="taller-solicitudes-total">{{ misSolicitudes.length }}</span>
+      </div>
+
+      <div *ngIf="vistaActiva === 'pendientes' && pendientes.length === 0" class="taller-solicitudes-vacio">
+        No hay solicitudes pendientes en este momento.
+      </div>
+
+      <article
+        class="taller-solicitudes-item"
+        *ngFor="let solicitud of pendientes"
+        [hidden]="vistaActiva !== 'pendientes'"
+        (click)="abrirDetalle(solicitud)"
+      >
+        <div class="taller-solicitudes-item-header">
+          <strong>Solicitud #{{ solicitud.id }}</strong>
+          <span class="taller-solicitudes-estado-pill {{ solicitud.estado }}">
+            {{ etiquetaEstado(solicitud.estado) }}
+          </span>
+        </div>
+        <p>{{ solicitud.descripcion }}</p>
+      </article>
+
+      <div *ngIf="vistaActiva === 'mis-solicitudes' && misSolicitudes.length === 0" class="taller-solicitudes-vacio">
+        Tu taller todavía no tiene solicitudes tomadas.
+      </div>
+
+      <article
+        class="taller-solicitudes-item"
+        *ngFor="let solicitud of misSolicitudes"
+        [hidden]="vistaActiva !== 'mis-solicitudes'"
+        (click)="abrirDetalle(solicitud)"
+      >
+        <div class="taller-solicitudes-item-header">
+          <strong>Solicitud #{{ solicitud.id }}</strong>
+          <span class="taller-solicitudes-estado-pill {{ solicitud.estado }}">
+            {{ etiquetaEstado(solicitud.estado) }}
+          </span>
+        </div>
+        <p>{{ solicitud.descripcion }}</p>
+        <div class="taller-solicitudes-seguimiento">
+          <div class="taller-solicitudes-seguimiento-header">
+            <strong>{{ etapaSeguimiento(solicitud) }}</strong>
+            <span>{{ progresoSeguimiento(solicitud) }}%</span>
+          </div>
+          <div class="taller-solicitudes-progreso">
+            <span [style.width.%]="progresoSeguimiento(solicitud)"></span>
+          </div>
+          <p class="taller-solicitudes-seguimiento-texto">
+            {{ resumenSeguimiento(solicitud) }}
+          </p>
+        </div>
+      </article>
+    </section>
+  </div>
+
+  <div
+    *ngIf="solicitudSeleccionada"
+    class="taller-solicitudes-modal-overlay"
+    (click)="onOverlayClick($event)"
+  >
+    <div class="taller-solicitudes-modal" role="dialog" aria-modal="true">
+      <div class="taller-solicitudes-modal-header">
+        <div>
+          <p class="taller-solicitudes-kicker">Detalle</p>
+          <h2>Solicitud #{{ solicitudSeleccionada.id }}</h2>
+        </div>
+        <button type="button" class="taller-solicitudes-modal-close" (click)="cerrarDetalle()">✕</button>
+      </div>
+
+      <div class="taller-solicitudes-modal-body">
+        <div class="taller-solicitudes-detalle-grid">
+          <div class="taller-solicitudes-detalle-card">
+            <span class="taller-solicitudes-detalle-label">Estado</span>
+            <strong>{{ etiquetaEstado(solicitudSeleccionada.estado) }}</strong>
+          </div>
+
+          <div class="taller-solicitudes-detalle-card">
+            <span class="taller-solicitudes-detalle-label">Fecha</span>
+            <strong>{{ solicitudSeleccionada.fecha_creacion | date:'dd/MM/yyyy HH:mm' }}</strong>
+          </div>
+
+          <div class="taller-solicitudes-detalle-card">
+            <span class="taller-solicitudes-detalle-label">Taller</span>
+            <strong>{{ solicitudSeleccionada.taller_id ? ('Asignada al taller #' + solicitudSeleccionada.taller_id) : 'Aun sin taller' }}</strong>
+          </div>
+
+          <div class="taller-solicitudes-detalle-card">
+            <span class="taller-solicitudes-detalle-label">Tecnico</span>
+            <strong>{{ solicitudSeleccionada.tecnico_id ? ('Tecnico #' + solicitudSeleccionada.tecnico_id) : 'Aun sin tecnico' }}</strong>
+          </div>
+        </div>
+
+        <div class="taller-solicitudes-detalle-seccion">
+          <span class="taller-solicitudes-detalle-label">Descripcion</span>
+          <p>{{ solicitudSeleccionada.descripcion }}</p>
+        </div>
+
+        <div class="taller-solicitudes-detalle-grid">
+          <div class="taller-solicitudes-detalle-card">
+            <span class="taller-solicitudes-detalle-label">Ubicacion</span>
+            <strong *ngIf="tieneCoordenadasValidas(solicitudSeleccionada)">
+              {{ solicitudSeleccionada.latitud | number:'1.4-5' }}, {{ solicitudSeleccionada.longitud | number:'1.4-5' }}
+            </strong>
+            <strong *ngIf="!tieneCoordenadasValidas(solicitudSeleccionada)">
+              Coordenadas no disponibles
+            </strong>
+          </div>
+
+          <div class="taller-solicitudes-detalle-card">
+            <span class="taller-solicitudes-detalle-label">Vehiculo</span>
+            <strong>{{ solicitudSeleccionada.vehiculo_id ? ('Vehiculo #' + solicitudSeleccionada.vehiculo_id) : 'No asociado' }}</strong>
+          </div>
+        </div>
+
+        <div class="taller-solicitudes-detalle-seccion">
+          <span class="taller-solicitudes-detalle-label">Mapa del incidente</span>
+          <app-mapa-geolocalizacion
+            [puntos]="obtenerPuntosMapa(solicitudSeleccionada)"
+            [alto]="'300px'"
+          />
+          <div class="taller-solicitudes-mapa-acciones" *ngIf="tieneCoordenadasValidas(solicitudSeleccionada)">
+            <a
+              class="taller-solicitudes-boton-mapa"
+              [href]="obtenerUrlGoogleMaps(solicitudSeleccionada)"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Abrir en Google Maps
+            </a>
+          </div>
+        </div>
+
+        <div class="taller-solicitudes-detalle-seccion taller-solicitudes-detalle-ia">
+          <span class="taller-solicitudes-detalle-label">Analisis IA</span>
+          <p><strong>Clasificacion:</strong> {{ solicitudSeleccionada.clasificacion_ia || 'Sin clasificacion' }}</p>
+          <p><strong>Prioridad:</strong> {{ solicitudSeleccionada.prioridad_ia || 'Sin prioridad' }}</p>
+          <p><strong>Resumen:</strong> {{ solicitudSeleccionada.resumen_ia || 'Sin resumen disponible' }}</p>
+        </div>
+
+        <div *ngIf="errorAceptarSolicitud" class="taller-solicitudes-alerta-error">
+          {{ errorAceptarSolicitud }}
+        </div>
+
+        <div *ngIf="errorCancelarSolicitud" class="taller-solicitudes-alerta-error">
+          {{ errorCancelarSolicitud }}
+        </div>
+
+        <div *ngIf="puedeAsignarTecnico" class="taller-solicitudes-detalle-seccion">
+          <span class="taller-solicitudes-detalle-label">Asignar tecnico</span>
+
+          <div class="taller-solicitudes-form-grid">
+            <label class="taller-solicitudes-campo">
+              <span>Tecnico disponible</span>
+              <select [(ngModel)]="tecnicoSeleccionadoId">
+                <option [ngValue]="null">Selecciona un tecnico</option>
+                <option *ngFor="let tecnico of tecnicosAsignables" [ngValue]="tecnico.id">
+                  {{ tecnico.nombre }}{{ tecnico.ci ? ' - CI ' + tecnico.ci : '' }}
+                </option>
+              </select>
+            </label>
+          </div>
+
+          <p class="taller-solicitudes-subtexto" *ngIf="tecnicosAsignables.length === 0">
+            No hay tecnicos activos y disponibles en este momento.
+          </p>
+
+          <div *ngIf="errorAsignarTecnico" class="taller-solicitudes-alerta-error">
+            {{ errorAsignarTecnico }}
+          </div>
+        </div>
+
+        <div *ngIf="solicitudSeleccionada.tecnico_id" class="taller-solicitudes-detalle-seccion">
+          <span class="taller-solicitudes-detalle-label">Asignacion actual</span>
+          <p>La solicitud ya tiene un tecnico asignado y ahora el seguimiento continua desde el panel del tecnico.</p>
+        </div>
+      </div>
+
+      <div class="taller-solicitudes-modal-footer">
+        <button
+          *ngIf="puedeCancelarSolicitud"
+          type="button"
+          class="taller-solicitudes-boton-peligro"
+          [disabled]="cancelandoSolicitud"
+          (click)="cancelarSolicitudSeleccionada()"
+        >
+          {{ cancelandoSolicitud ? 'Cancelando...' : 'Cancelar solicitud' }}
+        </button>
+        <button
+          *ngIf="puedeAsignarTecnico"
+          type="button"
+          class="taller-solicitudes-boton-primario"
+          [disabled]="asignandoTecnico || tecnicosAsignables.length === 0"
+          (click)="asignarTecnicoSeleccionado()"
+        >
+          {{ asignandoTecnico ? 'Asignando...' : 'Asignar tecnico' }}
+        </button>
+        <button
+          *ngIf="puedeAceptarSolicitud"
+          type="button"
+          class="taller-solicitudes-boton-primario"
+          [disabled]="aceptandoSolicitud"
+          (click)="aceptarSolicitudSeleccionada()"
+        >
+          {{ aceptandoSolicitud ? 'Aceptando...' : 'Aceptar solicitud' }}
+        </button>
+        <button type="button" class="taller-solicitudes-boton-secundario" (click)="cerrarDetalle()">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div
+    *ngIf="mostrandoNuevaSolicitud"
+    class="taller-solicitudes-modal-overlay"
+    (click)="onOverlayClick($event)"
+  >
+    <div class="taller-solicitudes-modal taller-solicitudes-modal-formulario" role="dialog" aria-modal="true">
+      <div class="taller-solicitudes-modal-header">
+        <div>
+          <p class="taller-solicitudes-kicker">Pruebas</p>
+          <h2>Nueva solicitud de prueba</h2>
+        </div>
+        <button type="button" class="taller-solicitudes-modal-close" (click)="cerrarNuevaSolicitud()">✕</button>
+      </div>
+
+      <div class="taller-solicitudes-modal-body">
+        <p class="taller-solicitudes-subtexto">
+          Usa este formulario temporal para poblar solicitudes y validar el flujo del taller.
+        </p>
+
+        <label class="taller-solicitudes-campo">
+          <span>Descripcion</span>
+          <textarea
+            [(ngModel)]="nuevaSolicitud.descripcion"
+            rows="4"
+            placeholder="Ej. El vehiculo no enciende cerca del centro"
+          ></textarea>
+        </label>
+
+        <div class="taller-solicitudes-form-grid">
+          <label class="taller-solicitudes-campo">
+            <span>Latitud</span>
+            <input [(ngModel)]="nuevaSolicitud.latitud" type="number" step="any" placeholder="-16.5000" />
+          </label>
+
+          <label class="taller-solicitudes-campo">
+            <span>Longitud</span>
+            <input [(ngModel)]="nuevaSolicitud.longitud" type="number" step="any" placeholder="-68.1500" />
+          </label>
+        </div>
+
+        <label class="taller-solicitudes-campo">
+          <span>Vehiculo ID (opcional)</span>
+          <input [(ngModel)]="nuevaSolicitud.vehiculo_id" type="number" min="1" placeholder="Ej. 3" />
+        </label>
+
+        <div *ngIf="errorNuevaSolicitud" class="taller-solicitudes-alerta-error">
+          {{ errorNuevaSolicitud }}
+        </div>
+      </div>
+
+      <div class="taller-solicitudes-modal-footer">
+        <button type="button" class="taller-solicitudes-boton-secundario" (click)="cerrarNuevaSolicitud()">
+          Cancelar
+        </button>
+        <button
+          type="button"
+          class="taller-solicitudes-boton-primario"
+          [disabled]="creandoSolicitud"
+          (click)="crearSolicitudPrueba()"
+        >
+          {{ creandoSolicitud ? 'Creando...' : 'Crear solicitud' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</section>

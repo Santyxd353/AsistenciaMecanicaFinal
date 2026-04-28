@@ -17,7 +17,7 @@ import { Solicitud } from '../core/incident.service';
             <div class="tec-avatar">{{ tecnico.nombre.charAt(0) }}</div>
             <div>
               <h2>{{ tecnico.nombre }}</h2>
-              <span class="especialidad">{{ tecnico.especialidad }}</span>
+              <span class="especialidad">{{ getEspecialidadesTexto(tecnico) }}</span>
             </div>
           </div>
           <div class="header-right">
@@ -272,6 +272,14 @@ export class DetalleTecnicoModalComponent {
       s => s.tecnico_id === this.tecnico.id &&
            (s.estado === 'resuelta' || s.estado === 'cancelada')
     );
+  }
+
+  getEspecialidadesTexto(tecnico: Tecnico): string {
+    const nombres = (tecnico.especialidades || [])
+      .map(item => item.nombre?.trim())
+      .filter((nombre): nombre is string => Boolean(nombre));
+
+    return nombres.length > 0 ? nombres.join(', ') : 'Sin especialidades';
   }
 
   onOverlayClick(event: Event) {

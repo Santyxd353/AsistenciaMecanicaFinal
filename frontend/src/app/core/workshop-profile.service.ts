@@ -1,6 +1,12 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
+
+export interface EspecialidadTaller {
+  id: number;
+  nombre: string;
+}
 
 export interface Taller {
   id: number;
@@ -9,7 +15,7 @@ export interface Taller {
   telefono: string;
   email_contacto?: string;
   horario_atencion: string;
-  especialidades: string;
+  especialidades: EspecialidadTaller[];
   descripcion?: string;
   sitio_web?: string;
   latitud?: number;
@@ -49,7 +55,7 @@ export interface CreateTallerPayload {
   telefono: string;
   email_contacto?: string;
   horario_atencion: string;
-  especialidades: string;
+  especialidad_ids: number[];
   descripcion?: string;
   sitio_web?: string;
   latitud?: number;
@@ -62,7 +68,7 @@ export interface UpdateTallerPayload {
   telefono?: string;
   email_contacto?: string;
   horario_atencion?: string;
-  especialidades?: string;
+  especialidad_ids?: number[];
   descripcion?: string;
   sitio_web?: string;
   latitud?: number;
@@ -106,7 +112,16 @@ export class WorkshopProfileService {
   /**
    * Obtener estadísticas del taller del usuario actual
    */
-  getWorkshopStats(): Observable<WorkshopStats> {
-    return this.http.get<WorkshopStats>(`${this.apiUrl}/estadisticas`);
+  getWorkshopStats(): Observable<WorkshopStats | null> {
+    /*
+    return this.http.get<WorkshopStats>(`${this.apiUrl}/workshop/stats`).pipe(
+      catchError((error : unknown) => {
+        console.error('Error loading stats:', error);
+        return of(null);
+      })
+    );
+    */
+    return of(null);
   }
+  
 }

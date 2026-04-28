@@ -45,7 +45,7 @@ export interface AsignacionEvento {
               <div class="tec-avatar">{{ tec.nombre.charAt(0) }}</div>
               <div class="tec-data">
                 <strong>{{ tec.nombre }}</strong>
-                <span>{{ tec.especialidad }}</span>
+                <span>{{ getEspecialidadesTexto(tec) }}</span>
               </div>
               <div class="tec-check" *ngIf="tecnicoSeleccionado?.id === tec.id">✓</div>
             </div>
@@ -158,21 +158,16 @@ export interface AsignacionEvento {
                   [disabled]="tecnicosDisponibles.length === 0"
                   (click)="iniciarSeleccionTecnico()"
                 >
-                  {{ tecnicosDisponibles.length > 0 ? 'Asignar Técnico →' : 'Sin técnicos disponibles' }}
+                  {{ tecnicosDisponibles.length > 0 ? 'Aceptar y asignar técnico →' : 'Sin técnicos disponibles' }}
                 </button>
-                <button class="btn-danger" (click)="accion.emit({ estado: 'cancelada' })">Rechazar</button>
               </ng-container>
 
               <ng-container *ngSwitchCase="'asignada'">
-                <button class="btn-primary" (click)="accion.emit({ estado: 'en_progreso' })">
-                  Técnico llegó → Marcar en Progreso
-                </button>
+                <p class="status-note">La solicitud ya fue tomada por tu taller y está asignada a un técnico.</p>
               </ng-container>
 
               <ng-container *ngSwitchCase="'en_progreso'">
-                <button class="btn-success" (click)="accion.emit({ estado: 'resuelta' })">
-                  Completar y Registrar Pago
-                </button>
+                <p class="status-note">El técnico está trabajando en esta atención desde su propio panel.</p>
               </ng-container>
 
             </ng-container>
@@ -220,6 +215,13 @@ export interface AsignacionEvento {
       color: #6b7280; flex-shrink: 0;
     }
     .modal-close:hover { background: #e5e7eb; color: #111827; }
+    .status-note {
+      margin: 0;
+      color: #6b7280;
+      font-size: 14px;
+      line-height: 1.5;
+      max-width: 360px;
+    }
 
     /* PASO SELECCIÓN DE TÉCNICO */
     .asignacion-step { padding: 24px; }
@@ -341,7 +343,15 @@ export class DetalleSolicitudModalComponent {
 
   nombreTecnicoAsignado(): string {
     const tec = this.tecnicos.find(t => t.id === this.solicitud.tecnico_id);
-    return tec ? `${tec.nombre} — ${tec.especialidad}` : `Técnico #${this.solicitud.tecnico_id}`;
+    return tec ? `${tec.nombre} — ${this.getEspecialidadesTexto(tec)}` : `Técnico #${this.solicitud.tecnico_id}`;
+  }
+
+  getEspecialidadesTexto(tecnico: Tecnico): string {
+    const nombres = (tecnico.especialidades || [])
+      .map(item => item.nombre?.trim())
+      .filter((nombre): nombre is string => Boolean(nombre));
+
+    return nombres.length > 0 ? nombres.join(', ') : 'Sin especialidades';
   }
 
   getMapUrl(lat: number, lng: number): SafeResourceUrl {

@@ -174,6 +174,40 @@
   font-size: 13px;
 }
 
+.alert-info {
+  border-radius: 16px;
+  border: 1px solid #e8d8c4;
+  background: #fff8ef;
+  color: #6a523d;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+.auth-meta {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -4px;
+}
+
+.link-button {
+  border: none;
+  background: transparent;
+  color: #b7611f;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.link-button:hover {
+  color: #8f4c18;
+}
+
+.link-button-centered {
+  align-self: center;
+  margin-top: 6px;
+}
+
 .btn-primary {
   margin-top: 4px;
   width: 100%;
@@ -193,6 +227,20 @@
 .btn-primary:disabled {
   opacity: .6;
   cursor: not-allowed;
+}
+
+.forgot-password-state {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.state-note {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #6b5d4f;
 }
 
 .spinner {

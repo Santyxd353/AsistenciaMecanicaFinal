@@ -8,7 +8,6 @@ from sqlalchemy import text
 from sqlmodel import SQLModel, Session, create_engine, select
 
 from app.models.user import User, UserRole
-from app.services.storage import ensure_upload_root
 
 load_dotenv()
 
@@ -19,12 +18,9 @@ engine = create_engine(DATABASE_URL, echo=True)
 
 def ensure_legacy_schema():
     statements = [
-        "ALTER TABLE vehiculo ADD COLUMN IF NOT EXISTS foto_url VARCHAR(500)",
-        "ALTER TABLE vehiculo ADD COLUMN IF NOT EXISTS anio INTEGER",
         "ALTER TABLE solicitud ADD COLUMN IF NOT EXISTS tiempo_estimado_minutos INTEGER",
         "ALTER TABLE solicitud ADD COLUMN IF NOT EXISTS estado_pago VARCHAR(20) DEFAULT 'pendiente'",
         "ALTER TABLE solicitud ADD COLUMN IF NOT EXISTS fecha_pago TIMESTAMP NULL",
-        "ALTER TABLE solicitud ADD COLUMN IF NOT EXISTS especialidad_requerida_ia VARCHAR(120)",
     ]
 
     with engine.begin() as connection:
@@ -35,7 +31,6 @@ def ensure_legacy_schema():
 def init_db():
     max_retries = int(os.getenv("DB_INIT_MAX_RETRIES", "10"))
     retry_delay = int(os.getenv("DB_INIT_RETRY_DELAY_SECONDS", "3"))
-    ensure_upload_root()
 
     for attempt in range(1, max_retries + 1):
         try:

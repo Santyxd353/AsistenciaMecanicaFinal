@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef  } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -6,29 +6,12 @@ import { finalize, timeout } from 'rxjs';
 
 import {
   CreateTallerPayload,
+  EspecialidadTaller,
   Taller,
   UpdateTallerPayload,
   WorkshopProfileService
 } from '../core/workshop-profile.service';
-
-type WorkshopDay =
-  | 'Lunes'
-  | 'Martes'
-  | 'Miercoles'
-  | 'Jueves'
-  | 'Viernes'
-  | 'Sabado'
-  | 'Domingo';
-
-interface ParsedWorkshopSchedule {
-  generalDays: WorkshopDay[];
-  generalStart: string;
-  generalEnd: string;
-  specialEnabled: boolean;
-  specialDay: WorkshopDay;
-  specialStart: string;
-  specialEnd: string;
-}
+import { WorkshopSpecialtyService } from '../core/workshop-specialty.service';
 
 @Component({
   selector: 'app-workshop-setup',
@@ -42,11 +25,11 @@ interface ParsedWorkshopSchedule {
           <h1>{{ editMode ? 'Refina la presencia de tu taller' : 'Completa el perfil de tu taller' }}</h1>
           <p class="hero-text">
             {{ editMode
-              ? 'Manten tu perfil comercial y operativo actualizado para que el panel muestre mejor tu capacidad, cobertura y contacto.'
-              : 'Antes de entrar al panel, necesitamos los datos base del taller para habilitar tecnicos, solicitudes y estadisticas.' }}
+              ? 'Mantén tu perfil comercial y operativo actualizado para que el panel muestre mejor tu capacidad, cobertura y contacto.'
+              : 'Antes de entrar al panel, necesitamos los datos base del taller para habilitar técnicos, solicitudes y estadísticas.' }}
           </p>
           <div class="hero-chips">
-            <span class="chip">{{ editMode ? 'Modo edicion' : 'Primer registro' }}</span>
+            <span class="chip">{{ editMode ? 'Modo edición' : 'Primer registro' }}</span>
             <span class="chip chip-strong">{{ completionLabel }}</span>
           </div>
         </div>
@@ -68,7 +51,7 @@ interface ParsedWorkshopSchedule {
           <div class="section-head">
             <div>
               <p class="section-kicker">Paso principal</p>
-              <h2>Informacion base</h2>
+              <h2>Información base</h2>
             </div>
             <p>Estos datos se usan para identificar y asignar correctamente el taller dentro de la plataforma.</p>
           </div>
@@ -81,87 +64,27 @@ interface ParsedWorkshopSchedule {
             </label>
 
             <label [class.invalid]="showError('telefono')">
-              <span>Telefono</span>
+              <span>Teléfono</span>
               <input type="text" formControlName="telefono" placeholder="70000000" />
-              <small *ngIf="showError('telefono')">Ingresa un telefono de contacto.</small>
+              <small *ngIf="showError('telefono')">Ingresa un teléfono de contacto.</small>
             </label>
 
             <label class="full" [class.invalid]="showError('direccion')">
-              <span>Direccion</span>
+              <span>Dirección</span>
               <input type="text" formControlName="direccion" placeholder="Av. Principal #123" />
-              <small *ngIf="showError('direccion')">La direccion ayuda a contextualizar el taller.</small>
+              <small *ngIf="showError('direccion')">La dirección ayuda a contextualizar el taller.</small>
             </label>
 
-            <div class="full schedule-card" [class.invalid]="showError('horario_atencion')">
-              <div class="schedule-card__head">
-                <div>
-                  <span>Horario de atencion</span>
-                  <small>Marca los dias de atencion general y define un horario base.</small>
-                </div>
-              </div>
-
-              <div class="schedule-block">
-                <strong>Dias generales</strong>
-                <div class="day-chip-grid">
-                  <button
-                    type="button"
-                    class="day-chip"
-                    *ngFor="let day of workshopDays"
-                    [class.active]="selectedGeneralDays.includes(day)"
-                    (click)="toggleGeneralDay(day)"
-                  >
-                    {{ day }}
-                  </button>
-                </div>
-              </div>
-
-              <div class="schedule-time-grid">
-                <label>
-                  <span>Apertura general</span>
-                  <input type="time" [value]="generalStartTime" (input)="updateGeneralStart($any($event.target).value)" />
-                </label>
-
-                <label>
-                  <span>Cierre general</span>
-                  <input type="time" [value]="generalEndTime" (input)="updateGeneralEnd($any($event.target).value)" />
-                </label>
-              </div>
-
-              <label class="special-toggle">
-                <input type="checkbox" [checked]="specialScheduleEnabled" (change)="toggleSpecialSchedule($any($event.target).checked)" />
-                <div>
-                  <span>Agregar horario especial</span>
-                  <small>Ejemplo: Domingo de 07:00 a 13:00.</small>
-                </div>
-              </label>
-
-              <div class="schedule-time-grid" *ngIf="specialScheduleEnabled">
-                <label>
-                  <span>Dia especial</span>
-                  <select [value]="specialDay" (change)="updateSpecialDay($any($event.target).value)">
-                    <option *ngFor="let day of workshopDays" [value]="day">{{ day }}</option>
-                  </select>
-                </label>
-
-                <label>
-                  <span>Apertura especial</span>
-                  <input type="time" [value]="specialStartTime" (input)="updateSpecialStart($any($event.target).value)" />
-                </label>
-
-                <label>
-                  <span>Cierre especial</span>
-                  <input type="time" [value]="specialEndTime" (input)="updateSpecialEnd($any($event.target).value)" />
-                </label>
-              </div>
-
-              <small class="schedule-summary" *ngIf="scheduleSummary">{{ scheduleSummary }}</small>
-              <small *ngIf="showError('horario_atencion')">Selecciona dias y horario general. Si activas horario especial, completa ese bloque tambien.</small>
-            </div>
+            <label [class.invalid]="showError('horario_atencion')">
+              <span>Horario de atención</span>
+              <input type="text" formControlName="horario_atencion" placeholder="Lunes a Domingo 07:00 - 22:00" />
+              <small *ngIf="showError('horario_atencion')">Indica cuándo puede responder el taller.</small>
+            </label>
 
             <label [class.invalid]="showError('email_contacto')">
               <span>Email de contacto</span>
               <input type="email" formControlName="email_contacto" placeholder="contacto@taller.com" />
-              <small *ngIf="showError('email_contacto')">Si lo llenas, debe tener un formato valido.</small>
+              <small *ngIf="showError('email_contacto')">Si lo llenas, debe tener un formato válido.</small>
             </label>
           </div>
 
@@ -170,20 +93,60 @@ interface ParsedWorkshopSchedule {
           <div class="section-head">
             <div>
               <p class="section-kicker">Cobertura</p>
-              <h2>Especialidad y presentacion</h2>
+              <h2>Especialidad y presentación</h2>
             </div>
-            <p>Explica con claridad que tipo de emergencias o servicios cubre el taller.</p>
+            <p>Explica con claridad qué tipo de emergencias o servicios cubre el taller.</p>
           </div>
 
           <div class="field-grid">
-            <label class="full" [class.invalid]="showError('especialidades')">
+            <div class="full specialty-field" [class.invalid]="showError('especialidades')">
               <span>Especialidades</span>
-              <input type="text" formControlName="especialidades" placeholder="Mecanica general, baterias, grua" />
+              <div class="specialty-input-row">
+                <select
+                  [value]="selectedSpecialtyId"
+                  (change)="handleSpecialtySelection($any($event.target).value)"
+                >
+                  <option value="">Selecciona una especialidad</option>
+                  <option *ngFor="let specialty of availableSpecialties" [value]="specialty.id">
+                    {{ specialty.nombre }}
+                  </option>
+                  <option value="__new__">+ Crear nueva especialidad</option>
+                </select>
+                <button type="button" class="btn-secondary specialty-add-btn" (click)="addSelectedSpecialty()">
+                  Agregar
+                </button>
+              </div>
+              <div class="specialty-input-row" *ngIf="showNewSpecialtyForm">
+                <input
+                  type="text"
+                  [value]="newSpecialtyName"
+                  (input)="newSpecialtyName = $any($event.target).value"
+                  (keydown.enter)="handleSpecialtyEnter($event)"
+                  placeholder="Ej. Mecánica general"
+                />
+                <button type="button" class="btn-secondary specialty-add-btn" (click)="createSpecialtyAndAdd()">
+                  Crear y agregar
+                </button>
+              </div>
+              <small *ngIf="specialtyErrorMessage">{{ specialtyErrorMessage }}</small>
+              <div class="tag-list specialty-chip-list" *ngIf="specialtyTags.length; else noSpecialtiesSelected">
+                <button
+                  type="button"
+                  class="tag tag-button"
+                  *ngFor="let tag of specialtyTags"
+                  (click)="removeSpecialty(tag.id)"
+                >
+                  {{ tag.nombre }} <span aria-hidden="true">×</span>
+                </button>
+              </div>
+              <ng-template #noSpecialtiesSelected>
+                <p class="helper-note">Selecciona una o varias especialidades del catálogo. Si no existe una, puedes crearla antes de agregarla.</p>
+              </ng-template>
               <small *ngIf="showError('especialidades')">Agrega al menos una especialidad del taller.</small>
-            </label>
+            </div>
 
             <label class="full">
-              <span>Descripcion</span>
+              <span>Descripción</span>
               <textarea formControlName="descripcion" rows="4" placeholder="Describe los servicios principales del taller."></textarea>
               <small>Un resumen breve mejora la lectura del perfil y el contexto operativo.</small>
             </label>
@@ -198,42 +161,32 @@ interface ParsedWorkshopSchedule {
 
           <div class="section-head">
             <div>
-              <p class="section-kicker">Ubicacion</p>
-              <h2>Referencia geografica</h2>
+              <p class="section-kicker">Ubicación</p>
+              <h2>Referencia geográfica</h2>
             </div>
-            <p>Ubica el taller en el mapa. Mueve el mapa hasta que el pin central quede sobre el punto exacto.</p>
+            <p>Estas coordenadas son opcionales, pero dejan preparado el taller para futuras reglas de asignación.</p>
           </div>
 
-          <div class="map-card">
-            <div class="map-toolbar">
-              <div>
-                <strong>Punto seleccionado</strong>
-                <small>{{ locationSummary }}</small>
-              </div>
-              <button type="button" class="btn-secondary map-action" (click)="useCurrentLocation()">
-                Usar ubicacion actual
-              </button>
-            </div>
+          <div class="field-grid">
+            <label>
+              <span>Latitud</span>
+              <input type="number" formControlName="latitud" step="any" placeholder="-16.5" />
+            </label>
 
-            <div class="map-frame">
-              <div #mapHost class="leaflet-map"></div>
-              <div class="map-pin" aria-hidden="true">
-                <span class="pin-head">+</span>
-                <span class="pin-tail"></span>
-              </div>
-            </div>
-
-            <small>{{ locationStatus }}</small>
+            <label>
+              <span>Longitud</span>
+              <input type="number" formControlName="longitud" step="any" placeholder="-68.1" />
+            </label>
           </div>
 
           <div class="divider" *ngIf="editMode"></div>
 
           <div class="section-head" *ngIf="editMode">
             <div>
-              <p class="section-kicker">Operacion</p>
-              <h2>Preferencias de notificacion</h2>
+              <p class="section-kicker">Operación</p>
+              <h2>Preferencias de notificación</h2>
             </div>
-            <p>Configura como quieres recibir avisos desde el sistema.</p>
+            <p>Configura cómo quieres recibir avisos desde el sistema.</p>
           </div>
 
           <div class="toggles" *ngIf="editMode">
@@ -248,7 +201,7 @@ interface ParsedWorkshopSchedule {
               <input type="checkbox" formControlName="notificaciones_push" />
               <div>
                 <span>Notificaciones push</span>
-                <small>Canal rapido para eventos relevantes del panel.</small>
+                <small>Canal rápido para eventos relevantes del panel.</small>
               </div>
             </label>
             <label class="toggle">
@@ -269,7 +222,7 @@ interface ParsedWorkshopSchedule {
               <input type="checkbox" formControlName="reportes_semanales" />
               <div>
                 <span>Reportes semanales</span>
-                <small>Resumen periodico del rendimiento del taller.</small>
+                <small>Resumen periódico del rendimiento del taller.</small>
               </div>
             </label>
           </div>
@@ -290,9 +243,9 @@ interface ParsedWorkshopSchedule {
         <aside class="panel side-panel">
           <div class="preview-card">
             <p class="section-kicker">Vista previa</p>
-            <h3>{{ form.value.nombre_comercial || 'Tu taller aparecera aqui' }}</h3>
+            <h3>{{ form.value.nombre_comercial || 'Tu taller aparecerá aquí' }}</h3>
             <p class="preview-text">
-              {{ form.value.descripcion || 'Agrega una descripcion breve para que el perfil transmita confianza y claridad operativa.' }}
+              {{ form.value.descripcion || 'Agrega una descripción breve para que el perfil transmita confianza y claridad operativa.' }}
             </p>
 
             <div class="mini-list">
@@ -302,20 +255,20 @@ interface ParsedWorkshopSchedule {
               </div>
               <div>
                 <span>Horario</span>
-                <strong>{{ scheduleSummary || 'Pendiente' }}</strong>
+                <strong>{{ form.value.horario_atencion || 'Pendiente' }}</strong>
               </div>
               <div>
-                <span>Direccion</span>
+                <span>Dirección</span>
                 <strong>{{ form.value.direccion || 'Pendiente' }}</strong>
               </div>
             </div>
 
             <div class="tag-list" *ngIf="specialtyTags.length; else noTags">
-              <span class="tag" *ngFor="let tag of specialtyTags">{{ tag }}</span>
+              <span class="tag" *ngFor="let tag of specialtyTags">{{ tag.nombre }}</span>
             </div>
 
             <ng-template #noTags>
-              <p class="helper-note">Tus especialidades apareceran aqui separadas como etiquetas.</p>
+              <p class="helper-note">Tus especialidades aparecerán aquí separadas como etiquetas.</p>
             </ng-template>
           </div>
 
@@ -323,10 +276,10 @@ interface ParsedWorkshopSchedule {
             <p class="section-kicker">Checklist</p>
             <ul>
               <li [class.done]="!!form.value.nombre_comercial">Nombre comercial definido</li>
-              <li [class.done]="!!form.value.direccion">Direccion registrada</li>
-              <li [class.done]="!!scheduleSummary">Horario de atencion cargado</li>
+              <li [class.done]="!!form.value.direccion">Dirección registrada</li>
+              <li [class.done]="!!form.value.horario_atencion">Horario de atención cargado</li>
               <li [class.done]="specialtyTags.length > 0">Especialidades identificadas</li>
-              <li [class.done]="!!form.value.descripcion">Descripcion comercial anadida</li>
+              <li [class.done]="!!form.value.descripcion">Descripción comercial añadida</li>
             </ul>
           </div>
         </aside>
@@ -340,7 +293,7 @@ interface ParsedWorkshopSchedule {
               Reintentar
             </button>
             <button type="button" class="btn-primary" (click)="goToLogout()">
-              Salir de esta sesion
+              Salir de esta sesión
             </button>
           </div>
         </section>
@@ -534,8 +487,7 @@ interface ParsedWorkshopSchedule {
       gap: 16px;
     }
 
-    label,
-    .schedule-card {
+    label {
       display: flex;
       flex-direction: column;
       gap: 8px;
@@ -548,14 +500,26 @@ interface ParsedWorkshopSchedule {
       grid-column: 1 / -1;
     }
 
-    label.invalid span,
-    .schedule-card.invalid > .schedule-card__head span {
+    .specialty-field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #44362a;
+    }
+
+    label.invalid span {
+      color: #9f241c;
+    }
+
+    .specialty-field.invalid > span {
       color: #9f241c;
     }
 
     input,
-    textarea,
-    select {
+    select,
+    textarea {
       width: 100%;
       box-sizing: border-box;
       border: 1px solid #d9c9b3;
@@ -567,8 +531,8 @@ interface ParsedWorkshopSchedule {
     }
 
     input:focus,
-    textarea:focus,
-    select:focus {
+    select:focus,
+    textarea:focus {
       outline: none;
       border-color: #cb6b1c;
       box-shadow: 0 0 0 3px rgba(203, 107, 28, 0.12);
@@ -580,10 +544,14 @@ interface ParsedWorkshopSchedule {
     }
 
     label.invalid input,
-    label.invalid textarea,
     label.invalid select,
-    .schedule-card.invalid input,
-    .schedule-card.invalid select {
+    label.invalid textarea {
+      border-color: #d36a5d;
+      box-shadow: 0 0 0 3px rgba(211, 106, 93, 0.11);
+    }
+
+    .specialty-field.invalid input,
+    .specialty-field.invalid select {
       border-color: #d36a5d;
       box-shadow: 0 0 0 3px rgba(211, 106, 93, 0.11);
     }
@@ -593,161 +561,27 @@ interface ParsedWorkshopSchedule {
       line-height: 1.4;
     }
 
-    label.invalid small,
-    .schedule-card.invalid small {
+    label.invalid small {
       color: #b13c31;
     }
 
-    .schedule-card {
-      padding: 16px;
-      border: 1px solid #eadcca;
-      border-radius: 20px;
-      background: #fffaf5;
+    .specialty-field.invalid small {
+      color: #b13c31;
     }
 
-    .schedule-card__head {
+    .specialty-input-row {
       display: flex;
-      justify-content: space-between;
-      gap: 12px;
-    }
-
-    .schedule-block {
-      display: flex;
-      flex-direction: column;
       gap: 10px;
-    }
-
-    .day-chip-grid {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    .day-chip {
-      border: 1px solid #e4d3c1;
-      background: #ffffff;
-      color: #624935;
-      border-radius: 999px;
-      padding: 10px 14px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-
-    .day-chip.active {
-      background: #1f1712;
-      border-color: #1f1712;
-      color: #ffffff;
-    }
-
-    .schedule-time-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-    }
-
-    .special-toggle {
-      flex-direction: row;
-      align-items: flex-start;
-      gap: 12px;
-      border: 1px solid #ecdcc8;
-      border-radius: 16px;
-      background: #fffefb;
-      padding: 14px 16px;
-      font-weight: 600;
-    }
-
-    .special-toggle input {
-      width: auto;
-      margin: 2px 0 0;
-      box-shadow: none;
-    }
-
-    .special-toggle div {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .schedule-summary {
-      font-weight: 600;
-      color: #5e4d3e;
-    }
-
-    .map-card {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      padding: 16px;
-      border: 1px solid #eadcca;
-      border-radius: 20px;
-      background: #fffaf5;
-    }
-
-    .map-toolbar {
-      display: flex;
-      justify-content: space-between;
       align-items: center;
-      gap: 12px;
     }
 
-    .map-toolbar div {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
+    .specialty-add-btn {
+      flex-shrink: 0;
+      padding-inline: 18px;
     }
 
-    .map-action {
-      white-space: nowrap;
-    }
-
-    .map-frame {
-      position: relative;
-      display: block;
-      border-radius: 18px;
-      overflow: hidden;
-      border: 1px solid #eadcca;
-      min-height: 320px;
-      background: #f2ede7;
-    }
-
-    .leaflet-map {
-      display: block;
-      width: 100%;
-      height: 320px;
-      min-height: 320px;
-    }
-
-    .map-pin {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, calc(-100% + 14px));
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      pointer-events: none;
-      z-index: 500;
-    }
-
-    .pin-head {
-      width: 42px;
-      height: 42px;
-      border-radius: 999px;
-      background: #c65a16;
-      color: #ffffff;
-      display: grid;
-      place-items: center;
-      font-size: 22px;
-      font-weight: 900;
-      box-shadow: 0 10px 24px rgba(28, 20, 14, 0.28);
-    }
-
-    .pin-tail {
-      width: 10px;
-      height: 10px;
-      border-radius: 999px;
-      background: #1f1712;
-      margin-top: 6px;
+    .specialty-chip-list {
+      margin-top: 4px;
     }
 
     .divider {
@@ -777,7 +611,6 @@ interface ParsedWorkshopSchedule {
       width: auto;
       margin: 0;
       margin-top: 3px;
-      box-shadow: none;
     }
 
     .toggle div {
@@ -828,8 +661,7 @@ interface ParsedWorkshopSchedule {
     }
 
     .btn-primary:hover:not(:disabled),
-    .btn-secondary:hover,
-    .day-chip:hover {
+    .btn-secondary:hover {
       transform: translateY(-1px);
     }
 
@@ -923,6 +755,14 @@ interface ParsedWorkshopSchedule {
       font-weight: 700;
     }
 
+    .tag-button {
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
     .helper-note {
       margin: 0;
       color: #786557;
@@ -987,18 +827,17 @@ interface ParsedWorkshopSchedule {
         font-size: 31px;
       }
 
-      .field-grid,
-      .schedule-time-grid {
+      .field-grid {
         grid-template-columns: 1fr;
-      }
-
-      .map-toolbar {
-        flex-direction: column;
-        align-items: stretch;
       }
 
       .actions {
         flex-direction: column-reverse;
+      }
+
+      .specialty-input-row {
+        flex-direction: column;
+        align-items: stretch;
       }
 
       .hero-copy,
@@ -1012,7 +851,7 @@ interface ParsedWorkshopSchedule {
     }
   `]
 })
-export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy {
+export class WorkshopSetupComponent implements OnInit {
   form: FormGroup;
   loading = true;
   loadingSlow = false;
@@ -1022,46 +861,24 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
   currentWorkshop: Taller | null = null;
   successMessage = '';
   errorMessage = '';
+  specialtyErrorMessage = '';
   loadingMessage = 'Cargando perfil del taller...';
-  mapReady = false;
-  locationStatus = 'Mueve el mapa hasta dejar el pin central sobre la ubicacion exacta del taller.';
-  readonly workshopDays: WorkshopDay[] = [
-    'Lunes',
-    'Martes',
-    'Miercoles',
-    'Jueves',
-    'Viernes',
-    'Sabado',
-    'Domingo'
-  ];
-  selectedGeneralDays: WorkshopDay[] = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
-  generalStartTime = '08:00';
-  generalEndTime = '18:00';
-  specialScheduleEnabled = false;
-  specialDay: WorkshopDay = 'Domingo';
-  specialStartTime = '07:00';
-  specialEndTime = '13:00';
-  @ViewChild('mapHost')
-  set mapHostRef(value: ElementRef<HTMLDivElement> | undefined) {
-    this.mapHost = value;
-    if (value) {
-      setTimeout(() => {
-        void this.initializeMap();
-      }, 0);
-    }
-  }
-  private mapHost?: ElementRef<HTMLDivElement>;
-  private leafletModule: typeof import('leaflet') | null = null;
-  private mapInstance: import('leaflet').Map | null = null;
-  private mapResizeObserver: ResizeObserver | null = null;
+  newSpecialtyName = '';
+  selectedSpecialtyId = '';
+  showNewSpecialtyForm = false;
+  availableSpecialties: EspecialidadTaller[] = [];
+  selectedSpecialties: EspecialidadTaller[] = [];
   private slowLoadingTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly createRoutePath = 'crear-taller';
+  private readonly editRoutePath = 'taller/perfil'; 
 
   constructor(
     private fb: FormBuilder,
     private workshopService: WorkshopProfileService,
+    private workshopSpecialtyService: WorkshopSpecialtyService,
     private route: ActivatedRoute,
-    private router: Router
+    private router: Router,
+    private cdr: ChangeDetectorRef 
   ) {
     this.form = this.fb.group({
       nombre_comercial: ['', Validators.required],
@@ -1069,7 +886,7 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
       telefono: ['', Validators.required],
       email_contacto: ['', Validators.email],
       horario_atencion: ['', Validators.required],
-      especialidades: ['', Validators.required],
+      especialidades: [[], Validators.required],
       descripcion: [''],
       sitio_web: [''],
       latitud: [null],
@@ -1083,24 +900,16 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
   }
 
   ngOnInit(): void {
-    if (this.route.routeConfig?.path === this.createRoutePath) {
+    this.loadAvailableSpecialties();
+
+    const currentPath = this.route.snapshot.url.map(segment => segment.path).join('/');
+    
+    if (currentPath === this.createRoutePath || this.route.routeConfig?.path === this.createRoutePath) {
       this.prepareCreateMode();
       return;
     }
-
+    
     this.loadWorkshop();
-  }
-
-  ngAfterViewInit(): void {
-    void this.initializeMap();
-  }
-
-  ngOnDestroy(): void {
-    this.clearSlowLoadingTimer();
-    this.mapResizeObserver?.disconnect();
-    this.mapResizeObserver = null;
-    this.mapInstance?.remove();
-    this.mapInstance = null;
   }
 
   get completionPercent(): number {
@@ -1108,7 +917,7 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
       !!this.form.value.nombre_comercial,
       !!this.form.value.direccion,
       !!this.form.value.telefono,
-      !!this.scheduleSummary,
+      !!this.form.value.horario_atencion,
       this.specialtyTags.length > 0,
       !!this.form.value.descripcion
     ];
@@ -1129,84 +938,111 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
       return 'Perfil casi completo';
     }
 
-    return 'Perfil en preparacion';
+    return 'Perfil en preparación';
   }
 
   get profileStatusDescription(): string {
     if (this.editMode) {
-      return 'Puedes seguir afinando tu presentacion comercial y tus preferencias operativas desde esta misma pantalla.';
+      return 'Puedes seguir afinando tu presentación comercial y tus preferencias operativas desde esta misma pantalla.';
     }
 
-    return 'Completa la informacion esencial para habilitar correctamente el flujo de taller dentro del sistema.';
+    return 'Completa la información esencial para habilitar correctamente el flujo de taller dentro del sistema.';
   }
 
-  get specialtyTags(): string[] {
-    const raw = (this.form.value.especialidades || '') as string;
-    return raw
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .slice(0, 6);
+  get specialtyTags(): EspecialidadTaller[] {
+    return this.selectedSpecialties.slice(0, 6);
   }
 
-  get scheduleSummary(): string {
-    return String(this.form.get('horario_atencion')?.value ?? '').trim();
-  }
+  handleSpecialtySelection(value: string): void {
+    this.specialtyErrorMessage = '';
 
-  get locationSummary(): string {
-    const lat = this.normalizeNumber(this.form.get('latitud')?.value);
-    const lng = this.normalizeNumber(this.form.get('longitud')?.value);
-    if (lat == null || lng == null) {
-      return 'Ubicacion pendiente';
+    if (value === '__new__') {
+      this.showNewSpecialtyForm = true;
+      this.selectedSpecialtyId = '';
+      return;
     }
-    return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+    this.showNewSpecialtyForm = false;
+    this.newSpecialtyName = '';
+    this.selectedSpecialtyId = value;
   }
 
-  toggleGeneralDay(day: WorkshopDay): void {
-    if (this.selectedGeneralDays.includes(day)) {
-      this.selectedGeneralDays = this.selectedGeneralDays.filter((item) => item !== day);
-    } else {
-      this.selectedGeneralDays = [...this.selectedGeneralDays, day].sort(
-        (left, right) => this.workshopDays.indexOf(left) - this.workshopDays.indexOf(right)
-      );
+  addSelectedSpecialty(): void {
+    this.specialtyErrorMessage = '';
+    const specialtyId = Number(this.selectedSpecialtyId);
+    if (!specialtyId) {
+      this.markSpecialtiesAsTouched();
+      return;
     }
-    this.syncScheduleControl();
-  }
 
-  updateGeneralStart(value: string): void {
-    this.generalStartTime = value;
-    this.syncScheduleControl();
-  }
-
-  updateGeneralEnd(value: string): void {
-    this.generalEndTime = value;
-    this.syncScheduleControl();
-  }
-
-  toggleSpecialSchedule(enabled: boolean): void {
-    this.specialScheduleEnabled = enabled;
-    this.syncScheduleControl();
-  }
-
-  updateSpecialDay(value: string): void {
-    if (this.workshopDays.includes(value as WorkshopDay)) {
-      this.specialDay = value as WorkshopDay;
-      this.syncScheduleControl();
+    const selectedSpecialty = this.availableSpecialties.find((specialty) => specialty.id === specialtyId);
+    if (!selectedSpecialty) {
+      this.specialtyErrorMessage = 'La especialidad seleccionada no está disponible.';
+      return;
     }
+
+    const alreadyExists = this.selectedSpecialties.some(
+      (specialty) => specialty.id === selectedSpecialty.id
+    );
+    if (alreadyExists) {
+      this.selectedSpecialtyId = '';
+      return;
+    }
+
+    this.selectedSpecialties = [...this.selectedSpecialties, selectedSpecialty];
+    this.selectedSpecialtyId = '';
+    this.syncSpecialtiesControl();
   }
 
-  updateSpecialStart(value: string): void {
-    this.specialStartTime = value;
-    this.syncScheduleControl();
+  createSpecialtyAndAdd(): void {
+    this.specialtyErrorMessage = '';
+    const normalizedName = this.normalizeSpecialtyName(this.newSpecialtyName);
+    if (!normalizedName) {
+      this.specialtyErrorMessage = 'Debes ingresar el nombre de la nueva especialidad.';
+      return;
+    }
+
+    const alreadyExists = this.availableSpecialties.some(
+      (specialty) => specialty.nombre.toLocaleLowerCase() === normalizedName.toLocaleLowerCase()
+    );
+    if (alreadyExists) {
+      this.specialtyErrorMessage = 'La especialidad ya existe. Selecciónala de la lista.';
+      return;
+    }
+
+    this.workshopSpecialtyService.createSpecialty(normalizedName).subscribe({
+      next: (specialty) => {
+        this.availableSpecialties = [...this.availableSpecialties, specialty]
+          .sort((a, b) => a.nombre.localeCompare(b.nombre));
+        this.selectedSpecialties = [...this.selectedSpecialties, specialty];
+        this.showNewSpecialtyForm = false;
+        this.selectedSpecialtyId = '';
+        this.newSpecialtyName = '';
+        this.syncSpecialtiesControl();
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.specialtyErrorMessage = error?.error?.detail || 'No se pudo crear la especialidad.';
+      }
+    });
   }
 
-  updateSpecialEnd(value: string): void {
-    this.specialEndTime = value;
-    this.syncScheduleControl();
+  removeSpecialty(id: number): void {
+    this.selectedSpecialties = this.selectedSpecialties.filter((specialty) => specialty.id !== id);
+    this.selectedSpecialtyId = '';
+    this.newSpecialtyName = '';
+    this.syncSpecialtiesControl();
+    this.markSpecialtiesAsTouched();
+  }
+
+  handleSpecialtyEnter(event: Event): void {
+    event.preventDefault();
+    this.createSpecialtyAndAdd();
   }
 
   save(): void {
-    this.syncScheduleControl(true);
+    this.syncSpecialtiesControl();
+
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       return;
@@ -1216,6 +1052,7 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
     this.saving = true;
     this.successMessage = '';
     this.errorMessage = '';
+    this.specialtyErrorMessage = '';
 
     const request = this.editMode
       ? this.workshopService.updateMyWorkshop(this.buildUpdatePayload())
@@ -1229,55 +1066,28 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
     ).subscribe({
       next: (taller) => {
         this.currentWorkshop = taller;
+        this.extractSpecialtiesFromTaller(taller);
         this.editMode = true;
-        this.applyWorkshopSchedule(taller.horario_atencion);
         this.successMessage = wasEditing
           ? 'Perfil del taller guardado correctamente.'
           : 'Taller creado correctamente.';
-        void this.redirectToWorkshopDashboard();
+        this.router.navigate(['/taller']);
       },
       error: (error) => {
-        this.errorMessage = error?.error?.detail || 'No se pudo guardar la informacion del taller.';
+        this.errorMessage = error?.error?.detail || 'No se pudo guardar la información del taller.';
       }
     });
   }
 
   cancel(): void {
-    void this.router.navigate([this.editMode ? '/taller' : '/login']);
+    this.router.navigate([this.editMode ? '/taller' : '/login']);
   }
 
   showError(controlName: string): boolean {
     const control = this.form.get(controlName);
     return !!control && control.invalid && (control.dirty || control.touched);
   }
-
-  retryLoad(): void {
-    this.loadWorkshop();
-  }
-
-  goToLogout(): void {
-    void this.router.navigate(['/logout']);
-  }
-
-  async useCurrentLocation(): Promise<void> {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      this.locationStatus = 'El navegador no permite obtener tu ubicacion actual.';
-      return;
-    }
-
-    this.locationStatus = 'Buscando ubicacion actual...';
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        this.setLocation(position.coords.latitude, position.coords.longitude, 16);
-        this.locationStatus = 'Ubicacion actual cargada. Ajusta el mapa si necesitas mover el pin.';
-      },
-      () => {
-        this.locationStatus = 'No se pudo obtener tu ubicacion actual. Puedes mover el mapa manualmente.';
-      },
-      { enableHighAccuracy: true, timeout: 12000 }
-    );
-  }
-
+  
   private loadWorkshop(): void {
     this.clearSlowLoadingTimer();
     this.loading = true;
@@ -1287,42 +1097,69 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
     this.currentWorkshop = null;
     this.loadingMessage = 'Cargando perfil del taller...';
     this.errorMessage = '';
+    this.specialtyErrorMessage = '';
+    
     this.slowLoadingTimer = setTimeout(() => {
       this.loadingSlow = true;
-      this.loadingMessage = 'La carga esta tardando mas de lo esperado.';
+      this.loadingMessage = 'La carga está tardando más de lo esperado.';
+      this.cdr.detectChanges(); // Forzar detección de cambios
     }, 4000);
 
-    this.workshopService.getMyWorkshop().pipe(
-      timeout(10000),
-      finalize(() => {
-        this.clearSlowLoadingTimer();
-        if (this.initialLoadResolved) {
-          this.loading = false;
-        }
-      })
-    ).subscribe({
+    this.workshopService.getMyWorkshop().subscribe({
       next: (taller) => {
+        this.clearSlowLoadingTimer();
         this.currentWorkshop = taller;
         this.editMode = true;
-        this.form.patchValue(taller);
-        this.applyWorkshopSchedule(taller.horario_atencion);
-        this.updateMapFromForm();
+        
+        // Actualizar formulario
+        this.form.patchValue({
+          nombre_comercial: taller.nombre_comercial,
+          direccion: taller.direccion,
+          telefono: taller.telefono,
+          email_contacto: taller.email_contacto || '',
+          horario_atencion: taller.horario_atencion,
+          especialidades: this.extractSpecialtiesFromTaller(taller),
+          descripcion: taller.descripcion || '',
+          sitio_web: taller.sitio_web || '',
+          latitud: taller.latitud,
+          longitud: taller.longitud,
+          notificaciones_nuevas_asignaciones: taller.notificaciones_nuevas_asignaciones,
+          notificaciones_push: taller.notificaciones_push,
+          notificaciones_recordatorios: taller.notificaciones_recordatorios,
+          notificaciones_pagos: taller.notificaciones_pagos,
+          reportes_semanales: taller.reportes_semanales
+        });
+        
         this.initialLoadResolved = true;
         this.loading = false;
+
+        this.cdr.detectChanges();
+        
       },
       error: (error) => {
+        this.clearSlowLoadingTimer();
         if (error.status === 404) {
           this.prepareCreateMode();
+          this.cdr.detectChanges();
           return;
         }
 
         this.initialLoadResolved = true;
         this.loading = false;
         this.loadingSlow = true;
-        this.loadingMessage = 'No se pudo cargar la informacion del taller.';
-        this.errorMessage = 'No se pudo cargar la informacion del taller.';
+        this.loadingMessage = 'No se pudo cargar la información del taller.';
+        this.errorMessage = 'No se pudo cargar la información del taller.';
+        this.cdr.detectChanges();
       }
     });
+  }
+
+  retryLoad(): void {
+    this.loadWorkshop();
+  }
+
+  goToLogout(): void {
+    this.router.navigate(['/logout']);
   }
 
   private prepareCreateMode(): void {
@@ -1331,6 +1168,11 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
     this.loadingSlow = false;
     this.editMode = false;
     this.currentWorkshop = null;
+    this.specialtyErrorMessage = '';
+    this.newSpecialtyName = '';
+    this.selectedSpecialtyId = '';
+    this.showNewSpecialtyForm = false;
+    this.selectedSpecialties = [];
     this.loadingMessage = 'Listo para crear tu taller.';
     this.clearSlowLoadingTimer();
     this.form.reset({
@@ -1339,7 +1181,7 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
       telefono: '',
       email_contacto: '',
       horario_atencion: '',
-      especialidades: '',
+      especialidades: [],
       descripcion: '',
       sitio_web: '',
       latitud: null,
@@ -1350,19 +1192,6 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
       notificaciones_pagos: true,
       reportes_semanales: false
     });
-    this.selectedGeneralDays = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
-    this.generalStartTime = '08:00';
-    this.generalEndTime = '18:00';
-    this.specialScheduleEnabled = false;
-    this.specialDay = 'Domingo';
-    this.specialStartTime = '07:00';
-    this.specialEndTime = '13:00';
-    this.form.patchValue({
-      latitud: -16.5,
-      longitud: -68.15,
-    });
-    this.syncScheduleControl();
-    this.updateMapFromForm();
   }
 
   private buildCreatePayload(): CreateTallerPayload {
@@ -1373,7 +1202,7 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
       telefono: value.telefono,
       email_contacto: value.email_contacto || undefined,
       horario_atencion: value.horario_atencion,
-      especialidades: value.especialidades,
+      especialidad_ids: this.selectedSpecialties.map((specialty) => specialty.id),
       descripcion: value.descripcion || undefined,
       sitio_web: value.sitio_web || undefined,
       latitud: this.normalizeNumber(value.latitud),
@@ -1389,7 +1218,7 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
       telefono: value.telefono,
       email_contacto: value.email_contacto || undefined,
       horario_atencion: value.horario_atencion,
-      especialidades: value.especialidades,
+      especialidad_ids: this.selectedSpecialties.map((specialty) => specialty.id),
       descripcion: value.descripcion || undefined,
       sitio_web: value.sitio_web || undefined,
       latitud: this.normalizeNumber(value.latitud),
@@ -1410,246 +1239,42 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
     return Number(value);
   }
 
-  private async initializeMap(): Promise<void> {
-    if (typeof window === 'undefined' || !this.mapHost || this.mapInstance) {
-      return;
-    }
-
-    const leaflet = await import('leaflet');
-    this.leafletModule = leaflet;
-    const initialLat = this.normalizeNumber(this.form.get('latitud')?.value) ?? -16.5;
-    const initialLng = this.normalizeNumber(this.form.get('longitud')?.value) ?? -68.15;
-
-    const map = leaflet.map(this.mapHost.nativeElement, {
-      zoomControl: true,
-      attributionControl: true,
-    }).setView([initialLat, initialLng], 15);
-
-    leaflet
-      .tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap contributors',
-      })
-      .addTo(map);
-
-    map.on('moveend', () => {
-      const center = map.getCenter();
-      this.setLocation(center.lat, center.lng);
-      this.locationStatus = 'Pin actualizado desde el mapa.';
-    });
-
-    map.whenReady(() => {
-      map.invalidateSize();
-    });
-    map.on('load', () => {
-      map.invalidateSize();
-    });
-
-    this.mapInstance = map;
-    this.mapReady = true;
-    this.attachMapResizeObserver();
-    setTimeout(() => map.invalidateSize(), 0);
-    setTimeout(() => map.invalidateSize(), 200);
-    setTimeout(() => map.invalidateSize(), 600);
+  private normalizeSpecialtyName(value: string): string {
+    return value.trim().replace(/\s+/g, ' ');
   }
 
-  private setLocation(lat: number, lng: number, zoom?: number): void {
-    this.form.patchValue(
-      {
-        latitud: Number(lat.toFixed(6)),
-        longitud: Number(lng.toFixed(6)),
+  private extractSpecialtiesFromTaller(taller: Taller): number[] {
+    this.selectedSpecialties = taller.especialidades
+      .map((item) => ({
+        id: item.id,
+        nombre: this.normalizeSpecialtyName(item.nombre)
+      }))
+      .filter((item) => !!item.nombre);
+
+    return this.selectedSpecialties.map((item) => item.id);
+  }
+
+  private loadAvailableSpecialties(): void {
+    this.workshopSpecialtyService.getSpecialties().subscribe({
+      next: (specialties) => {
+        this.availableSpecialties = specialties;
+        this.cdr.detectChanges();
       },
-      { emitEvent: false }
-    );
-
-    if (zoom != null && this.mapInstance) {
-      this.mapInstance.setView([lat, lng], zoom);
-    }
-  }
-
-  private updateMapFromForm(): void {
-    const lat = this.normalizeNumber(this.form.get('latitud')?.value);
-    const lng = this.normalizeNumber(this.form.get('longitud')?.value);
-    if (lat == null || lng == null || !this.mapInstance) {
-      return;
-    }
-    this.mapInstance.setView([lat, lng], this.mapInstance.getZoom(), { animate: false });
-    this.locationStatus = 'Ubicacion cargada desde el perfil del taller.';
-    this.mapInstance.invalidateSize();
-  }
-
-  private attachMapResizeObserver(): void {
-    if (typeof ResizeObserver === 'undefined' || !this.mapHost || !this.mapInstance) {
-      return;
-    }
-    this.mapResizeObserver?.disconnect();
-    this.mapResizeObserver = new ResizeObserver(() => {
-      this.mapInstance?.invalidateSize();
+      error: (error) => {
+        this.specialtyErrorMessage = error?.error?.detail || 'No se pudieron cargar las especialidades.';
+        this.cdr.detectChanges();
+      }
     });
-    this.mapResizeObserver.observe(this.mapHost.nativeElement);
-    const parent = this.mapHost.nativeElement.parentElement;
-    if (parent) {
-      this.mapResizeObserver.observe(parent);
-    }
   }
 
-  private async redirectToWorkshopDashboard(): Promise<void> {
-    const navigated = await this.router.navigate(['/taller'], { replaceUrl: true });
-    if (!navigated && typeof window !== 'undefined') {
-      window.location.assign('/taller');
-    }
+  private syncSpecialtiesControl(): void {
+    this.form.get('especialidades')?.setValue(this.selectedSpecialties.map((specialty) => specialty.id));
+    this.form.get('especialidades')?.updateValueAndValidity();
   }
 
-  private syncScheduleControl(markTouched = false): void {
-    const control = this.form.get('horario_atencion');
-    if (!control) {
-      return;
-    }
-
-    const generalValid =
-      this.selectedGeneralDays.length > 0 &&
-      this.isValidTime(this.generalStartTime) &&
-      this.isValidTime(this.generalEndTime) &&
-      this.generalStartTime < this.generalEndTime;
-
-    const specialValid =
-      !this.specialScheduleEnabled ||
-      (
-        this.isValidTime(this.specialStartTime) &&
-        this.isValidTime(this.specialEndTime) &&
-        this.specialStartTime < this.specialEndTime &&
-        !!this.specialDay
-      );
-
-    if (markTouched) {
-      control.markAsTouched();
-    }
-
-    if (!generalValid || !specialValid) {
-      control.setValue('', { emitEvent: false });
-      control.setErrors({ required: true });
-      return;
-    }
-
-    control.setErrors(null);
-    control.setValue(this.buildScheduleSummary(), { emitEvent: false });
-    control.updateValueAndValidity({ emitEvent: false });
-  }
-
-  private buildScheduleSummary(): string {
-    const generalDays = this.selectedGeneralDays.join(', ');
-    const parts = [
-      `Dias generales: ${generalDays}`,
-      `Horario general: ${this.generalStartTime}-${this.generalEndTime}`
-    ];
-
-    if (this.specialScheduleEnabled) {
-      parts.push(
-        `Horario especial: ${this.specialDay} ${this.specialStartTime}-${this.specialEndTime}`
-      );
-    }
-
-    return parts.join(' | ');
-  }
-
-  private applyWorkshopSchedule(raw: string | undefined): void {
-    const parsed = this.parseWorkshopSchedule(raw);
-    this.selectedGeneralDays = parsed.generalDays;
-    this.generalStartTime = parsed.generalStart;
-    this.generalEndTime = parsed.generalEnd;
-    this.specialScheduleEnabled = parsed.specialEnabled;
-    this.specialDay = parsed.specialDay;
-    this.specialStartTime = parsed.specialStart;
-    this.specialEndTime = parsed.specialEnd;
-    this.syncScheduleControl();
-  }
-
-  private parseWorkshopSchedule(raw: string | undefined): ParsedWorkshopSchedule {
-    const fallback: ParsedWorkshopSchedule = {
-      generalDays: ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'],
-      generalStart: '08:00',
-      generalEnd: '18:00',
-      specialEnabled: false,
-      specialDay: 'Domingo',
-      specialStart: '07:00',
-      specialEnd: '13:00'
-    };
-
-    const text = (raw ?? '').trim();
-    if (!text) {
-      return fallback;
-    }
-
-    const generalDaysMatch = text.match(/Dias generales:\s*([^|]+)/i);
-    const generalTimeMatch = text.match(/Horario general:\s*(\d{2}:\d{2})-(\d{2}:\d{2})/i);
-    const specialMatch = text.match(/Horario especial:\s*(Lunes|Martes|Miercoles|Jueves|Viernes|Sabado|Domingo)\s+(\d{2}:\d{2})-(\d{2}:\d{2})/i);
-
-    const legacyRangeMatch = text.match(
-      /(Lunes|Martes|Miercoles|Jueves|Viernes|Sabado|Domingo)\s+a\s+(Lunes|Martes|Miercoles|Jueves|Viernes|Sabado|Domingo).*?(\d{2}:\d{2}).*?(\d{2}:\d{2})/i
-    );
-
-    const legacySpecialMatch = text.match(
-      /(Lunes|Martes|Miercoles|Jueves|Viernes|Sabado|Domingo)\s+de\s+(\d{2}:\d{2})\s+a\s+(\d{2}:\d{2})/i
-    );
-
-    const parsedGeneralDays = generalDaysMatch
-      ? this.parseDayList(generalDaysMatch[1])
-      : legacyRangeMatch
-        ? this.expandDayRange(legacyRangeMatch[1] as WorkshopDay, legacyRangeMatch[2] as WorkshopDay)
-        : this.parseDayList(text);
-
-    const generalStart = generalTimeMatch?.[1] ?? legacyRangeMatch?.[3] ?? fallback.generalStart;
-    const generalEnd = generalTimeMatch?.[2] ?? legacyRangeMatch?.[4] ?? fallback.generalEnd;
-
-    let specialEnabled = false;
-    let specialDay = fallback.specialDay;
-    let specialStart = fallback.specialStart;
-    let specialEnd = fallback.specialEnd;
-
-    if (specialMatch) {
-      specialEnabled = true;
-      specialDay = this.normalizeDay(specialMatch[1]) ?? fallback.specialDay;
-      specialStart = specialMatch[2];
-      specialEnd = specialMatch[3];
-    } else if (legacySpecialMatch && !legacyRangeMatch) {
-      specialEnabled = true;
-      specialDay = this.normalizeDay(legacySpecialMatch[1]) ?? fallback.specialDay;
-      specialStart = legacySpecialMatch[2];
-      specialEnd = legacySpecialMatch[3];
-    }
-
-    return {
-      generalDays: parsedGeneralDays.length ? parsedGeneralDays : fallback.generalDays,
-      generalStart,
-      generalEnd,
-      specialEnabled,
-      specialDay,
-      specialStart,
-      specialEnd
-    };
-  }
-
-  private parseDayList(value: string): WorkshopDay[] {
-    const found = this.workshopDays.filter((day) => new RegExp(day, 'i').test(value));
-    return found.length ? found : [];
-  }
-
-  private expandDayRange(start: WorkshopDay, end: WorkshopDay): WorkshopDay[] {
-    const startIndex = this.workshopDays.indexOf(start);
-    const endIndex = this.workshopDays.indexOf(end);
-    if (startIndex === -1 || endIndex === -1 || startIndex > endIndex) {
-      return [];
-    }
-    return this.workshopDays.slice(startIndex, endIndex + 1);
-  }
-
-  private normalizeDay(value: string | undefined): WorkshopDay | null {
-    const match = this.workshopDays.find((day) => day.toLowerCase() === (value ?? '').toLowerCase());
-    return match ?? null;
-  }
-
-  private isValidTime(value: string): boolean {
-    return /^\d{2}:\d{2}$/.test(value);
+  private markSpecialtiesAsTouched(): void {
+    this.form.get('especialidades')?.markAsTouched();
+    this.form.get('especialidades')?.updateValueAndValidity();
   }
 
   private clearSlowLoadingTimer(): void {

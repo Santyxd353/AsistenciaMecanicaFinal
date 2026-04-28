@@ -14,9 +14,7 @@ class VehiculoBase(SQLModel):
     placa: str = Field(index=True, unique=True)
     marca: str
     modelo: str
-    anio: Optional[int] = None
     color: Optional[str] = None
-    foto_url: Optional[str] = None
     propietario_id: Optional[int] = Field(default=None, foreign_key="user.id")
 
 class Vehiculo(VehiculoBase, table=True):
@@ -37,22 +35,84 @@ class VehiculoUpdate(SQLModel):
     placa: Optional[str] = None
     marca: Optional[str] = None
     modelo: Optional[str] = None
-    anio: Optional[int] = None
     color: Optional[str] = None
-    foto_url: Optional[str] = None
+
+
+class EspecialidadBase(SQLModel):
+    nombre: str = Field(index=True, unique=True)
+
+
+class TecnicosEspecialidades(SQLModel, table=True):
+    __tablename__ = "tecnicos_especialidades"
+
+    tecnico_id: Optional[int] = Field(default=None, foreign_key="tecnico.id", primary_key=True)
+    especialidad_id: Optional[int] = Field(default=None, foreign_key="especialidad.id", primary_key=True)
+
+
+class Especialidad(EspecialidadBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    tecnicos: List["Tecnico"] = Relationship(
+        back_populates="especialidades",
+        link_model=TecnicosEspecialidades
+    )
+
+class EspecialidadCreate(SQLModel):
+    nombre: str
+
+class EspecialidadRead(SQLModel):
+    id: int
+    nombre: str
+
+class TalleresEspecialidades(SQLModel, table=True):
+    __tablename__ = "talleres_especialidades"
+
+    taller_id: Optional[int] = Field(default=None, foreign_key="taller.id", primary_key=True)
+    especialidad_id: Optional[int] = Field(default=None, foreign_key="especialidades_taller.id", primary_key=True)
+
+
+class EspecialidadTallerBase(SQLModel):
+    nombre: str
+
+
+class EspecialidadTaller(EspecialidadTallerBase, table=True):
+    __tablename__ = "especialidades_taller"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    nombre: str = Field(index=True, unique=True)
+    talleres: List["Taller"] = Relationship(
+        back_populates="especialidades",
+        link_model=TalleresEspecialidades
+    )
+
+class EspecialidadTallerRead(SQLModel):
+    id: int
+    nombre: str
 
 class TecnicoBase(SQLModel):
     nombre: str
-    especialidad: str
+    ci: str = Field(index=True, unique=True, max_length=10)
+    direccion: str
     latitud: Optional[float] = None
     longitud: Optional[float] = None
     disponible: bool = True
+    activo: bool = True
     taller_id: Optional[int] = Field(default=None, foreign_key="taller.id")
+    id_usuario: Optional[int] = Field(default=None, foreign_key="user.id", unique=True)
 
 class Tecnico(TecnicoBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     taller: Optional["Taller"] = Relationship(back_populates="tecnicos")
+    usuario: Optional["User"] = Relationship(back_populates="tecnico_perfil")
+    especialidades: List[Especialidad] = Relationship(
+        back_populates="tecnicos",
+        link_model=TecnicosEspecialidades
+    )
     solicitudes_atendidas: List["Solicitud"] = Relationship(back_populates="tecnico_asignado")
+
+
+class TecnicoRead(TecnicoBase):
+    id: int
+    especialidades: List[EspecialidadRead] = Field(default_factory=list)
 
 class SolicitudBase(SQLModel):
     descripcion: str
@@ -68,7 +128,6 @@ class SolicitudBase(SQLModel):
     clasificacion_ia: Optional[str] = None
     prioridad_ia: Optional[str] = None
     resumen_ia: Optional[str] = None
-    especialidad_requerida_ia: Optional[str] = None
     tiempo_estimado_minutos: Optional[int] = None
     estado_pago: Optional[str] = "pendiente"
     fecha_pago: Optional[datetime] = None
@@ -118,7 +177,6 @@ class TallerBase(SQLModel):
     telefono: str
     email_contacto: Optional[str] = None
     horario_atencion: str  # Ej: "Lunes-Domingo 6:00-22:00"
-    especialidades: str  # JSON string con lista de especialidades
     descripcion: Optional[str] = None
     sitio_web: Optional[str] = None
     
@@ -147,6 +205,10 @@ class Taller(TallerBase, table=True):
     propietario: "User" = Relationship(back_populates="taller")
     tecnicos: List["Tecnico"] = Relationship(back_populates="taller")
     solicitudes_asignadas: List["Solicitud"] = Relationship(back_populates="taller")
+    especialidades: List["EspecialidadTaller"] = Relationship(
+        back_populates="talleres",
+        link_model=TalleresEspecialidades
+    )
 
 
 class TallerCreate(SQLModel):
@@ -155,7 +217,7 @@ class TallerCreate(SQLModel):
     telefono: str
     email_contacto: Optional[str] = None
     horario_atencion: str
-    especialidades: str
+    especialidad_ids: List[int]
     descripcion: Optional[str] = None
     sitio_web: Optional[str] = None
     latitud: Optional[float] = None
@@ -164,6 +226,7 @@ class TallerCreate(SQLModel):
 
 class TallerRead(TallerBase):
     id: int
+    especialidades: List[EspecialidadTallerRead] = Field(default_factory=list)
 
 
 class TallerUpdate(SQLModel):
@@ -172,7 +235,7 @@ class TallerUpdate(SQLModel):
     telefono: Optional[str] = None
     email_contacto: Optional[str] = None
     horario_atencion: Optional[str] = None
-    especialidades: Optional[str] = None
+    especialidad_ids: Optional[List[int]] = None
     descripcion: Optional[str] = None
     sitio_web: Optional[str] = None
     latitud: Optional[float] = None

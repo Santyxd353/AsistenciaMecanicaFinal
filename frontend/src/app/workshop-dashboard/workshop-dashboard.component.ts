@@ -1,8 +1,7 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef  } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { timeout } from 'rxjs';
 
 import { AuthService } from '../core/auth.service';
 import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-profile.service';
@@ -32,8 +31,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
         </div>
       </header>
 
-      <main class="content" *ngIf="!cargando; else loading">
-        <ng-container *ngIf="taller; else emptyState">
+      <main class="content" *ngIf="taller; else loading">
         <section class="hero-card">
           <div class="hero-copy">
             <p class="eyebrow">Resumen del taller</p>
@@ -77,7 +75,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
           </aside>
         </section>
 
-        <section class="stats-strip" *ngIf="estadisticas">
+        <section class="stats-strip" *ngIf="estadisticas; else statsPlaceholder">
           <article class="stat-card stat-card-strong">
             <span>Servicios completados</span>
             <strong>{{ estadisticas.servicios.total_completados }}</strong>
@@ -99,6 +97,15 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
             <p>Promedio por servicio completado.</p>
           </article>
         </section>
+        <ng-template #statsPlaceholder>
+          <section class="stats-strip">
+            <article class="stat-card">
+              <span>Estadísticas</span>
+              <strong>En proceso</strong>
+              <p>Las métricas se cargarán cuando estén disponibles.</p>
+            </article>
+          </section>
+        </ng-template>
 
         <section class="dashboard-grid">
           <article class="panel detail-panel" *ngIf="mostrarPerfil">
@@ -310,22 +317,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
         </section>
 
         <p class="error-banner" *ngIf="errorCarga">{{ errorCarga }}</p>
-        </ng-container>
       </main>
-
-      <ng-template #emptyState>
-        <div class="loading-state">
-          <div class="loading-card">
-            <p class="eyebrow">Panel de taller</p>
-            <h2>No se pudo cargar el taller</h2>
-            <p>{{ errorCarga || 'No encontramos informacion operativa para este taller.' }}</p>
-            <div class="topbar-actions">
-              <button class="btn-ghost" (click)="cargarDatos()">Reintentar</button>
-              <button class="btn-primary" (click)="editarPerfil()">Ir al perfil</button>
-            </div>
-          </div>
-        </div>
-      </ng-template>
 
       <ng-template #loading>
         <div class="loading-state">
@@ -1159,7 +1151,8 @@ export class WorkshopDashboardComponent implements OnInit {
   constructor(
     private authService: AuthService,
     private workshopService: WorkshopProfileService,
-    private router: Router
+    private router: Router,
+    private cdr: ChangeDetectorRef 
   ) {}
 
   ngOnInit() {
@@ -1172,36 +1165,47 @@ export class WorkshopDashboardComponent implements OnInit {
   }
 
   cargarDatos() {
+    console.log('Iniciando carga de datos del dashboard...');
     this.cargando = true;
     this.errorCarga = '';
     this.estadisticas = null;
+    this.cdr.detectChanges();
 
-    this.workshopService.getMyWorkshop().pipe(timeout(10000)).subscribe({
+    this.workshopService.getMyWorkshop().subscribe({
       next: (taller) => {
+        console.log('Taller cargado:', taller);
         this.taller = taller;
         this.resetNotificationDraft();
-        this.workshopService.getWorkshopStats().pipe(timeout(10000)).subscribe({
+        this.cdr.detectChanges();
+        
+        this.workshopService.getWorkshopStats().subscribe({
           next: (stats) => {
+            console.log('Estadísticas cargadas:', stats);
             this.estadisticas = stats;
             this.cargando = false;
+            this.cdr.detectChanges();
           },
           error: (error) => {
             console.error('Error al cargar estadísticas:', error);
-            this.errorCarga = 'No se pudieron cargar las estadisticas del taller.';
+            this.estadisticas = null;
             this.cargando = false;
+            this.cdr.detectChanges();
           }
         });
       },
       error: (error) => {
+        console.error('Error al cargar taller:', error);
         if (error.status === 404) {
+          console.log('Taller no encontrado, redirigiendo a crear-taller');
           this.cargando = false;
+          this.cdr.detectChanges();
           this.router.navigate(['/crear-taller'], { replaceUrl: true });
           return;
         }
 
-        console.error('Error al cargar taller:', error);
         this.errorCarga = 'No se pudo cargar la información del taller.';
         this.cargando = false;
+        this.cdr.detectChanges();
       }
     });
   }
@@ -1212,8 +1216,7 @@ export class WorkshopDashboardComponent implements OnInit {
     }
 
     return this.taller.especialidades
-      .split(',')
-      .map((item) => item.trim())
+      .map((item) => item.nombre.trim())
       .filter(Boolean)
       .slice(0, 8);
   }
@@ -1400,11 +1403,11 @@ export class WorkshopDashboardComponent implements OnInit {
   }
 
   irATecnicos() {
-    this.router.navigate(['/dashboard']);
+    this.router.navigate(['/taller/tecnicos']);
   }
 
   irASolicitudes() {
-    this.router.navigate(['/dashboard']);
+    this.router.navigate(['/taller/solicitudes']);
   }
 
   resetNotificationDraft() {

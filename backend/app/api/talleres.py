@@ -4,11 +4,42 @@ from sqlmodel import Session, select, func
 from sqlalchemy import Integer, case
 
 from app.db.session import get_session
-from app.models.domain import Taller, TallerCreate, TallerRead, TallerUpdate
+from app.models.domain import (
+    EspecialidadTaller,
+    Taller,
+    TallerCreate,
+    TallerRead,
+    TallerUpdate,
+)
 from app.models.user import User, UserRole
 from app.api.deps import get_current_user
 
 router = APIRouter()
+
+
+def _obtener_especialidades_taller(
+    session: Session,
+    especialidad_ids: List[int]
+) -> List[EspecialidadTaller]:
+    ids_unicos = list(dict.fromkeys(especialidad_ids))
+    if not ids_unicos:
+        raise HTTPException(
+            status_code=400,
+            detail="Debes seleccionar al menos una especialidad para el taller"
+        )
+
+    especialidades = session.exec(
+        select(EspecialidadTaller).where(EspecialidadTaller.id.in_(ids_unicos))
+    ).all()
+
+    if len(especialidades) != len(ids_unicos):
+        raise HTTPException(
+            status_code=400,
+            detail="Una o más especialidades seleccionadas no existen"
+        )
+
+    especialidades_por_id = {especialidad.id: especialidad for especialidad in especialidades}
+    return [especialidades_por_id[especialidad_id] for especialidad_id in ids_unicos]
 
 
 @router.post("/", response_model=TallerRead)
@@ -42,11 +73,15 @@ def crear_taller(
             detail="Ya tienes un taller registrado"
         )
 
+    especialidades = _obtener_especialidades_taller(session, taller_in.especialidad_ids)
+
     # Crear el taller
+    taller_data = taller_in.model_dump(exclude={"especialidad_ids"})
     taller = Taller(
-        **taller_in.model_dump(),
+        **taller_data,
         propietario_id=current_user.id
     )
+    taller.especialidades = especialidades
 
     session.add(taller)
     session.commit()
@@ -99,8 +134,13 @@ def actualizar_mi_taller(
 
     # Actualizar solo los campos proporcionados
     update_data = taller_update.model_dump(exclude_unset=True)
+    especialidad_ids = update_data.pop("especialidad_ids", None)
+
     for field, value in update_data.items():
         setattr(taller, field, value)
+
+    if especialidad_ids is not None:
+        taller.especialidades = _obtener_especialidades_taller(session, especialidad_ids)
 
     session.add(taller)
     session.commit()

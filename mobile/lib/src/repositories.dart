@@ -15,7 +15,7 @@ class LocalRepository {
   static const _vehiclesKey = 'vehicles';
   static const _requestMetasKey = 'request_metas';
   static const _notificationsKey = 'notifications';
-  static const defaultBaseUrl = 'http://10.0.2.2:8000';
+  static const defaultBaseUrl = 'http://localhost:8000';
 
   final SharedPreferences _prefs;
 
@@ -210,23 +210,17 @@ class ApiClient {
   }
 
   Future<Vehicle> createVehicle(Vehicle vehicle) async {
-    final request = http.MultipartRequest('POST', _uri('/api/v1/vehiculos/'));
-    request.headers.addAll(_headers());
-    request.fields.addAll({
-      'placa': vehicle.placa,
-      'marca': vehicle.marca,
-      'modelo': vehicle.modelo,
-      'anio': vehicle.anio?.toString() ?? '',
-      'color': vehicle.color,
-    });
-    if (vehicle.photoPath != null && vehicle.photoPath!.isNotEmpty) {
-      final file = File(vehicle.photoPath!);
-      if (file.existsSync()) {
-        request.files.add(await http.MultipartFile.fromPath('foto', file.path));
-      }
-    }
-    final response = await request.send().timeout(const Duration(seconds: 20));
-    final payload = await _decodeObjectFromStream(response);
+    final response = await http.post(
+      _uri('/api/v1/vehiculos/'),
+      headers: _headers(json: true),
+      body: jsonEncode({
+        'placa': vehicle.placa,
+        'marca': vehicle.marca,
+        'modelo': vehicle.modelo,
+        'color': vehicle.color,
+      }),
+    ).timeout(const Duration(seconds: 20));
+    final payload = _decodeObject(response);
     return Vehicle.fromApi(
       payload,
       localId: vehicle.localId,
@@ -240,23 +234,17 @@ class ApiClient {
       throw ApiException('El vehiculo aun no tiene identificador remoto.');
     }
 
-    final request = http.MultipartRequest('PUT', _uri('/api/v1/vehiculos/${vehicle.remoteId}'));
-    request.headers.addAll(_headers());
-    request.fields.addAll({
-      'placa': vehicle.placa,
-      'marca': vehicle.marca,
-      'modelo': vehicle.modelo,
-      'anio': vehicle.anio?.toString() ?? '',
-      'color': vehicle.color,
-    });
-    if (vehicle.photoPath != null && vehicle.photoPath!.isNotEmpty) {
-      final file = File(vehicle.photoPath!);
-      if (file.existsSync()) {
-        request.files.add(await http.MultipartFile.fromPath('foto', file.path));
-      }
-    }
-    final response = await request.send().timeout(const Duration(seconds: 20));
-    final payload = await _decodeObjectFromStream(response);
+    final response = await http.put(
+      _uri('/api/v1/vehiculos/${vehicle.remoteId}'),
+      headers: _headers(json: true),
+      body: jsonEncode({
+        'placa': vehicle.placa,
+        'marca': vehicle.marca,
+        'modelo': vehicle.modelo,
+        'color': vehicle.color,
+      }),
+    ).timeout(const Duration(seconds: 20));
+    final payload = _decodeObject(response);
     return Vehicle.fromApi(
       payload,
       localId: vehicle.localId,
@@ -399,31 +387,18 @@ class ApiClient {
     List<String> imagePaths = const [],
     String? audioPath,
   }) async {
-    final request = http.MultipartRequest('POST', _uri('/api/v1/solicitudes/'));
-    request.headers.addAll(_headers());
-    request.fields.addAll({
-      'descripcion': descripcion,
-      'latitud': latitud.toString(),
-      'longitud': longitud.toString(),
-      'estado': 'pendiente',
-      if (vehiculoId != null) 'vehiculo_id': vehiculoId.toString(),
-      if (incidentType != null && incidentType.trim().isNotEmpty) 'incident_type': incidentType.trim(),
-      if (extraNotes != null && extraNotes.trim().isNotEmpty) 'extra_notes': extraNotes.trim(),
-    });
-    for (final path in imagePaths) {
-      final file = File(path);
-      if (file.existsSync()) {
-        request.files.add(await http.MultipartFile.fromPath('images', file.path));
-      }
-    }
-    if (audioPath != null && audioPath.trim().isNotEmpty) {
-      final file = File(audioPath);
-      if (file.existsSync()) {
-        request.files.add(await http.MultipartFile.fromPath('audio', file.path));
-      }
-    }
-    final response = await request.send().timeout(const Duration(seconds: 30));
-    return EmergencyRequest.fromApi(await _decodeObjectFromStream(response));
+    final response = await http.post(
+      _uri('/api/v1/solicitudes/'),
+      headers: _headers(json: true),
+      body: jsonEncode({
+        'descripcion': descripcion,
+        'latitud': latitud,
+        'longitud': longitud,
+        'estado': 'pendiente',
+        if (vehiculoId != null) 'vehiculo_id': vehiculoId,
+      }),
+    ).timeout(const Duration(seconds: 30));
+    return EmergencyRequest.fromApi(_decodeObject(response));
   }
 
   Future<EmergencyRequest> updateRequestStatus({

@@ -4,6 +4,7 @@ from enum import Enum
 
 class UserRole(str, Enum):
     DRIVER = "driver"
+    TECNICO = "tecnico"
     WORKSHOP = "workshop"
     ADMIN = "admin"
 
@@ -20,6 +21,10 @@ class User(UserBase, table=True):
     
     vehiculos: List["Vehiculo"] = Relationship(back_populates="propietario")
     taller: Optional["Taller"] = Relationship(back_populates="propietario")
+    tecnico_perfil: Optional["Tecnico"] = Relationship(
+        back_populates="usuario",
+        sa_relationship_kwargs={"uselist": False}
+    )
 
 class UserCreate(UserBase):
     password: str
@@ -47,3 +52,16 @@ class AuthResponse(SQLModel):
     token_type: str = "bearer"
     role: UserRole
     user: UserRead
+
+
+class PasswordResetRequest(SQLModel):
+    email: str
+
+
+class PasswordResetConfirm(SQLModel):
+    token: str
+    new_password: str
+
+
+class MessageResponse(SQLModel):
+    message: str

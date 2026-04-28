@@ -11,8 +11,8 @@ from app.api.deps import get_current_user
 from app.db.session import get_session
 from app.models.domain import Vehiculo, VehiculoCreate, VehiculoRead, VehiculoUpdate
 from app.models.user import User
-from app.services.storage import delete_relative_url, save_upload_file, url_to_path
 from app.services.ai import analyze_vehicle_photos
+from app.services.storage import delete_relative_url, save_upload_file, url_to_path
 
 router = APIRouter()
 
@@ -35,7 +35,6 @@ async def _read_vehicle_payload(request: Request) -> dict[str, Any]:
             "placa": str(form.get("placa", "")).strip(),
             "marca": str(form.get("marca", "")).strip(),
             "modelo": str(form.get("modelo", "")).strip(),
-            "anio": int(str(form.get("anio", "")).strip()) if str(form.get("anio", "")).strip() else None,
             "color": str(form.get("color", "")).strip() or None,
         }
 
@@ -100,22 +99,17 @@ async def crear_vehiculo(
     vehiculo_in = VehiculoCreate.model_validate(payload)
     vehiculo = Vehiculo.model_validate(vehiculo_in)
     vehiculo.propietario_id = current_user.id
-
-    saved_photo_url: str | None = None
-    if foto and foto.filename:
-        saved_photo_url = await save_upload_file(
-            upload=foto,
-            category="vehicles",
-            prefix=f"{current_user.id}-{vehiculo.placa}",
-        )
-        vehiculo.foto_url = saved_photo_url
-
     session.add(vehiculo)
+
+    if foto:
+        # El backend actual no persiste foto_url en el modelo, pero aceptamos el archivo
+        # para mantener compatibilidad con clientes que envian multipart.
+        await foto.read()
+
     try:
         session.commit()
     except IntegrityError as exc:
         session.rollback()
-        delete_relative_url(saved_photo_url)
         raise HTTPException(
             status_code=400,
             detail="No se pudo registrar el vehiculo. Verifica que la placa no este duplicada.",
@@ -174,30 +168,18 @@ async def actualizar_vehiculo(
     for field, value in update_data.items():
         setattr(vehiculo, field, value)
 
-    old_photo_url = vehiculo.foto_url
-    new_photo_url: str | None = None
-    if foto and foto.filename:
-        new_photo_url = await save_upload_file(
-            upload=foto,
-            category="vehicles",
-            prefix=f"{current_user.id}-{vehiculo.placa}",
-        )
-        vehiculo.foto_url = new_photo_url
+    if foto:
+        await foto.read()
 
     session.add(vehiculo)
     try:
         session.commit()
     except IntegrityError as exc:
         session.rollback()
-        if new_photo_url:
-            delete_relative_url(new_photo_url)
         raise HTTPException(
             status_code=400,
             detail="No se pudo actualizar el vehiculo. Verifica que la placa no este duplicada.",
         ) from exc
-
-    if new_photo_url and old_photo_url and old_photo_url != new_photo_url:
-        delete_relative_url(old_photo_url)
 
     session.refresh(vehiculo)
     return vehiculo

@@ -1,0 +1,27 @@
+<div class="mapa-geolocalizacion-shell">
+  <div
+    #contenedorMapa
+    class="mapa-geolocalizacion-lienzo"
+    [style.height]="alto"
+    [class.sin-coordenadas]="!tienePuntosValidos || errorRenderMapa"
+  ></div>
+
+  <div *ngIf="!tienePuntosValidos" class="mapa-geolocalizacion-vacio">
+    No hay coordenadas validas para mostrar puntos en el mapa.
+  </div>
+
+  <div *ngIf="errorRenderMapa && tienePuntosValidos" class="mapa-geolocalizacion-vacio">
+    No se pudo renderizar el mapa en este momento.
+  </div>
+
+  <div *ngIf="puntosValidos.length > 0" class="mapa-geolocalizacion-leyenda">
+    <div class="mapa-geolocalizacion-leyenda-item" *ngFor="let punto of puntosValidos; let i = index">
+      <span class="mapa-geolocalizacion-leyenda-badge" [class]="punto.tipo">
+        P{{ i + 1 }}
+      </span>
+      <span class="mapa-geolocalizacion-leyenda-texto">
+        {{ etiquetaTipoMapa[punto.tipo] }}: {{ punto.etiqueta }}
+      </span>
+    </div>
+  </div>
+</div>

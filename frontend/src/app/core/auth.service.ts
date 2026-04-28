@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, tap } from 'rxjs';
 import { Router } from '@angular/router';
 
-export type UserRole = 'driver' | 'workshop' | 'admin';
+export type UserRole = 'driver' | 'tecnico' | 'workshop' | 'admin';
 
 export interface AuthUser {
   id: number;
@@ -32,6 +32,15 @@ export interface UpdateProfilePayload {
   username?: string;
   email?: string;
   full_name?: string;
+}
+
+export interface MessageResponse {
+  message: string;
+}
+
+export interface PasswordResetConfirmPayload {
+  token: string;
+  new_password: string;
 }
 
 @Injectable({
@@ -77,6 +86,14 @@ export class AuthService {
     return this.http.post<AuthResponse>(`${this.apiUrl}/register/workshop`, payload).pipe(
       tap((response) => this.persistSession(response))
     );
+  }
+
+  requestPasswordReset(email: string): Observable<MessageResponse> {
+    return this.http.post<MessageResponse>(`${this.apiUrl}/forgot-password`, { email });
+  }
+
+  confirmPasswordReset(payload: PasswordResetConfirmPayload): Observable<MessageResponse> {
+    return this.http.post<MessageResponse>(`${this.apiUrl}/reset-password`, payload);
   }
 
   getProfile(): Observable<AuthUser> {
@@ -127,6 +144,10 @@ export class AuthService {
 
     if (role === 'workshop') {
       return '/taller';
+    }
+
+    if (role === 'tecnico') {
+      return '/tecnico';
     }
 
     if (role === 'admin') {

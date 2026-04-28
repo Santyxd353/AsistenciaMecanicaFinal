@@ -1,0 +1,82 @@
+:host {
+  display: block;
+}
+
+.mapa-geolocalizacion-shell {
+  position: relative;
+}
+
+.mapa-geolocalizacion-lienzo {
+  width: 100%;
+  min-height: 220px;
+  border-radius: 20px;
+  border: 1px solid #e5d5c2;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 247, 239, 0.92) 0%, rgba(245, 235, 225, 0.92) 100%);
+}
+
+.mapa-geolocalizacion-lienzo.sin-coordenadas {
+  opacity: 0.55;
+}
+
+.mapa-geolocalizacion-vacio {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: #6a5648;
+  font-size: 14px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.mapa-geolocalizacion-leyenda {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.mapa-geolocalizacion-leyenda-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  border: 1px solid #eadbca;
+  background: #fffaf5;
+}
+
+.mapa-geolocalizacion-leyenda-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.mapa-geolocalizacion-leyenda-badge.incidente {
+  background: #d37627;
+}
+
+.mapa-geolocalizacion-leyenda-badge.taller {
+  background: #3b82f6;
+}
+
+.mapa-geolocalizacion-leyenda-badge.tecnico {
+  background: #14b8a6;
+}
+
+.mapa-geolocalizacion-leyenda-texto {
+  color: #5c4a3d;
+  font-size: 14px;
+  line-height: 1.4;
+}

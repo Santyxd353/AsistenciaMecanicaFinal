@@ -16,10 +16,14 @@ export interface Solicitud {
   clasificacion_ia?: string;
   prioridad_ia?: string;
   resumen_ia?: string;
-  especialidad_requerida_ia?: string;
+  tiempo_estimado_minutos?: number;
+  estado_pago?: string;
+  fecha_pago?: string;
   taller_nombre?: string;
   tecnico_nombre?: string;
   tecnico_especialidad?: string;
+  vehiculo_placa?: string;
+  vehiculo_descripcion?: string;
   fecha_creacion: string;
 }
 
@@ -35,13 +39,35 @@ export class SolicitudService {
     return this.http.get<Solicitud[]>(this.apiUrl);
   }
 
+  getSolicitudesPendientesTaller(): Observable<Solicitud[]> {
+    return this.http.get<Solicitud[]>(`${this.apiUrl}taller/pendientes`);
+  }
+
+  getMisSolicitudesTaller(): Observable<Solicitud[]> {
+    return this.http.get<Solicitud[]>(`${this.apiUrl}taller/mis-solicitudes`);
+  }
+
+  getMisAsignaciones(): Observable<Solicitud[]> {
+    return this.http.get<Solicitud[]>(`${this.apiUrl}mis-asignaciones`);
+  }
+
   createSolicitud(solicitud: Partial<Solicitud>): Observable<Solicitud> {
     return this.http.post<Solicitud>(this.apiUrl, solicitud);
   }
 
-  updateStatus(solicitudId: number, estado: string, tecnicoId?: number): Observable<Solicitud> {
-    let url = `${this.apiUrl}${solicitudId}/estado?estado=${estado}`;
-    if (tecnicoId) url += `&tecnico_id=${tecnicoId}`;
-    return this.http.patch<Solicitud>(url, {});
+  aceptarSolicitud(solicitudId: number): Observable<Solicitud> {
+    return this.http.patch<Solicitud>(`${this.apiUrl}${solicitudId}/aceptar`, {});
+  }
+
+  asignarTecnico(solicitudId: number, tecnicoId: number): Observable<Solicitud> {
+    return this.http.patch<Solicitud>(`${this.apiUrl}${solicitudId}/asignar-tecnico?tecnico_id=${tecnicoId}`, {});
+  }
+
+  cancelarSolicitud(solicitudId: number): Observable<Solicitud> {
+    return this.http.patch<Solicitud>(`${this.apiUrl}${solicitudId}/cancelar`, {});
+  }
+
+  actualizarMiAsignacionEstado(solicitudId: number, estado: string): Observable<Solicitud> {
+    return this.http.patch<Solicitud>(`${this.apiUrl}mis-asignaciones/${solicitudId}/estado?estado=${estado}`, {});
   }
 }

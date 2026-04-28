@@ -1,0 +1,442 @@
+<div class="dashboard-shell">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+        </svg>
+      </div>
+      <div>
+        <p class="eyebrow">Equipo técnico</p>
+        <h1>Gestión de técnicos</h1>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <button class="btn-ghost" type="button" (click)="volverAlPanel()">
+        ← Volver al panel
+      </button>
+
+      <button class="btn-ghost" type="button" (click)="nuevo()">
+        + Nuevo técnico
+      </button>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="hero-card">
+      <div class="hero-copy">
+        <p class="eyebrow">Resumen operativo</p>
+        <h2>Controla tu equipo técnico desde un solo lugar</h2>
+        <p>
+          Consulta rápidamente qué técnicos están disponibles, cuáles están ocupados y actualiza sus datos cuando sea necesario.
+        </p>
+      </div>
+    </section>
+
+    <section class="stats-strip">
+      <article class="stat-card">
+        <span>Total técnicos</span>
+        <strong>{{ totalTecnicos }}</strong>
+        <small>Personal registrado en tu taller</small>
+      </article>
+
+      <article class="stat-card">
+        <span>Disponibles</span>
+        <strong>{{ tecnicosDisponibles }}</strong>
+        <small>Listos para asignación</small>
+      </article>
+
+      <article class="stat-card">
+        <span>Ocupados</span>
+        <strong>{{ tecnicosOcupados }}</strong>
+        <small>Atendiendo servicios o no disponibles</small>
+      </article>
+    </section>
+
+    <section *ngIf="mensajeExito" class="alert alert-success">
+      {{ mensajeExito }}
+    </section>
+
+    <section *ngIf="mensajeError" class="alert alert-error">
+      {{ mensajeError }}
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Administración</p>
+          <h3>Listado de técnicos</h3>
+          <p class="panel-subtitle">
+            Busca técnicos por nombre o especialidad y filtra su estado.
+          </p>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="toolbar-search">
+          <label for="busqueda">Buscar</label>
+          <input
+            id="busqueda"
+            type="text"
+            [(ngModel)]="busqueda"
+            placeholder="Ej. Juan, electricidad, motor..."
+          />
+        </div>
+
+        <div class="toolbar-filter">
+          <label for="filtroEstado">Estado</label>
+          <select id="filtroEstado" [(ngModel)]="filtroEstado">
+            <option value="todos">Todos</option>
+            <option value="disponibles">Disponibles</option>
+            <option value="ocupados">Ocupados</option>
+          </select>
+        </div>
+      </div>
+
+      <div *ngIf="loading" class="loading-state">
+        Cargando técnicos...
+      </div>
+
+      <div *ngIf="!loading && tecnicosFiltrados.length === 0" class="empty-state">
+        <div class="empty-state-card">
+          <h3>No hay técnicos para mostrar</h3>
+          <p>
+            Todavía no existen técnicos registrados o no hay coincidencias con el filtro actual.
+          </p>
+          <button class="btn-primary" type="button" (click)="nuevo()">
+            Registrar técnico
+          </button>
+        </div>
+      </div>
+
+      <div *ngIf="!loading && tecnicosFiltrados.length > 0" class="tech-grid">
+        <article class="tech-card" *ngFor="let t of tecnicosFiltrados">
+          <div class="tech-card-header">
+            <div>
+              <h4>{{ t.nombre }}</h4>
+              <p>{{ getEspecialidadesTexto(t) }}</p>
+            </div>
+
+            <span
+              class="status-pill"
+              [class.available]="t.disponible"
+              [class.busy]="!t.disponible"
+            >
+              {{ t.disponible ? 'Disponible' : 'Ocupado' }}
+            </span>
+          </div>
+
+          <div class="tech-card-body">
+            <div class="tech-meta">
+              <span class="meta-label">CI</span>
+              <strong>{{ t.ci }}</strong>
+            </div>
+
+            <div class="tech-meta">
+              <span class="meta-label">Dirección</span>
+              <strong>{{ t.direccion }}</strong>
+            </div>
+
+            <div class="tech-meta">
+              <span class="meta-label">Especialidades</span>
+              <strong>{{ getEspecialidadesTexto(t) }}</strong>
+            </div>
+
+            <div class="tech-meta">
+              <span class="meta-label">Estado actual</span>
+              <strong>{{ t.disponible ? 'Puede recibir asignaciones' : 'No disponible ahora' }}</strong>
+            </div>
+
+            <div class="tech-meta">
+              <span class="meta-label">Estado de registro</span>
+              <strong>{{ t.activo ? 'Activo' : 'Inactivo' }}</strong>
+            </div>
+
+            <div class="tech-meta">
+              <span class="meta-label">Usuario del sistema</span>
+              <strong>{{ t.id_usuario ? ('Vinculado #' + t.id_usuario) : 'Aún no vinculado' }}</strong>
+            </div>
+          </div>
+
+          <div class="tech-card-actions">
+            <button class="btn-secondary" type="button" (click)="editar(t)">
+              Editar
+            </button>
+
+            <button class="btn-ghost" type="button" (click)="toggleDisponibilidad(t)">
+              {{ t.disponible ? 'Marcar ocupado' : 'Marcar disponible' }}
+            </button>
+
+            <button class="btn-ghost" type="button" (click)="toggleActivo(t)">
+              {{ t.activo ? 'Dar de baja' : 'Reactivar técnico' }}
+            </button>
+
+            <button
+              class="btn-ghost"
+              type="button"
+              *ngIf="!t.id_usuario"
+              (click)="abrirModalUsuario(t)"
+            >
+              Convertir a usuario
+            </button>
+
+            <button class="btn-danger" type="button" (click)="eliminar(t)">
+              Eliminar
+            </button>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <div *ngIf="mostrarModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">{{ editando ? 'Edición' : 'Registro' }}</p>
+          <h3>{{ editando ? 'Editar técnico' : 'Nuevo técnico' }}</h3>
+        </div>
+
+        <button class="modal-close" type="button" (click)="cerrarModal()">✕</button>
+      </div>
+
+      <form class="modal-form" #tecnicoForm="ngForm" (ngSubmit)="guardar(tecnicoForm)">
+        <div *ngIf="modalMensajeError" class="alert alert-error">
+          {{ modalMensajeError }}
+        </div>
+        <div *ngIf="modalMensajeExito" class="alert alert-success">
+          {{ modalMensajeExito }}
+        </div>
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="nombre">Nombre completo</label>
+            <input
+              id="nombre"
+              type="text"
+              [(ngModel)]="form.nombre"
+              name="nombre"
+              #nombreCtrl="ngModel"
+              required
+              minlength="3"
+              placeholder="Ej. Juan Pérez"
+            />
+            <div class="field-error" *ngIf="nombreCtrl.invalid && nombreCtrl.touched">
+              <span *ngIf="nombreCtrl.errors?.['required']">El nombre del técnico es obligatorio.</span>
+              <span *ngIf="nombreCtrl.errors?.['minlength']">El nombre debe tener al menos 3 caracteres.</span>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label for="ci">CI</label>
+            <input
+              id="ci"
+              type="text"
+              [(ngModel)]="form.ci"
+              name="ci"
+              #ciCtrl="ngModel"
+              required
+              maxlength="10"
+              placeholder="Ej. 12345678LP"
+            />
+            <div class="field-error" *ngIf="ciCtrl.invalid && ciCtrl.touched">
+              <span *ngIf="ciCtrl.errors?.['required']">El CI es obligatorio.</span>
+              <span *ngIf="ciCtrl.errors?.['maxlength']">El CI no puede exceder 10 caracteres.</span>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label for="direccion">Dirección</label>
+            <input
+              id="direccion"
+              type="text"
+              [(ngModel)]="form.direccion"
+              name="direccion"
+              #direccionCtrl="ngModel"
+              required
+              minlength="5"
+              placeholder="Ej. Av. Blanco Galindo km 8"
+            />
+            <div class="field-error" *ngIf="direccionCtrl.invalid && direccionCtrl.touched">
+              <span *ngIf="direccionCtrl.errors?.['required']">La dirección es obligatoria.</span>
+              <span *ngIf="direccionCtrl.errors?.['minlength']">La dirección debe tener al menos 5 caracteres.</span>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label for="especialidad">Especialidades</label>
+            <div class="specialty-picker">
+              <select
+                id="especialidad"
+                [(ngModel)]="especialidadSeleccionadaId"
+                name="especialidadSeleccionadaId"
+              >
+                <option value="">Selecciona una especialidad</option>
+                <option *ngFor="let esp of especialidades" [value]="esp.id">
+                  {{ esp.nombre }}
+                </option>
+                <option value="__nueva__">+ Crear nueva especialidad</option>
+              </select>
+              <button type="button" class="btn-secondary" (click)="agregarEspecialidad()">
+                Agregar
+              </button>
+            </div>
+            <div class="specialty-chip-list" *ngIf="especialidadesSeleccionadas.length">
+              <button
+                type="button"
+                class="specialty-chip"
+                *ngFor="let esp of especialidadesSeleccionadas"
+                (click)="quitarEspecialidad(esp.id)"
+              >
+                {{ esp.nombre }}
+                <span aria-hidden="true">×</span>
+              </button>
+            </div>
+            <div class="form-field" *ngIf="mostrarNuevaEspecialidad">
+              <label for="nuevaEspecialidad">Nueva especialidad</label>
+              <div class="specialty-picker">
+                <input
+                  id="nuevaEspecialidad"
+                  type="text"
+                  [(ngModel)]="nuevaEspecialidad"
+                  name="nuevaEspecialidad"
+                  #nuevaEspecialidadCtrl="ngModel"
+                  required
+                  minlength="3"
+                  placeholder="Ej. Diagnóstico electrónico"
+                  (keydown.enter)="manejarEnterNuevaEspecialidad($event)"
+                />
+                <button type="button" class="btn-secondary" (click)="crearEspecialidadYAgregar()">
+                  Crear y agregar
+                </button>
+              </div>
+
+              <div class="field-error" *ngIf="nuevaEspecialidadCtrl.invalid && nuevaEspecialidadCtrl.touched">
+                <span *ngIf="nuevaEspecialidadCtrl.errors?.['required']">Debes ingresar la nueva especialidad.</span>
+                <span *ngIf="nuevaEspecialidadCtrl.errors?.['minlength']">La especialidad debe tener al menos 3 caracteres.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-check">
+          <input
+            id="disponible"
+            type="checkbox"
+            [(ngModel)]="form.disponible"
+            name="disponible"
+          />
+          <label for="disponible">Disponible para nuevas asignaciones</label>
+        </div>
+
+        <div class="form-check">
+          <input
+            id="activo"
+            type="checkbox"
+            [(ngModel)]="form.activo"
+            name="activo"
+          />
+          <label for="activo">Técnico activo en el registro</label>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn-secondary" type="button" (click)="cerrarModal()">
+            Cancelar
+          </button>
+          
+          <button class="btn-primary" type="submit" [disabled]="guardando || tecnicoForm.invalid">
+            {{ guardando ? 'Guardando...' : (editando ? 'Guardar cambios' : 'Registrar técnico') }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div *ngIf="mostrarModalUsuario" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Vinculación</p>
+          <h3>Convertir técnico en usuario</h3>
+          <p class="modal-subtitle" *ngIf="tecnicoSeleccionadoParaUsuario">
+            Se creará una cuenta para {{ tecnicoSeleccionadoParaUsuario.nombre }} con rol TECNICO.
+          </p>
+        </div>
+
+        <button class="modal-close" type="button" (click)="cerrarModalUsuario()">✕</button>
+      </div>
+
+      <form class="modal-form" #usuarioFormRef="ngForm" (ngSubmit)="convertirAUsuario(usuarioFormRef)">
+        <div *ngIf="modalMensajeError" class="alert alert-error">
+          {{ modalMensajeError }}
+        </div>
+
+        <div class="form-grid single-column">
+          <div class="form-field">
+            <label for="usuario_username">Nombre de usuario</label>
+            <input
+              id="usuario_username"
+              type="text"
+              [(ngModel)]="usuarioForm.username"
+              name="usuario_username"
+              #usuarioUsernameCtrl="ngModel"
+              required
+              minlength="3"
+              placeholder="Ej. juan.tecnico"
+            />
+            <div class="field-error" *ngIf="usuarioUsernameCtrl.invalid && usuarioUsernameCtrl.touched">
+              <span *ngIf="usuarioUsernameCtrl.errors?.['required']">El nombre de usuario es obligatorio.</span>
+              <span *ngIf="usuarioUsernameCtrl.errors?.['minlength']">El nombre de usuario debe tener al menos 3 caracteres.</span>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label for="usuario_email">Correo electrónico</label>
+            <input
+              id="usuario_email"
+              type="email"
+              [(ngModel)]="usuarioForm.email"
+              name="usuario_email"
+              #usuarioEmailCtrl="ngModel"
+              required
+              email
+              placeholder="Ej. tecnico@taller.com"
+            />
+            <div class="field-error" *ngIf="usuarioEmailCtrl.invalid && usuarioEmailCtrl.touched">
+              <span *ngIf="usuarioEmailCtrl.errors?.['required']">El correo es obligatorio.</span>
+              <span *ngIf="usuarioEmailCtrl.errors?.['email']">Ingresa un correo válido.</span>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label for="usuario_password">Contraseña temporal</label>
+            <input
+              id="usuario_password"
+              type="password"
+              [(ngModel)]="usuarioForm.password"
+              name="usuario_password"
+              #usuarioPasswordCtrl="ngModel"
+              required
+              minlength="6"
+              placeholder="Mínimo 6 caracteres"
+            />
+            <div class="field-error" *ngIf="usuarioPasswordCtrl.invalid && usuarioPasswordCtrl.touched">
+              <span *ngIf="usuarioPasswordCtrl.errors?.['required']">La contraseña es obligatoria.</span>
+              <span *ngIf="usuarioPasswordCtrl.errors?.['minlength']">La contraseña debe tener al menos 6 caracteres.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn-secondary" type="button" (click)="cerrarModalUsuario()">
+            Cancelar
+          </button>
+
+          <button class="btn-primary" type="submit" [disabled]="convirtiendoUsuario || usuarioFormRef.invalid">
+            {{ convirtiendoUsuario ? 'Creando usuario...' : 'Crear usuario tecnico' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

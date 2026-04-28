@@ -1,34 +1,84 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { Especialidad } from './especialidad.service';
 
 export interface Tecnico {
   id: number;
   nombre: string;
-  especialidad: string;
+  ci: string;
+  direccion: string;
+  especialidades: Especialidad[];
   latitud?: number;
   longitud?: number;
   disponible: boolean;
+  activo: boolean;
   taller_id?: number;
+  id_usuario?: number | null;
+}
+
+export interface TecnicoPayload {
+  nombre: string;
+  ci: string;
+  direccion: string;
+  especialidad_ids: number[];
+  disponible: boolean;
+  activo: boolean;
+  latitud?: number | null;
+  longitud?: number | null;
+}
+
+export interface TecnicoUsuarioPayload {
+  username: string;
+  email: string;
+  password: string;
 }
 
 @Injectable({
   providedIn: 'root'
 })
 export class TecnicoService {
-  private apiUrl = 'http://127.0.0.1:8000/api/v1/tecnicos/';
+  private apiUrl = 'http://127.0.0.1:8000/api/v1/tecnicos';
 
   constructor(private http: HttpClient) {}
 
   getTecnicos(): Observable<Tecnico[]> {
-    return this.http.get<Tecnico[]>(this.apiUrl);
+    return this.http.get<Tecnico[]>(`${this.apiUrl}/`);
   }
 
-  createTecnico(tecnico: Partial<Tecnico>): Observable<Tecnico> {
-    return this.http.post<Tecnico>(this.apiUrl, tecnico);
+  getMiPerfilTecnico(): Observable<Tecnico> {
+    return this.http.get<Tecnico>(`${this.apiUrl}/mi-perfil`);
+  }
+
+  actualizarMiDisponibilidad(disponible: boolean): Observable<Tecnico> {
+    return this.http.patch<Tecnico>(`${this.apiUrl}/mi-disponibilidad?disponible=${disponible}`, {});
+  }
+
+  createTecnico(tecnico: TecnicoPayload): Observable<Tecnico> {
+    return this.http.post<Tecnico>(`${this.apiUrl}/`, tecnico);
+  }
+
+  crearTecnico(tecnico: TecnicoPayload): Observable<Tecnico> {
+    return this.createTecnico(tecnico);
+  }
+
+  actualizarTecnico(id: number, data: TecnicoPayload): Observable<Tecnico> {
+    return this.http.put<Tecnico>(`${this.apiUrl}/${id}`, data);
+  }
+
+  convertirATecnicoUsuario(id: number, data: TecnicoUsuarioPayload): Observable<Tecnico> {
+    return this.http.post<Tecnico>(`${this.apiUrl}/${id}/convertir-a-usuario`, data);
+  }
+
+  eliminarTecnico(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/${id}`);
   }
 
   updateDisponibilidad(tecnicoId: number, disponible: boolean): Observable<Tecnico> {
     return this.http.patch<Tecnico>(`${this.apiUrl}/${tecnicoId}/disponibilidad?disponible=${disponible}`, {});
+  }
+
+  cambiarDisponibilidad(tecnicoId: number, disponible: boolean): Observable<Tecnico> {
+    return this.updateDisponibilidad(tecnicoId, disponible);
   }
 }

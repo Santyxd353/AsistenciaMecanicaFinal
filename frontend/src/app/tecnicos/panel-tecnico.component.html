@@ -1,0 +1,163 @@
+<div class="panel-tecnico-shell">
+  <header class="panel-tecnico-topbar">
+    <div class="panel-tecnico-marca">
+      <div class="panel-tecnico-icono">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+        </svg>
+      </div>
+
+      <div>
+        <p class="panel-tecnico-kicker">Modulo tecnico</p>
+        <h1>Panel del tecnico</h1>
+      </div>
+    </div>
+
+    <button class="boton-cerrar-sesion" type="button" (click)="cerrarSesion()">
+      Cerrar sesion
+    </button>
+  </header>
+
+  <main class="panel-tecnico-contenido">
+    <section class="panel-tecnico-bienvenida">
+      <p class="panel-tecnico-kicker">Bienvenida</p>
+      <h2>Bienvenido, {{ nombreTecnico }}</h2>
+      <p>
+        Este espacio sera el punto de trabajo del tecnico dentro del sistema.
+      </p>
+    </section>
+
+    <section *ngIf="cargandoPerfil" class="panel-tecnico-zona-vacia">
+      <p class="panel-tecnico-kicker">Perfil tecnico</p>
+      <h3>Cargando informacion</h3>
+      <p>Estamos obteniendo tus datos de tecnico dentro del sistema.</p>
+    </section>
+
+    <section *ngIf="errorPerfil" class="panel-tecnico-alerta">
+      {{ errorPerfil }}
+    </section>
+
+    <section *ngIf="perfilTecnico" class="panel-tecnico-grid">
+      <article class="panel-tecnico-tarjeta">
+        <span class="panel-tecnico-etiqueta">Perfil</span>
+        <strong>{{ perfilTecnico.nombre }}</strong>
+        <p>CI: {{ perfilTecnico.ci }}</p>
+        <p>Direccion: {{ perfilTecnico.direccion }}</p>
+      </article>
+
+      <article class="panel-tecnico-tarjeta">
+        <span class="panel-tecnico-etiqueta">Operacion</span>
+        <strong>{{ estadoDisponibilidad }} y {{ estadoRegistro }}</strong>
+        <p>Especialidades: {{ especialidadesTexto }}</p>
+        <div class="panel-tecnico-acciones" *ngIf="perfilTecnico.activo">
+          <button
+            class="boton-secundario"
+            type="button"
+            [disabled]="actualizandoDisponibilidad"
+            (click)="toggleDisponibilidad()"
+          >
+            {{
+              actualizandoDisponibilidad
+                ? 'Actualizando...'
+                : (perfilTecnico.disponible ? 'Marcarme ocupado' : 'Marcarme disponible')
+            }}
+          </button>
+        </div>
+      </article>
+    </section>
+
+    <section class="panel-tecnico-bloque">
+      <div class="panel-tecnico-bloque-encabezado">
+        <div>
+          <p class="panel-tecnico-kicker">Mis asignaciones</p>
+          <h3>Atenciones vinculadas a este tecnico</h3>
+        </div>
+      </div>
+
+      <div *ngIf="cargandoAsignaciones" class="panel-tecnico-zona-vacia">
+        <p>Cargando asignaciones...</p>
+      </div>
+
+      <div *ngIf="errorAsignaciones" class="panel-tecnico-alerta">
+        {{ errorAsignaciones }}
+      </div>
+
+      <div *ngIf="!cargandoAsignaciones && !errorAsignaciones && !tieneAsignaciones" class="panel-tecnico-zona-vacia">
+        <p>No tienes asignaciones registradas por el momento.</p>
+      </div>
+
+      <div *ngIf="!cargandoAsignaciones && tieneAsignaciones" class="panel-tecnico-lista">
+        <article class="panel-tecnico-asignacion" *ngFor="let asignacion of asignaciones">
+          <div class="panel-tecnico-asignacion-cabecera">
+            <div>
+              <strong>Solicitud #{{ asignacion.id }}</strong>
+              <p>{{ asignacion.descripcion }}</p>
+            </div>
+
+            <span class="panel-tecnico-estado" [class]="asignacion.estado">
+              {{ etiquetaEstado(asignacion.estado) }}
+            </span>
+          </div>
+
+          <div class="panel-tecnico-asignacion-meta">
+            <span>Fecha: {{ asignacion.fecha_creacion | date:'dd/MM/yyyy HH:mm' }}</span>
+            <span *ngIf="asignacion.clasificacion_ia">Clasificacion: {{ asignacion.clasificacion_ia }}</span>
+            <span *ngIf="asignacion.prioridad_ia">Prioridad: {{ asignacion.prioridad_ia }}</span>
+          </div>
+
+          <div class="panel-tecnico-acciones" *ngIf="asignacion.estado === 'asignada' || asignacion.estado === 'en_progreso'">
+            <button
+              class="boton-secundario"
+              type="button"
+              [disabled]="actualizandoSolicitudId === asignacion.id"
+              *ngIf="asignacion.estado === 'asignada'"
+              (click)="actualizarEstadoAsignacion(asignacion.id, 'en_progreso')"
+            >
+              {{ actualizandoSolicitudId === asignacion.id ? 'Actualizando...' : 'Iniciar atencion' }}
+            </button>
+
+            <button
+              class="boton-secundario"
+              type="button"
+              [disabled]="actualizandoSolicitudId === asignacion.id"
+              (click)="actualizarEstadoAsignacion(asignacion.id, 'resuelta')"
+            >
+              {{ actualizandoSolicitudId === asignacion.id ? 'Actualizando...' : 'Marcar resuelta' }}
+            </button>
+
+            <button
+              class="boton-secundario boton-secundario-peligro"
+              type="button"
+              [disabled]="actualizandoSolicitudId === asignacion.id"
+              (click)="actualizarEstadoAsignacion(asignacion.id, 'cancelada')"
+            >
+              {{ actualizandoSolicitudId === asignacion.id ? 'Actualizando...' : 'Cancelar atencion' }}
+            </button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel-tecnico-grid">
+      <article class="panel-tecnico-tarjeta">
+        <span class="panel-tecnico-etiqueta">Estado</span>
+        <strong>Panel inicial listo</strong>
+        <p>La cuenta tecnica ya tiene un espacio propio dentro de la plataforma.</p>
+      </article>
+
+      <article class="panel-tecnico-tarjeta">
+        <span class="panel-tecnico-etiqueta">Proximo paso</span>
+        <strong>Funciones operativas en construccion</strong>
+        <p>Aqui incorporaremos asignaciones, ubicacion, cobros y seguimiento de incidentes.</p>
+      </article>
+    </section>
+
+    <section class="panel-tecnico-zona-vacia">
+      <p class="panel-tecnico-kicker">Espacio de trabajo</p>
+      <h3>Modulo en preparacion</h3>
+      <p>
+        Dejamos esta vista lista para crecer con las herramientas que necesitara el tecnico en campo.
+      </p>
+    </section>
+  </main>
+</div>

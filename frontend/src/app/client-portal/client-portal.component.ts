@@ -6,7 +6,7 @@ import { finalize, timeout } from 'rxjs';
 
 import { AuthService } from '../core/auth.service';
 import { Solicitud, SolicitudService } from '../core/incident.service';
-import { Vehicle, VehiclePreview, VehicleService } from '../core/vehicle.service';
+import { Vehicle, VehicleService } from '../core/vehicle.service';
 
 @Component({
   selector: 'app-client-portal',
@@ -134,41 +134,11 @@ import { Vehicle, VehiclePreview, VehicleService } from '../core/vehicle.service
               <input type="text" formControlName="modelo" placeholder="Corolla" />
             </label>
             <label class="field">
-              <span>Año</span>
-              <input type="number" formControlName="anio" placeholder="2020" />
-            </label>
-            <label class="field">
               <span>Color</span>
               <input type="text" formControlName="color" placeholder="Blanco" />
             </label>
-            <label class="field field-wide">
-              <span>Fotos del vehiculo</span>
-              <input type="file" accept="image/*" multiple (change)="onVehiclePhotoSelected($event)" />
-            </label>
-
-            <div class="preview-box" *ngIf="selectedVehiclePhotos.length || vehiclePreview">
-              <strong>Previsualizacion IA</strong>
-              <p>{{ vehiclePreview?.resumen || 'Carga fotos y usa Analizar para sugerir placa, marca, modelo y año.' }}</p>
-              <span>{{ selectedVehiclePhotos.length }} foto(s) seleccionada(s)</span>
-              <div class="preview-grid" *ngIf="vehiclePreview">
-                <div><strong>Placa:</strong> {{ vehiclePreview.placa || '-' }}</div>
-                <div><strong>Marca:</strong> {{ vehiclePreview.marca || '-' }}</div>
-                <div><strong>Modelo:</strong> {{ vehiclePreview.modelo || '-' }}</div>
-                <div><strong>Año:</strong> {{ vehiclePreview.anio ?? '-' }}</div>
-                <div><strong>Color:</strong> {{ vehiclePreview.color || '-' }}</div>
-                <div><strong>Fuente:</strong> {{ vehiclePreview.source }}</div>
-              </div>
-            </div>
 
             <div class="panel-actions">
-              <button
-                class="btn-secondary"
-                type="button"
-                [disabled]="!selectedVehiclePhotos.length || analyzingVehiclePreview"
-                (click)="analyzeVehiclePhotos()"
-              >
-                {{ analyzingVehiclePreview ? 'Analizando...' : 'Analizar fotos con IA' }}
-              </button>
               <button class="btn-primary" type="submit" [disabled]="vehicleForm.invalid || savingVehicle">
                 {{ savingVehicle ? 'Registrando...' : 'Registrar vehiculo' }}
               </button>
@@ -180,15 +150,9 @@ import { Vehicle, VehiclePreview, VehicleService } from '../core/vehicle.service
 
           <div class="vehicle-list" *ngIf="vehicles.length; else emptyVehicleState">
             <article class="vehicle-card" *ngFor="let vehicle of vehicles">
-              <div class="vehicle-photo" *ngIf="vehicle.foto_url; else vehicleIcon">
-                <img [src]="assetUrl(vehicle.foto_url)" [alt]="vehicle.placa" />
-              </div>
-              <ng-template #vehicleIcon>
-                <div class="vehicle-photo vehicle-photo-fallback">SOS</div>
-              </ng-template>
               <div class="vehicle-plate">{{ vehicle.placa }}</div>
               <strong>{{ vehicle.marca }} {{ vehicle.modelo }}</strong>
-              <p>{{ vehicle.anio ? vehicle.anio + ' · ' : '' }}{{ vehicle.color || 'Color no definido' }}</p>
+              <p>{{ vehicle.color || 'Color no definido' }}</p>
             </article>
           </div>
 
@@ -663,67 +627,6 @@ import { Vehicle, VehiclePreview, VehicleService } from '../core/vehicle.service
       border: 1px solid rgba(127, 92, 58, 0.12);
     }
 
-    .vehicle-photo {
-      width: 100%;
-      aspect-ratio: 16 / 10;
-      border-radius: 18px;
-      overflow: hidden;
-      background: #f4eadf;
-      border: 1px solid rgba(127, 92, 58, 0.12);
-      display: grid;
-      place-items: center;
-    }
-
-    .vehicle-photo img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-
-    .vehicle-photo-fallback {
-      font-size: 0.9rem;
-      font-weight: 800;
-      letter-spacing: 0.16em;
-      color: #8d5a31;
-    }
-
-    .preview-box {
-      grid-column: 1 / -1;
-      padding: 14px;
-      border-radius: 18px;
-      background: #fff7ef;
-      border: 1px solid #efdfcd;
-    }
-
-    .preview-box strong {
-      display: block;
-      margin-bottom: 6px;
-    }
-
-    .preview-box p,
-    .preview-box span {
-      margin: 0;
-      color: #6d5c4d;
-      line-height: 1.55;
-    }
-
-    .preview-box span {
-      display: inline-block;
-      margin-top: 6px;
-      font-size: 12px;
-      font-weight: 700;
-    }
-
-    .preview-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px 12px;
-      margin-top: 12px;
-      font-size: 13px;
-      color: #4d4034;
-    }
-
     .vehicle-plate {
       display: inline-flex;
       align-self: flex-start;
@@ -1000,18 +903,14 @@ import { Vehicle, VehiclePreview, VehicleService } from '../core/vehicle.service
   `]
 })
 export class ClientPortalComponent implements OnInit {
-  readonly backendOrigin = 'http://127.0.0.1:8000';
   profileForm: FormGroup;
   vehicleForm: FormGroup;
   vehicles: Vehicle[] = [];
   reports: Solicitud[] = [];
   selectedReportForPayment: Solicitud | null = null;
-  selectedVehiclePhotos: File[] = [];
-  vehiclePreview: VehiclePreview | null = null;
 
   savingProfile = false;
   savingVehicle = false;
-  analyzingVehiclePreview = false;
   profileMessage = '';
   profileError = '';
   vehicleMessage = '';
@@ -1035,7 +934,6 @@ export class ClientPortalComponent implements OnInit {
       placa: ['', Validators.required],
       marca: ['', Validators.required],
       modelo: ['', Validators.required],
-      anio: [''],
       color: ['']
     });
   }
@@ -1133,47 +1031,6 @@ export class ClientPortalComponent implements OnInit {
     });
   }
 
-  onVehiclePhotoSelected(event: Event) {
-    const input = event.target as HTMLInputElement;
-    this.selectedVehiclePhotos = Array.from(input.files ?? []).slice(0, 4);
-  }
-
-  analyzeVehiclePhotos() {
-    if (!this.selectedVehiclePhotos.length) {
-      return;
-    }
-
-    this.vehicleError = '';
-    this.analyzingVehiclePreview = true;
-    this.vehicleService.previewVehicleFromPhotos(this.selectedVehiclePhotos).pipe(
-      timeout(30000),
-      finalize(() => {
-        this.analyzingVehiclePreview = false;
-      })
-    ).subscribe({
-      next: (preview) => {
-        this.vehiclePreview = preview;
-        this.vehicleForm.patchValue({
-          placa: preview.placa || this.vehicleForm.value.placa,
-          marca: preview.marca || this.vehicleForm.value.marca,
-          modelo: preview.modelo || this.vehicleForm.value.modelo,
-          anio: preview.anio ?? this.vehicleForm.value.anio,
-          color: preview.color || this.vehicleForm.value.color
-        });
-      },
-      error: (error) => {
-        this.vehicleError = error?.error?.detail || 'No se pudo analizar las fotos del vehiculo.';
-      }
-    });
-  }
-
-  assetUrl(path?: string | null): string {
-    if (!path) {
-      return '';
-    }
-    return path.startsWith('http') ? path : `${this.backendOrigin}${path}`;
-  }
-
   addVehicle() {
     if (this.vehicleForm.invalid) {
       this.vehicleForm.markAllAsTouched();
@@ -1184,10 +1041,7 @@ export class ClientPortalComponent implements OnInit {
     this.vehicleMessage = '';
     this.savingVehicle = true;
 
-    this.vehicleService.createVehicle({
-      ...this.vehicleForm.getRawValue(),
-      foto: this.selectedVehiclePhotos[0] ?? null
-    }).pipe(
+    this.vehicleService.createVehicle(this.vehicleForm.getRawValue()).pipe(
       timeout(10000),
       finalize(() => {
         this.savingVehicle = false;
@@ -1195,9 +1049,7 @@ export class ClientPortalComponent implements OnInit {
     ).subscribe({
       next: (vehicle) => {
         this.vehicles = [vehicle, ...this.vehicles];
-        this.vehicleForm.reset({ placa: '', marca: '', modelo: '', anio: '', color: '' });
-        this.selectedVehiclePhotos = [];
-        this.vehiclePreview = null;
+        this.vehicleForm.reset({ placa: '', marca: '', modelo: '', color: '' });
         this.vehicleMessage = 'Vehiculo registrado correctamente.';
         this.loadReports();
       },

@@ -1,9 +1,11 @@
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { forkJoin } from 'rxjs';
 import { AuthService } from '../core/auth.service';
 import { SolicitudService, Solicitud } from '../core/incident.service';
 import { TecnicoService, Tecnico } from '../core/tecnico.service';
+import { Especialidad, EspecialidadService } from '../core/especialidad.service';
 import { DetalleSolicitudModalComponent, AsignacionEvento } from './detalle-solicitud-modal.component';
 import { DetalleTecnicoModalComponent } from './detalle-tecnico-modal.component';
 import { Router } from '@angular/router';
@@ -82,14 +84,19 @@ import { Router } from '@angular/router';
 
             <div class="tech-form-container" *ngIf="mostrarFormTecnico">
               <input type="text" [(ngModel)]="nuevoTecnicoNombre" placeholder="Nombre completo del técnico" class="input-field" />
-              <select [(ngModel)]="nuevoTecnicoEspecialidad" class="input-field">
-                <option value="" disabled selected>Selecciona su especialidad</option>
-                <option value="Mecánica General">Mecánica General</option>
-                <option value="Llantas y Suspensión">Llantas y Suspensión</option>
-                <option value="Eléctrico y Baterías">Eléctrico y Baterías</option>
-                <option value="Grúa y Remolque">Grúa y Remolque</option>
+              <input type="text" [(ngModel)]="nuevoTecnicoCi" maxlength="10" placeholder="CI del técnico" class="input-field" />
+              <input type="text" [(ngModel)]="nuevoTecnicoDireccion" placeholder="Dirección del técnico" class="input-field" />
+              <select [(ngModel)]="nuevoTecnicoEspecialidadId" class="input-field">
+                <option [ngValue]="null" disabled>Selecciona su especialidad</option>
+                <option *ngFor="let especialidad of especialidadesTecnico" [ngValue]="especialidad.id">
+                  {{ especialidad.nombre }}
+                </option>
               </select>
-              <button class="btn-confirm" [disabled]="!nuevoTecnicoNombre || !nuevoTecnicoEspecialidad" (click)="guardarTecnico()">
+              <button
+                class="btn-confirm"
+                [disabled]="!nuevoTecnicoNombre || !nuevoTecnicoCi || !nuevoTecnicoDireccion || !nuevoTecnicoEspecialidadId"
+                (click)="guardarTecnico()"
+              >
                 Registrar Técnico
               </button>
             </div>
@@ -104,7 +111,7 @@ import { Router } from '@angular/router';
                 <div class="tech-avatar">{{ tec.nombre.charAt(0) }}</div>
                 <div class="tech-info">
                   <strong>{{ tec.nombre }}</strong>
-                  <span>{{ tec.especialidad }}</span>
+                  <span>{{ getEspecialidadesTexto(tec) }}</span>
                 </div>
                 <button
                   class="toggle-btn"
@@ -220,17 +227,21 @@ import { Router } from '@angular/router';
 export class DashboardComponent implements OnInit {
   solicitudes: Solicitud[] = [];
   tecnicos: Tecnico[] = [];
+  especialidadesTecnico: Especialidad[] = [];
   solicitudSeleccionada: Solicitud | null = null;
   tecnicoSeleccionado: Tecnico | null = null;
 
   mostrarFormTecnico = false;
   nuevoTecnicoNombre = '';
-  nuevoTecnicoEspecialidad = '';
+  nuevoTecnicoCi = '';
+  nuevoTecnicoDireccion = '';
+  nuevoTecnicoEspecialidadId: number | null = null;
 
   constructor(
     private authService: AuthService,
     private solicitudService: SolicitudService,
     private tecnicoService: TecnicoService,
+    private especialidadService: EspecialidadService,
     private cdr: ChangeDetectorRef,
     private router: Router
   ) {}
@@ -248,12 +259,22 @@ export class DashboardComponent implements OnInit {
 
     this.cargarSolicitudes();
     this.cargarTecnicos();
+    this.cargarEspecialidadesTecnico();
   }
 
   cargarSolicitudes() {
-    this.solicitudService.getSolicitudes().subscribe({
-      next: (data) => {
-        this.solicitudes = data.sort((a, b) => b.id - a.id);
+    forkJoin({
+      pendientes: this.solicitudService.getSolicitudesPendientesTaller(),
+      tomadas: this.solicitudService.getMisSolicitudesTaller()
+    }).subscribe({
+      next: ({ pendientes, tomadas }) => {
+        const mapa = new Map<number, Solicitud>();
+
+        [...pendientes, ...tomadas].forEach((solicitud) => {
+          mapa.set(solicitud.id, solicitud);
+        });
+
+        this.solicitudes = Array.from(mapa.values()).sort((a, b) => b.id - a.id);
         this.cdr.detectChanges();
       },
       error: (err) => console.error('Error cargando solicitudes:', err)
@@ -267,6 +288,16 @@ export class DashboardComponent implements OnInit {
         this.cdr.detectChanges();
       },
       error: (err) => console.error('Error cargando técnicos:', err)
+    });
+  }
+
+  cargarEspecialidadesTecnico() {
+    this.especialidadService.getEspecialidades().subscribe({
+      next: (data) => {
+        this.especialidadesTecnico = data;
+        this.cdr.detectChanges();
+      },
+      error: (err) => console.error('Error cargando especialidades de técnico:', err)
     });
   }
 
@@ -286,16 +317,21 @@ export class DashboardComponent implements OnInit {
   }
 
   guardarTecnico() {
-    if (!this.nuevoTecnicoNombre || !this.nuevoTecnicoEspecialidad) return;
+    if (!this.nuevoTecnicoNombre || !this.nuevoTecnicoCi || !this.nuevoTecnicoDireccion || !this.nuevoTecnicoEspecialidadId) return;
     this.tecnicoService.createTecnico({
-      nombre: this.nuevoTecnicoNombre,
-      especialidad: this.nuevoTecnicoEspecialidad,
-      disponible: true
+      nombre: this.nuevoTecnicoNombre.trim(),
+      ci: this.nuevoTecnicoCi.trim(),
+      direccion: this.nuevoTecnicoDireccion.trim(),
+      especialidad_ids: [this.nuevoTecnicoEspecialidadId],
+      disponible: true,
+      activo: true
     }).subscribe({
       next: (tec: Tecnico) => {
         this.tecnicos = [...this.tecnicos, tec];
         this.nuevoTecnicoNombre = '';
-        this.nuevoTecnicoEspecialidad = '';
+        this.nuevoTecnicoCi = '';
+        this.nuevoTecnicoDireccion = '';
+        this.nuevoTecnicoEspecialidadId = null;
         this.mostrarFormTecnico = false;
         this.cdr.detectChanges();
       },
@@ -317,6 +353,14 @@ export class DashboardComponent implements OnInit {
 
   tecnicosLibres(): number {
     return this.tecnicos.filter(t => t.disponible).length;
+  }
+
+  getEspecialidadesTexto(tecnico: Tecnico): string {
+    const nombres = (tecnico.especialidades || [])
+      .map(item => item.nombre?.trim())
+      .filter((nombre): nombre is string => Boolean(nombre));
+
+    return nombres.length > 0 ? nombres.join(', ') : 'Sin especialidades';
   }
 
   reportarIncidente() {
@@ -342,31 +386,23 @@ export class DashboardComponent implements OnInit {
   manejarAccion(evento: AsignacionEvento) {
     if (!this.solicitudSeleccionada) return;
 
-    // Si asigna, marcar el técnico como ocupado localmente
     if (evento.estado === 'asignada' && evento.tecnicoId) {
-      this.tecnicos = this.tecnicos.map(t =>
-        t.id === evento.tecnicoId ? { ...t, disponible: false } : t
-      );
+      this.solicitudService.aceptarSolicitud(this.solicitudSeleccionada.id).subscribe({
+        next: () => {
+          this.solicitudService.asignarTecnico(this.solicitudSeleccionada!.id, evento.tecnicoId!).subscribe({
+            next: (actualizada) => {
+              this.tecnicos = this.tecnicos.map(t =>
+                t.id === evento.tecnicoId ? { ...t, disponible: false } : t
+              );
+              this.solicitudes = this.solicitudes.map(s => s.id === actualizada.id ? actualizada : s);
+              this.solicitudSeleccionada = actualizada;
+              this.cdr.detectChanges();
+            }
+          });
+        }
+      });
+      return;
     }
-
-    // Si resuelve o cancela, liberar al técnico asignado localmente
-    if ((evento.estado === 'resuelta' || evento.estado === 'cancelada') && this.solicitudSeleccionada.tecnico_id) {
-      this.tecnicos = this.tecnicos.map(t =>
-        t.id === this.solicitudSeleccionada!.tecnico_id ? { ...t, disponible: true } : t
-      );
-    }
-
-    this.solicitudService.updateStatus(
-      this.solicitudSeleccionada.id,
-      evento.estado,
-      evento.tecnicoId
-    ).subscribe({
-      next: (actualizada) => {
-        this.solicitudes = this.solicitudes.map(s => s.id === actualizada.id ? actualizada : s);
-        this.solicitudSeleccionada = actualizada;
-        this.cdr.detectChanges();
-      }
-    });
   }
 
   etiquetaEstado(estado: string): string {
