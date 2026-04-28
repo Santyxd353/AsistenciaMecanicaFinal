@@ -11,8 +11,8 @@ RUN npm install
 
 COPY . .
 
-# Exponer el puerto para ng serve
+# Exponer el puerto por defecto para desarrollo local
 EXPOSE 4200
 
-# Comando para desarrollo con hot reload
-CMD ["ng", "serve", "--host", "0.0.0.0", "--poll", "2000"]
+# Cloud Run inyecta PORT; en local conserva 4200.
+CMD ["sh", "-c", "ng serve --host 0.0.0.0 --port ${PORT:-4200} --poll 2000"]

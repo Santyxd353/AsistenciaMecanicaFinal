@@ -84,7 +84,7 @@ export interface UpdateTallerPayload {
   providedIn: 'root'
 })
 export class WorkshopProfileService {
-  private apiUrl = 'http://127.0.0.1:8000/api/v1/talleres';
+  private apiUrl = 'https://backend-958497253028.europe-west1.run.app/api/v1/talleres';
 
   constructor(private http: HttpClient) {}
 

@@ -29,7 +29,7 @@ export interface UpdateVehiclePayload {
   providedIn: 'root'
 })
 export class VehicleService {
-  private apiUrl = 'http://127.0.0.1:8000/api/v1/vehiculos/';
+  private apiUrl = 'https://backend-958497253028.europe-west1.run.app/api/v1/vehiculos/';
 
   constructor(private http: HttpClient) {}
 

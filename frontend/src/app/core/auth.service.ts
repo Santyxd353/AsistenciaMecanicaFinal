@@ -47,7 +47,7 @@ export interface PasswordResetConfirmPayload {
   providedIn: 'root'
 })
 export class AuthService {
-  private apiUrl = 'http://127.0.0.1:8000/api/v1/auth';
+  private apiUrl = 'https://backend-958497253028.europe-west1.run.app/api/v1/auth';
   private currentUserSubject = new BehaviorSubject<AuthUser | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
 
