@@ -16,7 +16,7 @@ export interface Tecnico {
   providedIn: 'root'
 })
 export class TecnicoService {
-  private apiUrl = 'http://localhost:8000/api/v1/tecnicos/';
+  private apiUrl = 'http://127.0.0.1:8000/api/v1/tecnicos/';
 
   constructor(private http: HttpClient) {}
 

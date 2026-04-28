@@ -702,6 +702,7 @@ interface ParsedWorkshopSchedule {
 
     .map-frame {
       position: relative;
+      display: block;
       border-radius: 18px;
       overflow: hidden;
       border: 1px solid #eadcca;
@@ -710,8 +711,10 @@ interface ParsedWorkshopSchedule {
     }
 
     .leaflet-map {
+      display: block;
       width: 100%;
       height: 320px;
+      min-height: 320px;
     }
 
     .map-pin {
@@ -1038,9 +1041,19 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
   specialDay: WorkshopDay = 'Domingo';
   specialStartTime = '07:00';
   specialEndTime = '13:00';
-  @ViewChild('mapHost') mapHost?: ElementRef<HTMLDivElement>;
+  @ViewChild('mapHost')
+  set mapHostRef(value: ElementRef<HTMLDivElement> | undefined) {
+    this.mapHost = value;
+    if (value) {
+      setTimeout(() => {
+        void this.initializeMap();
+      }, 0);
+    }
+  }
+  private mapHost?: ElementRef<HTMLDivElement>;
   private leafletModule: typeof import('leaflet') | null = null;
   private mapInstance: import('leaflet').Map | null = null;
+  private mapResizeObserver: ResizeObserver | null = null;
   private slowLoadingTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly createRoutePath = 'crear-taller';
 
@@ -1084,6 +1097,8 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
 
   ngOnDestroy(): void {
     this.clearSlowLoadingTimer();
+    this.mapResizeObserver?.disconnect();
+    this.mapResizeObserver = null;
     this.mapInstance?.remove();
     this.mapInstance = null;
   }
@@ -1219,7 +1234,7 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
         this.successMessage = wasEditing
           ? 'Perfil del taller guardado correctamente.'
           : 'Taller creado correctamente.';
-        void this.router.navigate(['/taller']);
+        void this.redirectToWorkshopDashboard();
       },
       error: (error) => {
         this.errorMessage = error?.error?.detail || 'No se pudo guardar la informacion del taller.';
@@ -1423,9 +1438,19 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
       this.locationStatus = 'Pin actualizado desde el mapa.';
     });
 
+    map.whenReady(() => {
+      map.invalidateSize();
+    });
+    map.on('load', () => {
+      map.invalidateSize();
+    });
+
     this.mapInstance = map;
     this.mapReady = true;
+    this.attachMapResizeObserver();
     setTimeout(() => map.invalidateSize(), 0);
+    setTimeout(() => map.invalidateSize(), 200);
+    setTimeout(() => map.invalidateSize(), 600);
   }
 
   private setLocation(lat: number, lng: number, zoom?: number): void {
@@ -1450,6 +1475,29 @@ export class WorkshopSetupComponent implements OnInit, AfterViewInit, OnDestroy 
     }
     this.mapInstance.setView([lat, lng], this.mapInstance.getZoom(), { animate: false });
     this.locationStatus = 'Ubicacion cargada desde el perfil del taller.';
+    this.mapInstance.invalidateSize();
+  }
+
+  private attachMapResizeObserver(): void {
+    if (typeof ResizeObserver === 'undefined' || !this.mapHost || !this.mapInstance) {
+      return;
+    }
+    this.mapResizeObserver?.disconnect();
+    this.mapResizeObserver = new ResizeObserver(() => {
+      this.mapInstance?.invalidateSize();
+    });
+    this.mapResizeObserver.observe(this.mapHost.nativeElement);
+    const parent = this.mapHost.nativeElement.parentElement;
+    if (parent) {
+      this.mapResizeObserver.observe(parent);
+    }
+  }
+
+  private async redirectToWorkshopDashboard(): Promise<void> {
+    const navigated = await this.router.navigate(['/taller'], { replaceUrl: true });
+    if (!navigated && typeof window !== 'undefined') {
+      window.location.assign('/taller');
+    }
   }
 
   private syncScheduleControl(markTouched = false): void {

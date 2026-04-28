@@ -45,7 +45,7 @@ export interface UpdateVehiclePayload {
   providedIn: 'root'
 })
 export class VehicleService {
-  private apiUrl = 'http://localhost:8000/api/v1/vehiculos/';
+  private apiUrl = 'http://127.0.0.1:8000/api/v1/vehiculos/';
 
   constructor(private http: HttpClient) {}
 

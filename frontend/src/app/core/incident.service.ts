@@ -27,7 +27,7 @@ export interface Solicitud {
   providedIn: 'root'
 })
 export class SolicitudService {
-  private apiUrl = 'http://localhost:8000/api/v1/solicitudes/';
+  private apiUrl = 'http://127.0.0.1:8000/api/v1/solicitudes/';
 
   constructor(private http: HttpClient) {}
 

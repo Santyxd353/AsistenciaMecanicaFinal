@@ -150,6 +150,14 @@ import { Vehicle, VehiclePreview, VehicleService } from '../core/vehicle.service
               <strong>Previsualizacion IA</strong>
               <p>{{ vehiclePreview?.resumen || 'Carga fotos y usa Analizar para sugerir placa, marca, modelo y año.' }}</p>
               <span>{{ selectedVehiclePhotos.length }} foto(s) seleccionada(s)</span>
+              <div class="preview-grid" *ngIf="vehiclePreview">
+                <div><strong>Placa:</strong> {{ vehiclePreview.placa || '-' }}</div>
+                <div><strong>Marca:</strong> {{ vehiclePreview.marca || '-' }}</div>
+                <div><strong>Modelo:</strong> {{ vehiclePreview.modelo || '-' }}</div>
+                <div><strong>Año:</strong> {{ vehiclePreview.anio ?? '-' }}</div>
+                <div><strong>Color:</strong> {{ vehiclePreview.color || '-' }}</div>
+                <div><strong>Fuente:</strong> {{ vehiclePreview.source }}</div>
+              </div>
             </div>
 
             <div class="panel-actions">
@@ -707,6 +715,15 @@ import { Vehicle, VehiclePreview, VehicleService } from '../core/vehicle.service
       font-weight: 700;
     }
 
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 12px;
+      margin-top: 12px;
+      font-size: 13px;
+      color: #4d4034;
+    }
+
     .vehicle-plate {
       display: inline-flex;
       align-self: flex-start;
@@ -983,7 +1000,7 @@ import { Vehicle, VehiclePreview, VehicleService } from '../core/vehicle.service
   `]
 })
 export class ClientPortalComponent implements OnInit {
-  readonly backendOrigin = 'http://localhost:8000';
+  readonly backendOrigin = 'http://127.0.0.1:8000';
   profileForm: FormGroup;
   vehicleForm: FormGroup;
   vehicles: Vehicle[] = [];

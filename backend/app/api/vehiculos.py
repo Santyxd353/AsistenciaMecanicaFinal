@@ -60,6 +60,7 @@ async def previsualizar_vehiculo_desde_fotos(
 
     saved_paths: list[str] = []
     relative_urls: list[str] = []
+    original_names = [foto.filename or "" for foto in fotos[:4]]
     try:
         for index, foto in enumerate(fotos[:4], start=1):
             relative_url = await save_upload_file(
@@ -72,7 +73,7 @@ async def previsualizar_vehiculo_desde_fotos(
             if local_path:
                 saved_paths.append(str(local_path))
 
-        analysis = analyze_vehicle_photos(image_paths=saved_paths)
+        analysis = analyze_vehicle_photos(image_paths=saved_paths, file_names=original_names)
         return VehiclePreviewRead(
             placa=analysis.placa,
             marca=analysis.marca,

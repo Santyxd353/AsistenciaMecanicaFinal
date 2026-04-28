@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { timeout } from 'rxjs';
 
 import { AuthService } from '../core/auth.service';
 import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-profile.service';
@@ -31,7 +32,8 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
         </div>
       </header>
 
-      <main class="content" *ngIf="taller; else loading">
+      <main class="content" *ngIf="!cargando; else loading">
+        <ng-container *ngIf="taller; else emptyState">
         <section class="hero-card">
           <div class="hero-copy">
             <p class="eyebrow">Resumen del taller</p>
@@ -308,7 +310,22 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
         </section>
 
         <p class="error-banner" *ngIf="errorCarga">{{ errorCarga }}</p>
+        </ng-container>
       </main>
+
+      <ng-template #emptyState>
+        <div class="loading-state">
+          <div class="loading-card">
+            <p class="eyebrow">Panel de taller</p>
+            <h2>No se pudo cargar el taller</h2>
+            <p>{{ errorCarga || 'No encontramos informacion operativa para este taller.' }}</p>
+            <div class="topbar-actions">
+              <button class="btn-ghost" (click)="cargarDatos()">Reintentar</button>
+              <button class="btn-primary" (click)="editarPerfil()">Ir al perfil</button>
+            </div>
+          </div>
+        </div>
+      </ng-template>
 
       <ng-template #loading>
         <div class="loading-state">
@@ -1159,17 +1176,18 @@ export class WorkshopDashboardComponent implements OnInit {
     this.errorCarga = '';
     this.estadisticas = null;
 
-    this.workshopService.getMyWorkshop().subscribe({
+    this.workshopService.getMyWorkshop().pipe(timeout(10000)).subscribe({
       next: (taller) => {
         this.taller = taller;
         this.resetNotificationDraft();
-        this.workshopService.getWorkshopStats().subscribe({
+        this.workshopService.getWorkshopStats().pipe(timeout(10000)).subscribe({
           next: (stats) => {
             this.estadisticas = stats;
             this.cargando = false;
           },
           error: (error) => {
             console.error('Error al cargar estadísticas:', error);
+            this.errorCarga = 'No se pudieron cargar las estadisticas del taller.';
             this.cargando = false;
           }
         });

@@ -38,7 +38,7 @@ export interface UpdateProfilePayload {
   providedIn: 'root'
 })
 export class AuthService {
-  private apiUrl = 'http://localhost:8000/api/v1/auth';
+  private apiUrl = 'http://127.0.0.1:8000/api/v1/auth';
   private currentUserSubject = new BehaviorSubject<AuthUser | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
 

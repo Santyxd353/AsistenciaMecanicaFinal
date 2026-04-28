@@ -6,6 +6,7 @@ from app.models.user import User
 from app.models.domain import Vehiculo, Solicitud, Evidencia, Tecnico, Taller
 from app.api import auth, solicitudes, tecnicos, vehiculos, talleres
 from app.services.storage import UPLOAD_ROOT, ensure_upload_root
+from app.services.ai import warm_vehicle_ai
 
 app = FastAPI(
     title="Plataforma Inteligente de Emergencias Vehiculares",
@@ -17,6 +18,7 @@ app = FastAPI(
 @app.on_event("startup")
 def on_startup():
     init_db()
+    warm_vehicle_ai()
 
 # Configurar CORS
 app.add_middleware(

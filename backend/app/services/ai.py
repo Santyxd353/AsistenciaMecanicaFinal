@@ -5,6 +5,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 from urllib.error import HTTPError, URLError
@@ -18,6 +19,7 @@ from app.services.storage import guess_mime_type
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+HF_VEHICLE_MODEL = os.getenv("HF_VEHICLE_MODEL", "therealcyberlord/stanford-car-vit-patch16").strip()
 
 
 @dataclass
@@ -110,7 +112,7 @@ def analyze_incident(
         return fallback_incident_analysis(descripcion=descripcion, incident_type=incident_type)
 
 
-def analyze_vehicle_photos(*, image_paths: list[str]) -> VehiclePhotoAnalysis:
+def analyze_vehicle_photos(*, image_paths: list[str], file_names: Optional[list[str]] = None) -> VehiclePhotoAnalysis:
     if not image_paths:
         return VehiclePhotoAnalysis(
             placa="",
@@ -122,12 +124,21 @@ def analyze_vehicle_photos(*, image_paths: list[str]) -> VehiclePhotoAnalysis:
             source="fallback",
         )
     if not GEMINI_API_KEY:
-        return _analyze_vehicle_locally(image_paths=image_paths)
+        return _analyze_vehicle_with_best_fallback(image_paths=image_paths, file_names=file_names or [])
 
     try:
-        return _analyze_vehicle_with_gemini(image_paths=image_paths)
+        return _analyze_vehicle_with_gemini(image_paths=image_paths, file_names=file_names or [])
     except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
-        return _analyze_vehicle_locally(image_paths=image_paths)
+        return _analyze_vehicle_with_best_fallback(image_paths=image_paths, file_names=file_names or [])
+
+
+def warm_vehicle_ai() -> None:
+    if GEMINI_API_KEY:
+        return
+    try:
+        _load_hf_vehicle_bundle()
+    except Exception:
+        return
 
 
 def _analyze_with_gemini(
@@ -211,7 +222,7 @@ def _analyze_with_gemini(
     )
 
 
-def _analyze_vehicle_with_gemini(*, image_paths: list[str]) -> VehiclePhotoAnalysis:
+def _analyze_vehicle_with_gemini(*, image_paths: list[str], file_names: list[str]) -> VehiclePhotoAnalysis:
     prompt = (
         "Analiza las fotos de un vehiculo y devuelve solo JSON valido con estas claves exactas: "
         "placa, marca, modelo, anio, color, resumen. "
@@ -222,7 +233,17 @@ def _analyze_vehicle_with_gemini(*, image_paths: list[str]) -> VehiclePhotoAnaly
     )
 
     parts: list[dict[str, object]] = [{"text": prompt}]
-    for path in image_paths[:4]:
+    for index, path in enumerate(image_paths[:4]):
+        if index < len(file_names) and file_names[index].strip():
+            parts.append(
+                {
+                    "text": (
+                        "Nombre original del archivo: "
+                        f"{file_names[index].strip()}. "
+                        "Usalo solo como pista complementaria si coincide con la imagen."
+                    )
+                }
+            )
         parts.append(_file_part(path))
 
     payload = {
@@ -276,32 +297,122 @@ def _analyze_vehicle_with_gemini(*, image_paths: list[str]) -> VehiclePhotoAnaly
     )
 
 
-def _analyze_vehicle_locally(*, image_paths: list[str]) -> VehiclePhotoAnalysis:
+def _analyze_vehicle_with_best_fallback(*, image_paths: list[str], file_names: list[str]) -> VehiclePhotoAnalysis:
+    hf_result = _analyze_vehicle_with_hf_model(image_paths=image_paths, file_names=file_names)
+    local_result = _analyze_vehicle_locally(image_paths=image_paths, file_names=file_names)
+    if hf_result is None:
+        return local_result
+
+    marca = local_result.marca or hf_result.marca
+    modelo = local_result.modelo or hf_result.modelo
+    anio = local_result.anio or hf_result.anio
+    placa = local_result.placa or hf_result.placa
+    color = local_result.color or hf_result.color
+
+    summary_parts = [
+        hf_result.resumen,
+        f"marca: {marca}" if marca else None,
+        f"modelo: {modelo}" if modelo else None,
+        f"anio: {anio}" if anio else None,
+        f"placa: {placa}" if placa else None,
+        f"color: {color}" if color else None,
+    ]
+    return VehiclePhotoAnalysis(
+        placa=placa,
+        marca=marca,
+        modelo=modelo,
+        anio=anio,
+        color=color,
+        resumen=" | ".join(part for part in summary_parts if part),
+        source="hybrid-local-hf",
+    )
+
+
+def _analyze_vehicle_with_hf_model(*, image_paths: list[str], file_names: list[str]) -> Optional[VehiclePhotoAnalysis]:
+    try:
+        bundle = _load_hf_vehicle_bundle()
+    except Exception:
+        return None
+
+    try:
+        image = Image.open(image_paths[0]).convert("RGB")
+    except Exception:
+        return None
+
+    processor, model = bundle
+    inputs = processor(images=image, return_tensors="pt")
+    outputs = model(**inputs)
+    logits = outputs.logits[0]
+    probabilities = logits.softmax(dim=0)
+    top_index = int(probabilities.argmax().item())
+    confidence = float(probabilities[top_index].item())
+    label = model.config.id2label.get(top_index, "")
+    if not label:
+        return None
+
+    brand, model_name, year = _parse_vehicle_label(label)
+    hint_text = _extract_filename_hints(file_names)
+    hinted_brand, hinted_model = _find_brand_and_model(hint_text.upper())
+    hinted_year = _find_year(hint_text.upper())
+
+    if hinted_brand and not brand:
+        brand = hinted_brand
+    if hinted_model and not model_name:
+        model_name = hinted_model
+    if hinted_year and not year:
+        year = hinted_year
+
+    if not brand and not model_name:
+        return None
+
+    summary = (
+        "Clasificacion visual local completada con modelo de Hugging Face. "
+        f"Etiqueta: {label}. confianza: {confidence:.2f}"
+    )
+    return VehiclePhotoAnalysis(
+        placa="",
+        marca=brand,
+        modelo=model_name,
+        anio=year,
+        color="",
+        resumen=summary,
+        source="hf-local-model",
+    )
+
+
+def _analyze_vehicle_locally(*, image_paths: list[str], file_names: list[str]) -> VehiclePhotoAnalysis:
     raw_text_fragments: list[str] = []
     detected_color = ""
+    hint_text = _extract_filename_hints(file_names)
+    hinted_brand, hinted_model = _find_brand_and_model(hint_text.upper())
+    hinted_year = _find_year(hint_text.upper())
 
     for index, path in enumerate(image_paths):
         image = Image.open(path).convert("RGB")
         if not detected_color:
-          detected_color = _detect_color(image)
-        raw_text_fragments.extend(_extract_candidate_text(image))
-        if index >= 2:
+            detected_color = _detect_color(image)
+        if not (hinted_brand or hinted_model or hinted_year):
+            raw_text_fragments.extend(_extract_candidate_text(image))
+        raw_text_fragments.extend(_extract_plate_candidate_text(image))
+        if hinted_brand or hinted_model or hinted_year or index >= 1:
             break
 
     joined = " ".join(fragment for fragment in raw_text_fragments if fragment).upper()
-    plate = _find_plate(joined)
-    year = _find_year(joined)
-    brand, model = _find_brand_and_model(joined)
+    combined = " ".join(part for part in [joined, hint_text] if part).upper()
+    plate = _find_plate(combined)
+    year = hinted_year or _find_year(combined)
+    brand, model = _find_brand_and_model(combined)
 
     found_bits = [
         f"placa: {plate}" if plate else None,
         f"marca: {brand}" if brand else None,
         f"modelo: {model}" if model else None,
-        f"año: {year}" if year else None,
+        f"anio: {year}" if year else None,
         f"color: {detected_color}" if detected_color else None,
+        "se usaron pistas del nombre del archivo" if hint_text else None,
     ]
     summary = (
-        "Se genero una sugerencia local a partir de OCR y color. "
+        "Se genero una sugerencia local a partir de OCR, recortes del vehiculo y color. "
         + ", ".join(bit for bit in found_bits if bit)
         if any(found_bits)
         else "No se detectaron datos suficientes en las fotos. Completa el formulario manualmente."
@@ -314,7 +425,7 @@ def _analyze_vehicle_locally(*, image_paths: list[str]) -> VehiclePhotoAnalysis:
         anio=year,
         color=detected_color,
         resumen=summary,
-        source="local-ocr",
+        source="local-enhanced",
     )
 
 
@@ -343,6 +454,16 @@ def _extract_text(payload: dict[str, object]) -> str:
     if not isinstance(text, str) or not text.strip():
         raise ValueError("Gemini no devolvio texto.")
     return text
+
+
+@lru_cache(maxsize=1)
+def _load_hf_vehicle_bundle():
+    from transformers import AutoImageProcessor, AutoModelForImageClassification
+
+    processor = AutoImageProcessor.from_pretrained(HF_VEHICLE_MODEL)
+    model = AutoModelForImageClassification.from_pretrained(HF_VEHICLE_MODEL)
+    model.eval()
+    return processor, model
 
 
 def _sanitize_text(value: object, default: str) -> str:
@@ -377,25 +498,37 @@ def _sanitize_plate(value: object) -> str:
     return "".join(char for char in raw if char.isalnum() or char == "-")
 
 
+def _parse_vehicle_label(label: str) -> tuple[str, str, Optional[int]]:
+    cleaned = " ".join(str(label).replace("_", " ").split())
+    year = _find_year(cleaned.upper())
+    without_year = re.sub(r"\b(19[6-9]\d|20[0-4]\d)\b", "", cleaned).strip()
+    without_year = re.sub(r"\s+", " ", without_year)
+    if not without_year:
+        return "", "", year
+
+    tokens = without_year.split()
+    brand = tokens[0].title()
+    remainder = " ".join(tokens[1:]).strip()
+    remainder = _strip_body_style(remainder)
+    return brand, remainder, year
+
+
 def _extract_candidate_text(image: Image.Image) -> list[str]:
-    variants = [
-        image,
-        ImageOps.grayscale(image),
-        ImageEnhance.Contrast(ImageOps.grayscale(image)).enhance(2.4),
-        ImageOps.autocontrast(ImageOps.grayscale(image)),
-    ]
+    variants = [_prepare_variant(variant) for variant in _generate_image_regions(image)]
 
     texts: list[str] = []
     for variant in variants:
-        text = pytesseract.image_to_string(variant, config="--psm 6")
-        cleaned = " ".join(text.split())
-        if cleaned:
-            texts.append(cleaned)
+        for config in ("--psm 6", "--psm 11"):
+            text = pytesseract.image_to_string(variant, config=config)
+            cleaned = " ".join(text.split())
+            if cleaned:
+                texts.append(cleaned)
     return texts
 
 
 def _find_plate(text: str) -> str:
-    candidates = re.findall(r"\b[A-Z0-9]{5,8}\b", text)
+    normalized = re.sub(r"[^A-Z0-9-]+", " ", text.upper())
+    candidates = re.findall(r"\b[A-Z0-9-]{5,8}\b", normalized)
     blacklist = {
         "TOYOTA",
         "NISSAN",
@@ -406,11 +539,19 @@ def _find_plate(text: str) -> str:
         "MITSUBISHI",
         "MERCEDES",
         "RENAULT",
+        "COROLLA",
+        "FRONT",
+        "SEDAN",
+        "PHOTO",
+        "IMAGE",
     }
     filtered = [item for item in candidates if item not in blacklist and not item.isdigit()]
     if not filtered:
         return ""
-    filtered.sort(key=lambda item: (sum(char.isdigit() for char in item), len(item)), reverse=True)
+    filtered.sort(
+        key=lambda item: (_score_plate_candidate(item), sum(char.isdigit() for char in item), len(item)),
+        reverse=True,
+    )
     return filtered[0]
 
 
@@ -436,6 +577,10 @@ def _find_brand_and_model(text: str) -> tuple[str, str]:
         "Renault": ["LOGAN", "SANDERO", "DUSTER", "KWID"],
         "Mitsubishi": ["L200", "MONTERO", "ASX", "OUTLANDER"],
         "Mazda": ["CX5", "CX-5", "MAZDA3", "BT50", "BT-50"],
+        "Honda": ["CIVIC", "CITY", "CRV", "CR-V", "HRV", "HR-V", "FIT"],
+        "Ford": ["RANGER", "ECOSPORT", "ESCAPE", "FOCUS", "FIESTA"],
+        "Jeep": ["WRANGLER", "CHEROKEE", "COMPASS", "RENEGADE"],
+        "Subaru": ["IMPREZA", "FORESTER", "XV", "OUTBACK"],
     }
 
     normalized = text.upper()
@@ -443,13 +588,13 @@ def _find_brand_and_model(text: str) -> tuple[str, str]:
         if brand.upper() in normalized:
             for model in models:
                 if model in normalized:
-                    return brand, model.replace("-", " ")
+                    return brand, _humanize_model(model)
             return brand, ""
 
     for brand, models in brands.items():
         for model in models:
             if model in normalized:
-                return brand, model.replace("-", " ")
+                return brand, _humanize_model(model)
     return "", ""
 
 
@@ -479,3 +624,113 @@ def _detect_color(image: Image.Image) -> str:
     if r > 120 and g > 90 and b > 70:
         return "Beige"
     return "Plateado"
+
+
+def _extract_filename_hints(file_names: list[str]) -> str:
+    hints: list[str] = []
+    for file_name in file_names[:4]:
+        if not file_name:
+            continue
+        stem = Path(file_name).stem
+        normalized = re.sub(r"[_\-]+", " ", stem)
+        normalized = re.sub(r"[^A-Za-z0-9 ]+", " ", normalized)
+        normalized = " ".join(normalized.split())
+        if normalized:
+            hints.append(normalized)
+    return " ".join(hints)
+
+
+def _generate_image_regions(image: Image.Image) -> list[Image.Image]:
+    width, height = image.size
+    regions = [image]
+    regions.extend(
+        [
+            image.crop((0, int(height * 0.45), width, height)),
+            image.crop((int(width * 0.2), int(height * 0.52), int(width * 0.8), int(height * 0.9))),
+            image.crop((int(width * 0.25), int(height * 0.35), int(width * 0.75), int(height * 0.6))),
+        ]
+    )
+    prepared: list[Image.Image] = []
+    for region in regions:
+        if region.width <= 0 or region.height <= 0:
+            continue
+        target_width = min(max(int(region.width * 1.15), 220), 900)
+        target_height = min(max(int(region.height * 1.15), 160), 650)
+        prepared.append(region.resize((target_width, target_height)))
+    return prepared
+
+
+def _prepare_variant(image: Image.Image) -> Image.Image:
+    grayscale = ImageOps.grayscale(image)
+    grayscale = ImageOps.autocontrast(grayscale)
+    grayscale = ImageEnhance.Contrast(grayscale).enhance(2.8)
+    grayscale = ImageEnhance.Sharpness(grayscale).enhance(2.0)
+    return grayscale
+
+
+def _extract_plate_candidate_text(image: Image.Image) -> list[str]:
+    texts: list[str] = []
+    for region in _generate_image_regions(image)[1:3]:
+        grayscale = _prepare_variant(region)
+        for threshold in (145,):
+            binary = grayscale.point(lambda pixel, t=threshold: 255 if pixel > t else 0)
+            for config in ("--psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-",):
+                text = pytesseract.image_to_string(binary, config=config)
+                cleaned = " ".join(text.split())
+                if cleaned:
+                    texts.append(cleaned)
+    return texts
+
+
+def _score_plate_candidate(candidate: str) -> int:
+    score = 0
+    digits = sum(char.isdigit() for char in candidate)
+    letters = sum(char.isalpha() for char in candidate)
+    if 5 <= len(candidate) <= 8:
+        score += 2
+    if digits >= 2:
+        score += 2
+    if letters >= 2:
+        score += 2
+    if "-" in candidate:
+        score += 1
+    if candidate and candidate[0].isalpha() and candidate[-1].isdigit():
+        score += 1
+    return score
+
+
+def _humanize_model(model: str) -> str:
+    normalized = model.replace("-", " ").strip()
+    return normalized.title()
+
+
+def _strip_body_style(model_name: str) -> str:
+    suffixes = (
+        " sedan",
+        " coupe",
+        " cab",
+        " crew cab",
+        " extended cab",
+        " regular cab",
+        " suv",
+        " wagon",
+        " convertible",
+        " hatchback",
+        " minivan",
+        " van",
+        " roadster",
+        " supercab",
+        " quad cab",
+        " double cab",
+    )
+    normalized = f" {model_name.strip().lower()} "
+    changed = True
+    while changed:
+        changed = False
+        for suffix in suffixes:
+            if normalized.endswith(f"{suffix} "):
+                normalized = normalized[: -len(suffix) - 1].rstrip()
+                normalized = f" {normalized.strip()} "
+                changed = True
+                break
+    return normalized.strip().title()

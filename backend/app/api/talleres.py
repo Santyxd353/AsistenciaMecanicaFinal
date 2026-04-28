@@ -144,22 +144,6 @@ def obtener_estadisticas_taller(
 
     # Calcular estadísticas de técnicos
     from app.models.domain import Tecnico
-    """
-    tecnicos_stats = session.exec(
-        select(
-            func.count(Tecnico.id).label("total_tecnicos"),
-            func.sum(Tecnico.disponible.cast(func.Integer)).label("tecnicos_disponibles")
-        ).where(Tecnico.taller_id == taller.id)
-    ).first()
-    
-    tecnicos_stats = session.exec(
-        select(
-            func.count(Tecnico.id).label("total_tecnicos"),
-            func.sum(Tecnico.disponible.cast(Integer)).label("tecnicos_disponibles")
-        ).where(Tecnico.taller_id == taller.id)
-    ).first()
-    """
-
     tecnicos_stats = session.exec(
         select(
             func.count(Tecnico.id).label("total_tecnicos"),
@@ -181,12 +165,6 @@ def obtener_estadisticas_taller(
             "ingreso_promedio_por_servicio": float(servicios_stats.ingreso_promedio or 0),
             "comisiones_totales_pagadas": float(servicios_stats.comisiones_totales or 0)
         },
-        """
-        "tecnicos": {
-            "total_tecnicos": tecnicos_stats.total_tecnicos or 0,
-            "tecnicos_disponibles": tecnicos_stats.tecnicos_disponibles or 0
-        },
-        """
         "tecnicos": {
             "total_tecnicos": int(tecnicos_stats.total_tecnicos or 0),
             "tecnicos_disponibles": int(tecnicos_stats.tecnicos_disponibles or 0)
