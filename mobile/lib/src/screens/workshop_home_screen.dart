@@ -117,61 +117,6 @@ class WorkshopHomeScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 18),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Pasarela de pago',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 18,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'La interfaz ya esta preparada para que tu companero conecte la pasarela cuando el tecnico salga en camino o cuando el trabajo quede concluido.',
-                      style: TextStyle(height: 1.5, color: Color(0xFF6F655B)),
-                    ),
-                    const SizedBox(height: 14),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: const [
-                        _Pill(text: 'Monto del servicio'),
-                        _Pill(text: 'Comision plataforma'),
-                        _Pill(text: 'Estado de cobro'),
-                        _Pill(text: 'Checkout externo'),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFFAF5),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: const Color(0xFFF0E5D7)),
-                      ),
-                      child: const Padding(
-                        padding: EdgeInsets.all(14),
-                        child: Text(
-                          'Punto de integracion: aqui debe ir el proveedor real de pagos. La app ya distingue cuando un servicio esta en fase cobrable; falta conectar checkout, confirmacion y webhook.',
-                          style: TextStyle(height: 1.5),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    FilledButton.tonalIcon(
-                      onPressed: () => _showPaymentInfo(context),
-                      icon: const Icon(Icons.account_balance_wallet_outlined),
-                      label: const Text('Ver interfaz preparada'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
             if (stats != null)
               Card(
                 child: Padding(
@@ -251,51 +196,6 @@ class WorkshopHomeScreen extends StatelessWidget {
     );
   }
 
-  static void _showPaymentInfo(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Interfaz lista para pasarela',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Tu companero puede conectar aqui Stripe, Mercado Pago u otro proveedor. La app ya tiene reservado el espacio visual para monto, checkout y confirmacion.',
-              style: TextStyle(height: 1.5),
-            ),
-            const SizedBox(height: 16),
-            _PlaceholderLine(
-              title: 'Trigger de cobro',
-              value: 'Cuando el tecnico este en camino o el servicio termine',
-            ),
-            _PlaceholderLine(
-              title: 'Entrada esperada',
-              value: 'Monto, moneda, referencia de solicitud',
-            ),
-            _PlaceholderLine(
-              title: 'Salida esperada',
-              value: 'Estado pagado, intento fallido o pago pendiente',
-            ),
-            const SizedBox(height: 18),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Entendido'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _HeroCard extends StatelessWidget {
@@ -418,33 +318,6 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-class _Pill extends StatelessWidget {
-  const _Pill({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFE7D2),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF9A4D17),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _InfoRow extends StatelessWidget {
   const _InfoRow({required this.label, required this.value});
 
@@ -535,31 +408,6 @@ class _RequestPreviewCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _PlaceholderLine extends StatelessWidget {
-  const _PlaceholderLine({required this.title, required this.value});
-
-  final String title;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(color: Color(0xFF6F655B), fontSize: 12),
-          ),
-          const SizedBox(height: 4),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
-        ],
       ),
     );
   }

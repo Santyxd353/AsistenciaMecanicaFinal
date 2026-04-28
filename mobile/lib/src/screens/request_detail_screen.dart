@@ -66,6 +66,12 @@ class RequestDetailScreen extends StatelessWidget {
                   ),
                   _InfoLine(label: 'Taller asignado', value: workshopLabel),
                   _InfoLine(label: 'Tecnico asignado', value: technicianLabel),
+                  _InfoLine(
+                    label: 'Tiempo estimado',
+                    value: request.tiempoEstimadoMinutos == null
+                        ? 'Pendiente'
+                        : '${request.tiempoEstimadoMinutos} min',
+                  ),
                 ],
               ),
             ),

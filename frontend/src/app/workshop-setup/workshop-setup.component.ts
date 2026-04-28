@@ -284,7 +284,7 @@ import { WorkshopSpecialtyService } from '../core/workshop-specialty.service';
             <button type="button" class="btn-secondary" (click)="cancel()">
               {{ editMode ? 'Volver al panel' : 'Cancelar' }}
             </button>
-            <button type="submit" class="btn-primary" [disabled]="form.invalid || saving">
+            <button type="submit" class="btn-primary" [disabled]="saving">
               {{ saving ? 'Guardando...' : editMode ? 'Guardar cambios' : 'Crear taller' }}
             </button>
           </div>
@@ -827,9 +827,27 @@ import { WorkshopSpecialtyService } from '../core/workshop-specialty.service';
     }
 
     .center-pin .pin-head {
-      transform: translateY(-16px);
-      font-size: 38px;
-      filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.2));
+      width: 34px;
+      height: 34px;
+      border-radius: 50% 50% 50% 0;
+      background: #c04f12;
+      border: 4px solid #fff;
+      transform: translateY(-22px) rotate(-45deg);
+      box-shadow: 0 12px 22px rgba(0, 0, 0, 0.28);
+      position: relative;
+      font-size: 0;
+    }
+
+    .center-pin .pin-head::after {
+      content: '';
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: #fff;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
     }
 
     .center-pin .pin-shadow {
@@ -838,7 +856,7 @@ import { WorkshopSpecialtyService } from '../core/workshop-specialty.service';
       border-radius: 999px;
       background: #221912;
       display: block;
-      transform: translateY(-18px);
+      transform: translateY(-16px);
     }
 
     .map-modal-footer {
@@ -1177,7 +1195,7 @@ export class WorkshopSetupComponent implements OnInit {
       direccion: ['', Validators.required],
       telefono: ['', Validators.required],
       email_contacto: ['', Validators.email],
-      horario_atencion: ['', Validators.required],
+      horario_atencion: [''],
       especialidades: [[], Validators.required],
       descripcion: [''],
       sitio_web: [''],
@@ -1562,6 +1580,7 @@ export class WorkshopSetupComponent implements OnInit {
 
     setTimeout(() => this.mapInstance?.invalidateSize(), 50);
     setTimeout(() => this.mapInstance?.invalidateSize(), 250);
+    setTimeout(() => this.mapInstance?.invalidateSize(), 600);
   }
 
   private destroyMapPicker(): void {

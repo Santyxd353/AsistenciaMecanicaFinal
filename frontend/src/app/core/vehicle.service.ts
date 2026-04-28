@@ -25,6 +25,16 @@ export interface UpdateVehiclePayload {
   color?: string;
 }
 
+export interface VehiclePhotoPreview {
+  placa: string;
+  marca: string;
+  modelo: string;
+  anio?: number | null;
+  color: string;
+  resumen: string;
+  source: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -43,5 +53,11 @@ export class VehicleService {
 
   updateVehicle(vehicleId: number, payload: UpdateVehiclePayload): Observable<Vehicle> {
     return this.http.put<Vehicle>(`${this.apiUrl}${vehicleId}`, payload);
+  }
+
+  previewVehicleFromPhotos(files: File[]): Observable<VehiclePhotoPreview> {
+    const form = new FormData();
+    files.slice(0, 4).forEach((file) => form.append('fotos', file));
+    return this.http.post<VehiclePhotoPreview>(`${this.apiUrl}preview-from-photo`, form);
   }
 }

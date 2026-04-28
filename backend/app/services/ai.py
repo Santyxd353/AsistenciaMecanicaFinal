@@ -108,7 +108,7 @@ def analyze_incident(
             audio_paths=audio_paths or [],
             vehicle_photo_path=vehicle_photo_path,
         )
-    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+    except Exception:
         return fallback_incident_analysis(descripcion=descripcion, incident_type=incident_type)
 
 
@@ -139,7 +139,7 @@ def analyze_vehicle_photos(*, image_paths: list[str], file_names: Optional[list[
 
     try:
         return _analyze_vehicle_with_gemini(image_paths=image_paths, file_names=file_names or [])
-    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+    except Exception:
         try:
             return _analyze_vehicle_with_best_fallback(image_paths=image_paths, file_names=file_names or [])
         except Exception:

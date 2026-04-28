@@ -20,8 +20,12 @@ export interface Solicitud {
   estado_pago?: string;
   fecha_pago?: string;
   taller_nombre?: string;
+  taller_latitud?: number;
+  taller_longitud?: number;
   tecnico_nombre?: string;
   tecnico_especialidad?: string;
+  tecnico_latitud?: number;
+  tecnico_longitud?: number;
   vehiculo_placa?: string;
   vehiculo_descripcion?: string;
   fecha_creacion: string;

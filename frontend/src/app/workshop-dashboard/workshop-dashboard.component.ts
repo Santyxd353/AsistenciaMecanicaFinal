@@ -2,6 +2,7 @@ import { Component, OnInit, ChangeDetectorRef  } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { timeout } from 'rxjs';
 
 import { AuthService } from '../core/auth.service';
 import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-profile.service';
@@ -323,6 +324,13 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
         <div class="loading-state">
           <div class="loading-card">
             <p class="eyebrow">Panel de taller</p>
+            <div class="error-banner" *ngIf="errorCarga">
+              {{ errorCarga }}
+              <div class="hero-actions">
+                <button class="btn-primary" (click)="cargarDatos()">Reintentar</button>
+                <button class="btn-secondary" (click)="editarPerfil()">Editar perfil</button>
+              </div>
+            </div>
             <h2>Cargando información operativa...</h2>
             <p>Estamos preparando el resumen del taller y sus métricas principales.</p>
           </div>
@@ -1171,14 +1179,14 @@ export class WorkshopDashboardComponent implements OnInit {
     this.estadisticas = null;
     this.cdr.detectChanges();
 
-    this.workshopService.getMyWorkshop().subscribe({
+    this.workshopService.getMyWorkshop().pipe(timeout(12000)).subscribe({
       next: (taller) => {
         console.log('Taller cargado:', taller);
         this.taller = taller;
         this.resetNotificationDraft();
         this.cdr.detectChanges();
         
-        this.workshopService.getWorkshopStats().subscribe({
+        this.workshopService.getWorkshopStats().pipe(timeout(12000)).subscribe({
           next: (stats) => {
             console.log('Estadísticas cargadas:', stats);
             this.estadisticas = stats;

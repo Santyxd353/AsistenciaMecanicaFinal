@@ -2,13 +2,14 @@ import math
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.db.session import get_session
 from app.models.domain import EstadoSolicitud, Solicitud, SolicitudCreate, SolicitudRead, Tecnico, Taller
 from app.models.user import User, UserRole
+from app.services.ai import analyze_incident
 from app.api.deps import get_current_user
 from app.db.session import get_session
 from app.models.domain import (
@@ -137,8 +138,12 @@ def request_vehicle(session: Session, solicitud: Solicitud) -> Optional[Vehiculo
 def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRead:
     data = SolicitudRead.model_validate(solicitud)
     taller_nombre = None
+    taller_latitud = None
+    taller_longitud = None
     tecnico_nombre = None
     tecnico_especialidad = None
+    tecnico_latitud = None
+    tecnico_longitud = None
     vehiculo_placa = None
     vehiculo_descripcion = None
 
@@ -146,11 +151,15 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
         taller = session.get(Taller, solicitud.taller_id)
         if taller:
             taller_nombre = taller.nombre_comercial
+            taller_latitud = taller.latitud
+            taller_longitud = taller.longitud
 
     if solicitud.tecnico_id:
         tecnico = session.get(Tecnico, solicitud.tecnico_id)
         if tecnico:
             tecnico_nombre = tecnico.nombre
+            tecnico_latitud = tecnico.latitud
+            tecnico_longitud = tecnico.longitud
             if tecnico.especialidades:
                 tecnico_especialidad = ", ".join(
                     especialidad.nombre for especialidad in tecnico.especialidades
@@ -164,8 +173,12 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
     return data.model_copy(
         update={
             "taller_nombre": taller_nombre,
+            "taller_latitud": taller_latitud,
+            "taller_longitud": taller_longitud,
             "tecnico_nombre": tecnico_nombre,
             "tecnico_especialidad": tecnico_especialidad,
+            "tecnico_latitud": tecnico_latitud,
+            "tecnico_longitud": tecnico_longitud,
             "vehiculo_placa": vehiculo_placa,
             "vehiculo_descripcion": vehiculo_descripcion,
         }
@@ -253,12 +266,15 @@ def crear_solicitud(
     current_user: User = Depends(get_current_user),
 ):
     solicitud = Solicitud.model_validate(solicitud_in)
-    clasif, prio, resm = simular_procesamiento_ia(solicitud.descripcion)
-    solicitud.clasificacion_ia = clasif
-    solicitud.prioridad_ia = prio
-    solicitud.resumen_ia = resm
+    analysis = analyze_incident(descripcion=solicitud.descripcion)
+    solicitud.clasificacion_ia = analysis.clasificacion
+    solicitud.prioridad_ia = analysis.prioridad
+    solicitud.resumen_ia = analysis.resumen
     solicitud.estado_pago = "pendiente"
-    solicitud.precio_cobrado, solicitud.comision_plataforma = estimate_pricing(clasif, prio)
+    solicitud.precio_cobrado, solicitud.comision_plataforma = estimate_pricing(
+        solicitud.clasificacion_ia,
+        solicitud.prioridad_ia,
+    )
 
     if solicitud.vehiculo_id:
         vehiculo = session.get(Vehiculo, solicitud.vehiculo_id)

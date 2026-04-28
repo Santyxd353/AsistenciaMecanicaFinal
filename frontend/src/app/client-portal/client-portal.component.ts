@@ -7,7 +7,7 @@ import * as L from 'leaflet';
 
 import { AuthService } from '../core/auth.service';
 import { Solicitud, SolicitudService } from '../core/incident.service';
-import { Vehicle, VehicleService } from '../core/vehicle.service';
+import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.service';
 
 @Component({
   selector: 'app-client-portal',
@@ -18,10 +18,10 @@ import { Vehicle, VehicleService } from '../core/vehicle.service';
       <header class="topbar">
         <div class="brand-copy">
           <p class="eyebrow">Portal cliente</p>
-          <h1>Control de perfil, vehiculos y cobros del servicio.</h1>
+          <h1>Control de perfil, vehiculos y solicitudes.</h1>
           <p class="lede">
-            La pasarela todavia no esta conectada, pero la interfaz ya muestra donde aparecera el checkout cuando el
-            tecnico vaya en camino o el trabajo quede finalizado.
+            Manten tu cuenta lista, registra vehiculos con ayuda de IA y reporta emergencias marcando el punto exacto
+            en el mapa.
           </p>
         </div>
 
@@ -62,17 +62,12 @@ import { Vehicle, VehicleService } from '../core/vehicle.service';
         </article>
 
         <article class="hero-card hero-note">
-          <p class="eyebrow">Pasarela</p>
-          <h3>Estado de integracion</h3>
+          <p class="eyebrow">Seguimiento</p>
+          <h3>Servicio en ruta</h3>
           <p>
-            El checkout real todavia no existe. Esta pantalla solo deja preparado el flujo visual, los montos y el
-            punto exacto donde se abrira la pasarela.
+            Cuando el taller asigne un tecnico, aqui se reflejara el estado, el taller, el tecnico y el tiempo estimado
+            de llegada calculado desde la ubicacion registrada.
           </p>
-          <ul>
-            <li>El cobro aparece cuando el taller ya esta ejecutando el servicio.</li>
-            <li>El boton de pago hoy abre un modal placeholder.</li>
-            <li>Tu companero solo tendra que conectar el proveedor real.</li>
-          </ul>
         </article>
       </section>
 
@@ -138,6 +133,29 @@ import { Vehicle, VehicleService } from '../core/vehicle.service';
               <span>Color</span>
               <input type="text" formControlName="color" placeholder="Blanco" />
             </label>
+            <label class="field">
+              <span>Anio detectado</span>
+              <input type="text" formControlName="anio" placeholder="Opcional" />
+            </label>
+
+            <div class="field field-wide ai-upload-box">
+              <div>
+                <span>Fotos para IA</span>
+                <p>Sube una foto frontal/lateral o de la placa. La IA rellena sugerencias editables antes de guardar.</p>
+              </div>
+              <input type="file" accept="image/*" multiple (change)="handleVehiclePhotos($event)" />
+              <div class="ai-actions">
+                <span>{{ vehiclePhotoFiles.length }} foto(s) cargada(s)</span>
+                <button class="btn-secondary" type="button" (click)="analyzeVehiclePhotos()" [disabled]="!vehiclePhotoFiles.length || analyzingVehicle">
+                  {{ analyzingVehicle ? 'Analizando...' : 'Analizar con IA' }}
+                </button>
+              </div>
+              <div class="preview-card" *ngIf="vehiclePreview">
+                <strong>Previsualizacion IA</strong>
+                <p>{{ vehiclePreview.resumen }}</p>
+                <small>Fuente: {{ vehiclePreview.source }}. Revisa y corrige los campos antes de guardar.</small>
+              </div>
+            </div>
 
             <div class="panel-actions">
               <button class="btn-primary" type="submit" [disabled]="vehicleForm.invalid || savingVehicle">
@@ -252,6 +270,10 @@ import { Vehicle, VehicleService } from '../core/vehicle.service';
                 <div class="report-metric">
                   <span>Tecnico</span>
                   <strong>{{ technicianLabel(report) }}</strong>
+                </div>
+                <div class="report-metric">
+                  <span>ETA</span>
+                  <strong>{{ etaLabel(report) }}</strong>
                 </div>
                 <div class="report-metric">
                   <span>Monto</span>
@@ -1013,9 +1035,27 @@ import { Vehicle, VehicleService } from '../core/vehicle.service';
     }
 
     .pin-head {
-      font-size: 34px;
-      line-height: 1;
-      text-shadow: 0 6px 12px rgba(0, 0, 0, 0.22);
+      width: 34px;
+      height: 34px;
+      border-radius: 50% 50% 50% 0;
+      background: #c04f12;
+      border: 4px solid #fff;
+      transform: rotate(-45deg);
+      box-shadow: 0 12px 22px rgba(0, 0, 0, 0.28);
+      position: relative;
+      font-size: 0;
+    }
+
+    .pin-head::after {
+      content: '';
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: #fff;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
     }
 
     .pin-shadow {
@@ -1025,6 +1065,41 @@ import { Vehicle, VehicleService } from '../core/vehicle.service';
       background: rgba(0, 0, 0, 0.18);
       filter: blur(1px);
       margin-top: 6px;
+    }
+
+    .ai-upload-box {
+      gap: 12px;
+      background: #fff8ef;
+      border: 1px dashed #d7b99f;
+    }
+
+    .ai-upload-box input[type='file'] {
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid #efdfcd;
+      background: #fff;
+    }
+
+    .ai-upload-box p,
+    .preview-card p {
+      margin: 6px 0 0;
+      color: #6d5c4d;
+      line-height: 1.45;
+    }
+
+    .ai-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .preview-card {
+      padding: 14px;
+      border-radius: 18px;
+      background: #fff;
+      border: 1px solid #efdfcd;
     }
 
     @media (max-width: 1080px) {
@@ -1091,6 +1166,8 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
   vehicles: Vehicle[] = [];
   reports: Solicitud[] = [];
   selectedReportForPayment: Solicitud | null = null;
+  vehiclePhotoFiles: File[] = [];
+  vehiclePreview: VehiclePhotoPreview | null = null;
   selectedLat: number | null = null;
   selectedLng: number | null = null;
   mapPickerOpen = false;
@@ -1099,6 +1176,7 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
   savingProfile = false;
   savingVehicle = false;
   savingReport = false;
+  analyzingVehicle = false;
   profileMessage = '';
   profileError = '';
   vehicleMessage = '';
@@ -1123,7 +1201,8 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
       placa: ['', Validators.required],
       marca: ['', Validators.required],
       modelo: ['', Validators.required],
-      color: ['']
+      color: [''],
+      anio: ['']
     });
 
     this.reportForm = this.fb.group({
@@ -1258,7 +1337,9 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
     ).subscribe({
       next: (vehicle) => {
         this.vehicles = [vehicle, ...this.vehicles];
-        this.vehicleForm.reset({ placa: '', marca: '', modelo: '', color: '' });
+        this.vehicleForm.reset({ placa: '', marca: '', modelo: '', color: '', anio: '' });
+        this.vehiclePhotoFiles = [];
+        this.vehiclePreview = null;
         if (!this.reportForm.value.vehiculo_id) {
           this.reportForm.patchValue({ vehiculo_id: vehicle.id });
         }
@@ -1309,6 +1390,46 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
       },
       error: (error) => {
         this.reportError = error?.error?.detail || 'No se pudo crear la solicitud.';
+      }
+    });
+  }
+
+  handleVehiclePhotos(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.vehiclePhotoFiles = Array.from(input.files ?? []).slice(0, 4);
+    this.vehiclePreview = null;
+    this.vehicleError = '';
+  }
+
+  analyzeVehiclePhotos() {
+    if (!this.vehiclePhotoFiles.length) {
+      this.vehicleError = 'Selecciona al menos una foto del vehiculo.';
+      return;
+    }
+
+    this.vehicleError = '';
+    this.vehicleMessage = '';
+    this.analyzingVehicle = true;
+
+    this.vehicleService.previewVehicleFromPhotos(this.vehiclePhotoFiles).pipe(
+      timeout(45000),
+      finalize(() => {
+        this.analyzingVehicle = false;
+      })
+    ).subscribe({
+      next: (preview) => {
+        this.vehiclePreview = preview;
+        this.vehicleForm.patchValue({
+          placa: preview.placa || this.vehicleForm.value.placa,
+          marca: preview.marca || this.vehicleForm.value.marca,
+          modelo: preview.modelo || this.vehicleForm.value.modelo,
+          color: preview.color || this.vehicleForm.value.color,
+          anio: preview.anio?.toString() || this.vehicleForm.value.anio
+        });
+        this.vehicleMessage = 'La IA completo una previsualizacion editable. Revisa los campos antes de guardar.';
+      },
+      error: (error) => {
+        this.vehicleError = error?.error?.detail || 'La IA no pudo analizar las fotos del vehiculo.';
       }
     });
   }
@@ -1385,6 +1506,7 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
 
     setTimeout(() => this.mapInstance?.invalidateSize(), 50);
     setTimeout(() => this.mapInstance?.invalidateSize(), 250);
+    setTimeout(() => this.mapInstance?.invalidateSize(), 600);
   }
 
   private destroyMapPicker() {
@@ -1414,6 +1536,12 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
         : report.tecnico_nombre;
     }
     return 'Pendiente';
+  }
+
+  etaLabel(report: Solicitud): string {
+    return report.tiempo_estimado_minutos == null
+      ? 'Pendiente'
+      : `${report.tiempo_estimado_minutos} min`;
   }
 
   labelForStatus(status: string): string {

@@ -149,8 +149,12 @@ class SolicitudRead(SolicitudBase):
     id: int
     fecha_creacion: datetime
     taller_nombre: Optional[str] = None
+    taller_latitud: Optional[float] = None
+    taller_longitud: Optional[float] = None
     tecnico_nombre: Optional[str] = None
     tecnico_especialidad: Optional[str] = None
+    tecnico_latitud: Optional[float] = None
+    tecnico_longitud: Optional[float] = None
     vehiculo_placa: Optional[str] = None
     vehiculo_descripcion: Optional[str] = None
     
