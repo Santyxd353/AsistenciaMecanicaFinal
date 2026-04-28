@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../app_controller.dart';
+import 'location_picker_screen.dart';
+
+typedef _WorkshopDay = String;
 
 class WorkshopAccountScreen extends StatefulWidget {
   const WorkshopAccountScreen({super.key});
@@ -11,6 +16,16 @@ class WorkshopAccountScreen extends StatefulWidget {
 }
 
 class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
+  static const List<_WorkshopDay> _days = <_WorkshopDay>[
+    'Lunes',
+    'Martes',
+    'Miercoles',
+    'Jueves',
+    'Viernes',
+    'Sabado',
+    'Domingo',
+  ];
+
   final _nameController = TextEditingController();
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -18,12 +33,9 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
   final _addressController = TextEditingController();
   final _phoneController = TextEditingController();
   final _contactEmailController = TextEditingController();
-  final _scheduleController = TextEditingController();
   final _specialtiesController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _siteController = TextEditingController();
-  final _latController = TextEditingController();
-  final _lngController = TextEditingController();
 
   int? _syncedUserId;
   int? _syncedWorkshopId;
@@ -32,6 +44,23 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
   bool _notifReminders = true;
   bool _notifPayments = true;
   bool _weeklyReports = false;
+
+  List<_WorkshopDay> _generalDays = const [
+    'Lunes',
+    'Martes',
+    'Miercoles',
+    'Jueves',
+    'Viernes',
+    'Sabado',
+  ];
+  TimeOfDay? _generalOpen = const TimeOfDay(hour: 8, minute: 0);
+  TimeOfDay? _generalClose = const TimeOfDay(hour: 18, minute: 0);
+  bool _specialEnabled = false;
+  _WorkshopDay _specialDay = 'Domingo';
+  TimeOfDay? _specialOpen = const TimeOfDay(hour: 7, minute: 0);
+  TimeOfDay? _specialClose = const TimeOfDay(hour: 13, minute: 0);
+  double? _selectedLat = -16.5;
+  double? _selectedLng = -68.15;
 
   @override
   void dispose() {
@@ -42,12 +71,9 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
     _addressController.dispose();
     _phoneController.dispose();
     _contactEmailController.dispose();
-    _scheduleController.dispose();
     _specialtiesController.dispose();
     _descriptionController.dispose();
     _siteController.dispose();
-    _latController.dispose();
-    _lngController.dispose();
     super.dispose();
   }
 
@@ -69,17 +95,19 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
       _addressController.text = workshop?.direccion ?? '';
       _phoneController.text = workshop?.telefono ?? '';
       _contactEmailController.text = workshop?.emailContacto ?? '';
-      _scheduleController.text = workshop?.horarioAtencion ?? '';
       _specialtiesController.text = workshop?.especialidades ?? '';
       _descriptionController.text = workshop?.descripcion ?? '';
       _siteController.text = workshop?.sitioWeb ?? '';
-      _latController.text = workshop?.latitud?.toString() ?? '';
-      _lngController.text = workshop?.longitud?.toString() ?? '';
+      _selectedLat = workshop?.latitud ?? -16.5;
+      _selectedLng = workshop?.longitud ?? -68.15;
       _notifAssignments = workshop?.notificacionesNuevasAsignaciones ?? true;
       _notifPush = workshop?.notificacionesPush ?? true;
       _notifReminders = workshop?.notificacionesRecordatorios ?? true;
       _notifPayments = workshop?.notificacionesPagos ?? true;
       _weeklyReports = workshop?.reportesSemanales ?? false;
+      if (workshop != null) {
+        _applySchedule(workshop.horarioAtencion);
+      }
       _syncedWorkshopId = workshop?.id;
     }
 
@@ -174,11 +202,127 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
                       labelText: 'Correo contacto',
                     ),
                   ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'Horario de atencion',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Marca los dias generales del taller y agrega un horario especial si un dia atiende distinto.',
+                    style: TextStyle(
+                      color: Color(0xFF6F655B),
+                      height: 1.4,
+                    ),
+                  ),
                   const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _scheduleController,
-                    decoration: const InputDecoration(
-                      labelText: 'Horario de atencion',
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _days.map((day) {
+                      final selected = _generalDays.contains(day);
+                      return FilterChip(
+                        selected: selected,
+                        label: Text(day),
+                        onSelected: (_) => _toggleGeneralDay(day),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _TimePickerField(
+                          label: 'Apertura general',
+                          value: _formatTime(_generalOpen),
+                          onTap: () => _pickTime(
+                            initial: _generalOpen,
+                            onSelected: (time) =>
+                                setState(() => _generalOpen = time),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _TimePickerField(
+                          label: 'Cierre general',
+                          value: _formatTime(_generalClose),
+                          onTap: () => _pickTime(
+                            initial: _generalClose,
+                            onSelected: (time) =>
+                                setState(() => _generalClose = time),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Agregar horario especial'),
+                    subtitle: const Text('Ejemplo: Domingo de 07:00 a 13:00.'),
+                    value: _specialEnabled,
+                    onChanged: (value) =>
+                        setState(() => _specialEnabled = value),
+                  ),
+                  if (_specialEnabled) ...[
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<_WorkshopDay>(
+                      key: ValueKey<_WorkshopDay>(_specialDay),
+                      initialValue: _specialDay,
+                      items: _days
+                          .map(
+                            (day) => DropdownMenuItem<_WorkshopDay>(
+                              value: day,
+                              child: Text(day),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) {
+                          return;
+                        }
+                        setState(() => _specialDay = value);
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Dia especial',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _TimePickerField(
+                            label: 'Apertura especial',
+                            value: _formatTime(_specialOpen),
+                            onTap: () => _pickTime(
+                              initial: _specialOpen,
+                              onSelected: (time) =>
+                                  setState(() => _specialOpen = time),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _TimePickerField(
+                            label: 'Cierre especial',
+                            value: _formatTime(_specialClose),
+                            onTap: () => _pickTime(
+                              initial: _specialClose,
+                              onSelected: (time) =>
+                                  setState(() => _specialClose = time),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Text(
+                    _buildScheduleSummary(),
+                    style: const TextStyle(
+                      color: Color(0xFF5F554B),
+                      height: 1.4,
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -202,35 +346,63 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
                     controller: _siteController,
                     decoration: const InputDecoration(labelText: 'Sitio web'),
                   ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'Ubicacion del taller',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Selecciona la ubicacion exacta usando el mapa. Puedes usar tu ubicacion actual o mover el pin manualmente.',
+                    style: TextStyle(
+                      color: Color(0xFF6F655B),
+                      height: 1.4,
+                    ),
+                  ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _latController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                            signed: true,
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFAF5),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFFF0E5D7)),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Punto seleccionado',
+                            style: TextStyle(fontWeight: FontWeight.w800),
                           ),
-                          decoration: const InputDecoration(
-                            labelText: 'Latitud',
+                          const SizedBox(height: 6),
+                          Text(
+                            _locationSummary,
+                            style: const TextStyle(
+                              color: Color(0xFF5F554B),
+                              height: 1.4,
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: [
+                              FilledButton.tonalIcon(
+                                onPressed: _useCurrentLocation,
+                                icon: const Icon(Icons.my_location),
+                                label: const Text('Usar actual'),
+                              ),
+                              FilledButton.tonalIcon(
+                                onPressed: _openMapPicker,
+                                icon: const Icon(Icons.map_outlined),
+                                label: const Text('Abrir mapa'),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _lngController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                            signed: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Longitud',
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                   const SizedBox(height: 16),
                   const Text(
@@ -309,18 +481,24 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
 
   Future<void> _saveWorkshop() async {
     final controller = context.read<AppController>();
+    final validationMessage = _validateSchedule();
+    if (validationMessage != null) {
+      _showMessage(validationMessage);
+      return;
+    }
+
     try {
       await controller.saveWorkshopProfile(
         nombreComercial: _workshopNameController.text,
         direccion: _addressController.text,
         telefono: _phoneController.text,
         emailContacto: _contactEmailController.text,
-        horarioAtencion: _scheduleController.text,
+        horarioAtencion: _buildScheduleSummary(),
         especialidades: _specialtiesController.text,
         descripcion: _descriptionController.text,
         sitioWeb: _siteController.text,
-        latitud: double.tryParse(_latController.text.trim()),
-        longitud: double.tryParse(_lngController.text.trim()),
+        latitud: _selectedLat,
+        longitud: _selectedLng,
         notificacionesNuevasAsignaciones: _notifAssignments,
         notificacionesPush: _notifPush,
         notificacionesRecordatorios: _notifReminders,
@@ -338,6 +516,253 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
     }
   }
 
+  void _toggleGeneralDay(_WorkshopDay day) {
+    setState(() {
+      if (_generalDays.contains(day)) {
+        _generalDays = _generalDays.where((item) => item != day).toList();
+      } else {
+        _generalDays = [..._generalDays, day]
+          ..sort((a, b) => _days.indexOf(a).compareTo(_days.indexOf(b)));
+      }
+    });
+  }
+
+  Future<void> _pickTime({
+    required TimeOfDay? initial,
+    required ValueChanged<TimeOfDay> onSelected,
+  }) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial ?? const TimeOfDay(hour: 8, minute: 0),
+    );
+    if (picked == null) {
+      return;
+    }
+    onSelected(picked);
+  }
+
+  String _formatTime(TimeOfDay? time) {
+    if (time == null) {
+      return 'Seleccionar';
+    }
+    final hours = time.hour.toString().padLeft(2, '0');
+    final minutes = time.minute.toString().padLeft(2, '0');
+    return '$hours:$minutes';
+  }
+
+  String _buildScheduleSummary() {
+    final generalDays = _generalDays.join(', ');
+    final generalOpen = _formatTime(_generalOpen);
+    final generalClose = _formatTime(_generalClose);
+    final parts = <String>[
+      'Dias generales: $generalDays',
+      'Horario general: $generalOpen-$generalClose',
+    ];
+
+    if (_specialEnabled) {
+      parts.add(
+        'Horario especial: $_specialDay ${_formatTime(_specialOpen)}-${_formatTime(_specialClose)}',
+      );
+    }
+
+    return parts.join(' | ');
+  }
+
+  String? _validateSchedule() {
+    if (_generalDays.isEmpty) {
+      return 'Selecciona al menos un dia de atencion general.';
+    }
+    if (_generalOpen == null || _generalClose == null) {
+      return 'Completa el horario general del taller.';
+    }
+    if (_compareTime(_generalOpen!, _generalClose!) >= 0) {
+      return 'La hora de cierre general debe ser posterior a la apertura.';
+    }
+    if (_specialEnabled) {
+      if (_specialOpen == null || _specialClose == null) {
+        return 'Completa el horario especial.';
+      }
+      if (_compareTime(_specialOpen!, _specialClose!) >= 0) {
+        return 'La hora de cierre especial debe ser posterior a la apertura.';
+      }
+    }
+    return null;
+  }
+
+  int _compareTime(TimeOfDay left, TimeOfDay right) {
+    final leftMinutes = left.hour * 60 + left.minute;
+    final rightMinutes = right.hour * 60 + right.minute;
+    return leftMinutes.compareTo(rightMinutes);
+  }
+
+  String get _locationSummary {
+    if (_selectedLat == null || _selectedLng == null) {
+      return 'Ubicacion pendiente';
+    }
+    return '${_selectedLat!.toStringAsFixed(6)}, ${_selectedLng!.toStringAsFixed(6)}';
+  }
+
+  Future<void> _useCurrentLocation() async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      _showMessage('Activa la ubicacion del dispositivo para continuar.');
+      return;
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      _showMessage('No se concedieron permisos de ubicacion.');
+      return;
+    }
+
+    final position = await Geolocator.getCurrentPosition();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _selectedLat = position.latitude;
+      _selectedLng = position.longitude;
+    });
+  }
+
+  Future<void> _openMapPicker() async {
+    final initial = (_selectedLat != null && _selectedLng != null)
+        ? LatLng(_selectedLat!, _selectedLng!)
+        : null;
+    final picked = await Navigator.of(context).push<LatLng>(
+      MaterialPageRoute<LatLng>(
+        builder: (_) => LocationPickerScreen(initialLocation: initial),
+      ),
+    );
+
+    if (picked == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedLat = picked.latitude;
+      _selectedLng = picked.longitude;
+    });
+  }
+
+  void _applySchedule(String raw) {
+    final parsed = _parseSchedule(raw);
+    _generalDays = parsed.generalDays;
+    _generalOpen = parsed.generalOpen;
+    _generalClose = parsed.generalClose;
+    _specialEnabled = parsed.specialEnabled;
+    _specialDay = parsed.specialDay;
+    _specialOpen = parsed.specialOpen;
+    _specialClose = parsed.specialClose;
+  }
+
+  _ParsedWorkshopSchedule _parseSchedule(String raw) {
+    final fallback = _ParsedWorkshopSchedule(
+      generalDays: const [
+        'Lunes',
+        'Martes',
+        'Miercoles',
+        'Jueves',
+        'Viernes',
+        'Sabado',
+      ],
+      generalOpen: const TimeOfDay(hour: 8, minute: 0),
+      generalClose: const TimeOfDay(hour: 18, minute: 0),
+      specialEnabled: false,
+      specialDay: 'Domingo',
+      specialOpen: const TimeOfDay(hour: 7, minute: 0),
+      specialClose: const TimeOfDay(hour: 13, minute: 0),
+    );
+
+    final text = raw.trim();
+    if (text.isEmpty) {
+      return fallback;
+    }
+
+    final generalDaysMatch = RegExp(r'Dias generales:\s*([^|]+)', caseSensitive: false)
+        .firstMatch(text);
+    final generalTimeMatch = RegExp(
+      r'Horario general:\s*(\d{2}:\d{2})-(\d{2}:\d{2})',
+      caseSensitive: false,
+    ).firstMatch(text);
+    final specialMatch = RegExp(
+      r'Horario especial:\s*(Lunes|Martes|Miercoles|Jueves|Viernes|Sabado|Domingo)\s+(\d{2}:\d{2})-(\d{2}:\d{2})',
+      caseSensitive: false,
+    ).firstMatch(text);
+    final legacyRangeMatch = RegExp(
+      r'(Lunes|Martes|Miercoles|Jueves|Viernes|Sabado|Domingo)\s+a\s+(Lunes|Martes|Miercoles|Jueves|Viernes|Sabado|Domingo).*?(\d{2}:\d{2}).*?(\d{2}:\d{2})',
+      caseSensitive: false,
+    ).firstMatch(text);
+
+    final generalDays = generalDaysMatch != null
+        ? _parseDayList(generalDaysMatch.group(1)!)
+        : legacyRangeMatch != null
+            ? _expandDayRange(
+                legacyRangeMatch.group(1)!,
+                legacyRangeMatch.group(2)!,
+              )
+            : _parseDayList(text);
+
+    final generalOpen = _parseTime(
+      generalTimeMatch?.group(1) ?? legacyRangeMatch?.group(3),
+    );
+    final generalClose = _parseTime(
+      generalTimeMatch?.group(2) ?? legacyRangeMatch?.group(4),
+    );
+
+    return _ParsedWorkshopSchedule(
+      generalDays: generalDays.isEmpty ? fallback.generalDays : generalDays,
+      generalOpen: generalOpen ?? fallback.generalOpen,
+      generalClose: generalClose ?? fallback.generalClose,
+      specialEnabled: specialMatch != null,
+      specialDay: specialMatch?.group(1) ?? fallback.specialDay,
+      specialOpen: _parseTime(specialMatch?.group(2)) ?? fallback.specialOpen,
+      specialClose: _parseTime(specialMatch?.group(3)) ?? fallback.specialClose,
+    );
+  }
+
+  List<_WorkshopDay> _parseDayList(String value) {
+    return _days
+        .where(
+          (day) => RegExp(day, caseSensitive: false).hasMatch(value),
+        )
+        .toList();
+  }
+
+  List<_WorkshopDay> _expandDayRange(String start, String end) {
+    final startIndex = _days.indexWhere(
+      (day) => day.toLowerCase() == start.toLowerCase(),
+    );
+    final endIndex = _days.indexWhere(
+      (day) => day.toLowerCase() == end.toLowerCase(),
+    );
+    if (startIndex == -1 || endIndex == -1 || startIndex > endIndex) {
+      return <_WorkshopDay>[];
+    }
+    return _days.sublist(startIndex, endIndex + 1);
+  }
+
+  TimeOfDay? _parseTime(String? raw) {
+    if (raw == null) {
+      return null;
+    }
+    final parts = raw.split(':');
+    if (parts.length != 2) {
+      return null;
+    }
+    final hour = int.tryParse(parts.first);
+    final minute = int.tryParse(parts.last);
+    if (hour == null || minute == null) {
+      return null;
+    }
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
   void _showMessage(String raw) {
     if (!mounted) {
       return;
@@ -346,4 +771,48 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
       SnackBar(content: Text(raw.replaceFirst('Exception: ', ''))),
     );
   }
+}
+
+class _TimePickerField extends StatelessWidget {
+  const _TimePickerField({
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onTap,
+      child: InputDecorator(
+        decoration: InputDecoration(labelText: label),
+        child: Text(value),
+      ),
+    );
+  }
+}
+
+class _ParsedWorkshopSchedule {
+  const _ParsedWorkshopSchedule({
+    required this.generalDays,
+    required this.generalOpen,
+    required this.generalClose,
+    required this.specialEnabled,
+    required this.specialDay,
+    required this.specialOpen,
+    required this.specialClose,
+  });
+
+  final List<_WorkshopDay> generalDays;
+  final TimeOfDay generalOpen;
+  final TimeOfDay generalClose;
+  final bool specialEnabled;
+  final _WorkshopDay specialDay;
+  final TimeOfDay specialOpen;
+  final TimeOfDay specialClose;
 }
