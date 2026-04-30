@@ -1,18 +1,21 @@
-# Stage 1: Build
+FROM node:22-alpine AS build
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build -- --configuration production
+
 FROM node:22-alpine
 
 WORKDIR /app
 
-# Instalar Angular CLI globalmente
-RUN npm install -g @angular/cli
+RUN npm install -g serve
 
-COPY package*.json ./
-RUN npm install
+COPY --from=build /app/dist/frontend/browser ./dist
 
-COPY . .
-
-# Exponer el puerto por defecto para desarrollo local
 EXPOSE 4200
 
-# Cloud Run inyecta PORT; en local conserva 4200.
-CMD ["sh", "-c", "ng serve --host 0.0.0.0 --port ${PORT:-4200} --poll 2000"]
+CMD ["sh", "-c", "serve -s dist -l tcp://0.0.0.0:${PORT:-4200}"]

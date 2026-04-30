@@ -289,6 +289,30 @@ class ApiClient {
     return payload.map(EmergencyRequest.fromApi).toList();
   }
 
+  Future<List<EmergencyRequest>> fetchWorkshopPendingRequests() async {
+    final response = await http
+        .get(_uri('/api/v1/solicitudes/taller/pendientes'), headers: _headers())
+        .timeout(const Duration(seconds: 12));
+    final payload = _decodeList(response);
+    return payload.map(EmergencyRequest.fromApi).toList();
+  }
+
+  Future<List<EmergencyRequest>> fetchWorkshopManagedRequests() async {
+    final response = await http
+        .get(_uri('/api/v1/solicitudes/taller/mis-solicitudes'), headers: _headers())
+        .timeout(const Duration(seconds: 12));
+    final payload = _decodeList(response);
+    return payload.map(EmergencyRequest.fromApi).toList();
+  }
+
+  Future<List<EmergencyRequest>> fetchMechanicAssignments() async {
+    final response = await http
+        .get(_uri('/api/v1/solicitudes/mis-asignaciones'), headers: _headers())
+        .timeout(const Duration(seconds: 12));
+    final payload = _decodeList(response);
+    return payload.map(EmergencyRequest.fromApi).toList();
+  }
+
   Future<List<Technician>> fetchTechnicians() async {
     final response = await http
         .get(_uri('/api/v1/tecnicos/'), headers: _headers())
@@ -409,6 +433,20 @@ class ApiClient {
     return EmergencyRequest.fromApi(_decodeObject(response));
   }
 
+  Future<EmergencyRequest> uploadRequestAudio({
+    required int requestId,
+    required String audioPath,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      _uri('/api/v1/solicitudes/$requestId/audio'),
+    );
+    request.headers.addAll(_headers());
+    request.files.add(await http.MultipartFile.fromPath('audio', audioPath));
+    final response = await request.send().timeout(const Duration(seconds: 60));
+    return EmergencyRequest.fromApi(await _decodeObjectFromStream(response));
+  }
+
   Future<EmergencyRequest> updateRequestStatus({
     required int requestId,
     required String estado,
@@ -421,6 +459,18 @@ class ApiClient {
     }
     final response = await http.patch(
       _uri(path),
+      headers: _headers(json: true),
+      body: jsonEncode({}),
+    ).timeout(const Duration(seconds: 12));
+    return EmergencyRequest.fromApi(_decodeObject(response));
+  }
+
+  Future<EmergencyRequest> updateMechanicAssignmentStatus({
+    required int requestId,
+    required String estado,
+  }) async {
+    final response = await http.patch(
+      _uri('/api/v1/solicitudes/mis-asignaciones/$requestId/estado?estado=${Uri.encodeQueryComponent(estado)}'),
       headers: _headers(json: true),
       body: jsonEncode({}),
     ).timeout(const Duration(seconds: 12));

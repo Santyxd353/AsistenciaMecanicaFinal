@@ -159,6 +159,8 @@ class Tecnico(TecnicoBase, table=True):
 class TecnicoRead(TecnicoBase):
     id: int
     especialidades: List[EspecialidadRead] = Field(default_factory=list)
+    usuario_username: Optional[str] = None
+    password_temporal: Optional[str] = None
 
 class SolicitudBase(SQLModel):
     descripcion: str
@@ -203,6 +205,9 @@ class SolicitudRead(SolicitudBase):
     tecnico_longitud: Optional[float] = None
     vehiculo_placa: Optional[str] = None
     vehiculo_descripcion: Optional[str] = None
+    audio_url: Optional[str] = None
+    audio_resumen_ia: Optional[str] = None
+    ruta_recomendada_ia: Optional[str] = None
     
 class SolicitudCreate(SolicitudBase):
     pass

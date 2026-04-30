@@ -9,7 +9,7 @@
     <p class="taller-solicitudes-kicker">Operacion del taller</p>
     <h1>Solicitudes del taller</h1>
     <p>
-      Gestiona las solicitudes disponibles, las que ya fueron tomadas por tu taller y prepara la asignacion de tecnicos.
+      Gestiona las solicitudes disponibles, las que ya fueron tomadas por tu taller y prepara la asignacion de mecanicos.
     </p>
   </div>
 
@@ -152,8 +152,8 @@
           </div>
 
           <div class="taller-solicitudes-detalle-card">
-            <span class="taller-solicitudes-detalle-label">Tecnico</span>
-            <strong>{{ solicitudSeleccionada.tecnico_id ? ('Tecnico #' + solicitudSeleccionada.tecnico_id) : 'Aun sin tecnico' }}</strong>
+            <span class="taller-solicitudes-detalle-label">Mecanico</span>
+            <strong>{{ solicitudSeleccionada.tecnico_nombre || (solicitudSeleccionada.tecnico_id ? ('Mecanico #' + solicitudSeleccionada.tecnico_id) : 'Aun sin mecanico') }}</strong>
           </div>
         </div>
 
@@ -204,6 +204,24 @@
           <p><strong>Resumen:</strong> {{ solicitudSeleccionada.resumen_ia || 'Sin resumen disponible' }}</p>
         </div>
 
+        <div class="taller-solicitudes-detalle-seccion" *ngIf="solicitudSeleccionada.audio_url || solicitudSeleccionada.audio_resumen_ia">
+          <span class="taller-solicitudes-detalle-label">Audio del cliente</span>
+          <audio *ngIf="obtenerAudioUrl(solicitudSeleccionada) as audioUrl" controls [src]="audioUrl"></audio>
+          <p *ngIf="solicitudSeleccionada.audio_resumen_ia">
+            <strong>Resumen IA:</strong> {{ solicitudSeleccionada.audio_resumen_ia }}
+          </p>
+        </div>
+
+        <div class="taller-solicitudes-detalle-seccion" *ngIf="solicitudSeleccionada.ruta_recomendada_ia">
+          <span class="taller-solicitudes-detalle-label">Ruta sugerida</span>
+          <p>{{ solicitudSeleccionada.ruta_recomendada_ia }}</p>
+          <div class="taller-solicitudes-mapa-acciones">
+            <a class="taller-solicitudes-boton-mapa" [href]="obtenerUrlRuta(solicitudSeleccionada)" target="_blank" rel="noopener noreferrer">
+              Abrir ruta en Google Maps
+            </a>
+          </div>
+        </div>
+
         <div *ngIf="errorAceptarSolicitud" class="taller-solicitudes-alerta-error">
           {{ errorAceptarSolicitud }}
         </div>
@@ -213,13 +231,13 @@
         </div>
 
         <div *ngIf="puedeAsignarTecnico" class="taller-solicitudes-detalle-seccion">
-          <span class="taller-solicitudes-detalle-label">Asignar tecnico</span>
+          <span class="taller-solicitudes-detalle-label">Asignar mecanico</span>
 
           <div class="taller-solicitudes-form-grid">
             <label class="taller-solicitudes-campo">
-              <span>Tecnico disponible</span>
+              <span>Mecanico disponible</span>
               <select [(ngModel)]="tecnicoSeleccionadoId">
-                <option [ngValue]="null">Selecciona un tecnico</option>
+                <option [ngValue]="null">Selecciona un mecanico</option>
                 <option *ngFor="let tecnico of tecnicosAsignables" [ngValue]="tecnico.id">
                   {{ tecnico.nombre }}{{ tecnico.ci ? ' - CI ' + tecnico.ci : '' }}
                 </option>
@@ -228,7 +246,7 @@
           </div>
 
           <p class="taller-solicitudes-subtexto" *ngIf="tecnicosAsignables.length === 0">
-            No hay tecnicos activos y disponibles en este momento.
+            No hay mecanicos activos y disponibles en este momento.
           </p>
 
           <div *ngIf="errorAsignarTecnico" class="taller-solicitudes-alerta-error">
@@ -238,7 +256,7 @@
 
         <div *ngIf="solicitudSeleccionada.tecnico_id" class="taller-solicitudes-detalle-seccion">
           <span class="taller-solicitudes-detalle-label">Asignacion actual</span>
-          <p>La solicitud ya tiene un tecnico asignado y ahora el seguimiento continua desde el panel del tecnico.</p>
+          <p>La solicitud ya tiene un mecanico asignado y ahora el seguimiento continua desde el panel del mecanico.</p>
         </div>
       </div>
 
@@ -259,7 +277,7 @@
           [disabled]="asignandoTecnico || tecnicosAsignables.length === 0"
           (click)="asignarTecnicoSeleccionado()"
         >
-          {{ asignandoTecnico ? 'Asignando...' : 'Asignar tecnico' }}
+          {{ asignandoTecnico ? 'Asignando...' : 'Asignar mecanico' }}
         </button>
         <button
           *ngIf="puedeAceptarSolicitud"

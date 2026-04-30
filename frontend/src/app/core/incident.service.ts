@@ -28,6 +28,9 @@ export interface Solicitud {
   tecnico_longitud?: number;
   vehiculo_placa?: string;
   vehiculo_descripcion?: string;
+  audio_url?: string;
+  audio_resumen_ia?: string;
+  ruta_recomendada_ia?: string;
   fecha_creacion: string;
 }
 

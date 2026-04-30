@@ -44,6 +44,7 @@ export class TallerSolicitudesComponent implements OnInit {
     longitud: null as number | null,
     vehiculo_id: null as number | null
   };
+  private readonly backendBaseUrl = 'https://backend-958497253028.europe-west1.run.app';
 
   constructor(
     private solicitudService: SolicitudService,
@@ -76,13 +77,13 @@ export class TallerSolicitudesComponent implements OnInit {
     }
 
     if (!solicitud.tecnico_id) {
-      return 'Tu taller ya la acepto. Falta asignar un tecnico.';
+      return 'Tu taller ya la acepto. Falta asignar un mecanico.';
     }
 
     const map: Record<string, string> = {
       pendiente: 'Aceptada por el taller y esperando asignacion operativa.',
-      asignada: 'Tecnico asignado. Lista para iniciar atencion.',
-      en_progreso: 'El tecnico ya se encuentra trabajando en el servicio.',
+      asignada: 'Mecanico asignado. Lista para iniciar atencion.',
+      en_progreso: 'El mecanico ya se encuentra trabajando en el servicio.',
       resuelta: 'Servicio finalizado correctamente.',
       cancelada: 'El servicio fue cancelado.'
     };
@@ -96,12 +97,12 @@ export class TallerSolicitudesComponent implements OnInit {
     }
 
     if (!solicitud.tecnico_id) {
-      return 'Pendiente de tecnico';
+      return 'Pendiente de mecanico';
     }
 
     const map: Record<string, string> = {
-      pendiente: 'Pendiente de tecnico',
-      asignada: 'Tecnico asignado',
+      pendiente: 'Pendiente de mecanico',
+      asignada: 'Mecanico asignado',
       en_progreso: 'En servicio',
       resuelta: 'Servicio resuelto',
       cancelada: 'Servicio cancelado'
@@ -169,13 +170,32 @@ export class TallerSolicitudesComponent implements OnInit {
         puntos.push({
           latitud: tecnico.latitud ?? null,
           longitud: tecnico.longitud ?? null,
-          etiqueta: tecnico.nombre || 'Tecnico asignado',
+          etiqueta: tecnico.nombre || 'Mecanico asignado',
           tipo: 'tecnico'
         });
       }
     }
 
     return puntos;
+  }
+
+  obtenerAudioUrl(solicitud: Solicitud): string | null {
+    if (!solicitud.audio_url) {
+      return null;
+    }
+    return solicitud.audio_url.startsWith('http')
+      ? solicitud.audio_url
+      : `${this.backendBaseUrl}${solicitud.audio_url}`;
+  }
+
+  obtenerUrlRuta(solicitud: Solicitud): string {
+    const originLat = solicitud.tecnico_latitud ?? this.tallerActual?.latitud;
+    const originLng = solicitud.tecnico_longitud ?? this.tallerActual?.longitud;
+    const destination = `${solicitud.latitud},${solicitud.longitud}`;
+    if (originLat != null && originLng != null) {
+      return `https://www.google.com/maps/dir/?api=1&origin=${originLat},${originLng}&destination=${destination}&travelmode=driving`;
+    }
+    return `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`;
   }
 
   cambiarVista(vista: 'pendientes' | 'mis-solicitudes'): void {
@@ -252,7 +272,7 @@ export class TallerSolicitudesComponent implements OnInit {
 
   asignarTecnicoSeleccionado(): void {
     if (!this.solicitudSeleccionada || !this.tecnicoSeleccionadoId) {
-      this.errorAsignarTecnico = 'Debes seleccionar un tecnico disponible.';
+      this.errorAsignarTecnico = 'Debes seleccionar un mecanico disponible.';
       return;
     }
 
@@ -268,7 +288,7 @@ export class TallerSolicitudesComponent implements OnInit {
         this.cargarTecnicos();
       },
       error: (error) => {
-        this.errorAsignarTecnico = error?.error?.detail || 'No se pudo asignar el tecnico.';
+        this.errorAsignarTecnico = error?.error?.detail || 'No se pudo asignar el mecanico.';
         this.asignandoTecnico = false;
       }
     });

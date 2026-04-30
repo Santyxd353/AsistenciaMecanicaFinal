@@ -1,4 +1,5 @@
-import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
@@ -28,11 +29,13 @@ class _ReportScreenState extends State<ReportScreen> {
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
   final _notesController = TextEditingController();
+  final _audioRecorder = AudioRecorder();
 
   String _selectedIncident = _incidentTypes.first;
   String? _selectedVehicleId;
   List<String> _imagePaths = const [];
   String? _audioPath;
+  bool _recordingAudio = false;
   double? _selectedLat;
   double? _selectedLng;
 
@@ -40,6 +43,7 @@ class _ReportScreenState extends State<ReportScreen> {
   void dispose() {
     _descriptionController.dispose();
     _notesController.dispose();
+    _audioRecorder.dispose();
     super.dispose();
   }
 
@@ -294,13 +298,32 @@ class _ReportScreenState extends State<ReportScreen> {
                                     label: const Text('Camara'),
                                   ),
                                   FilledButton.tonalIcon(
-                                    onPressed: _pickAudio,
-                                    icon: const Icon(Icons.mic_none_outlined),
-                                    label: const Text('Audio'),
+                                    onPressed: _toggleAudioRecording,
+                                    icon: Icon(
+                                      _recordingAudio
+                                          ? Icons.stop_circle_outlined
+                                          : Icons.mic_none_outlined,
+                                    ),
+                                    label: Text(
+                                      _recordingAudio
+                                          ? 'Detener audio'
+                                          : 'Grabar audio',
+                                    ),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 14),
+                              if (_recordingAudio)
+                                const Padding(
+                                  padding: EdgeInsets.only(bottom: 10),
+                                  child: Text(
+                                    'Grabando audio descriptivo...',
+                                    style: TextStyle(
+                                      color: Color(0xFF9A4F2C),
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
                               if (_imagePaths.isEmpty &&
                                   (_audioPath == null || _audioPath!.isEmpty))
                                 const Text(
@@ -447,17 +470,42 @@ class _ReportScreenState extends State<ReportScreen> {
     });
   }
 
-  Future<void> _pickAudio() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['m4a', 'mp3', 'wav', 'aac'],
-    );
-    if (result == null || result.files.single.path == null) {
+  Future<void> _toggleAudioRecording() async {
+    if (_recordingAudio) {
+      final path = await _audioRecorder.stop();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _recordingAudio = false;
+        if (path != null && path.isNotEmpty) {
+          _audioPath = path;
+        }
+      });
       return;
     }
-    setState(() {
-      _audioPath = result.files.single.path!;
-    });
+
+    final hasPermission = await _audioRecorder.hasPermission();
+    if (!hasPermission) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Concede permiso de microfono para grabar audio.')),
+      );
+      return;
+    }
+
+    final dir = await getTemporaryDirectory();
+    final path = '${dir.path}/reporte-${DateTime.now().millisecondsSinceEpoch}.m4a';
+    await _audioRecorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc),
+      path: path,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _recordingAudio = true);
   }
 
   Future<void> _submit(AppController controller, Vehicle? vehicle) async {
@@ -485,6 +533,13 @@ class _ReportScreenState extends State<ReportScreen> {
     }
 
     try {
+      if (_recordingAudio) {
+        final path = await _audioRecorder.stop();
+        _recordingAudio = false;
+        if (path != null && path.isNotEmpty) {
+          _audioPath = path;
+        }
+      }
       final request = await controller.submitEmergency(
         vehicle: vehicle,
         incidentType: _selectedIncident,

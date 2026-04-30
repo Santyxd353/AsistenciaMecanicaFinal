@@ -239,7 +239,7 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
           <p class="message error" *ngIf="reportError">{{ reportError }}</p>
         </section>
 
-        <section class="panel panel-payments">
+        <section class="panel panel-payments" *ngIf="payableReports.length">
           <div class="panel-head">
             <div>
               <p class="section-kicker">Cobros</p>
@@ -252,8 +252,8 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
             <button class="btn-secondary" type="button" (click)="loadReports()">Actualizar</button>
           </div>
 
-          <div class="report-list" *ngIf="reports.length; else emptyReportState">
-            <article class="report-card" *ngFor="let report of reports">
+          <div class="report-list">
+            <article class="report-card" *ngFor="let report of payableReports">
               <div class="report-top">
                 <div>
                   <span class="report-id">Servicio #{{ report.id }}</span>
@@ -308,13 +308,6 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
               </div>
             </article>
           </div>
-
-          <ng-template #emptyReportState>
-            <div class="empty-state empty-state-large">
-              <strong>Todavia no hay servicios vinculados a tus vehiculos.</strong>
-              <p>Cuando exista una solicitud asociada a uno de tus autos, aqui aparecera su estado de cobro.</p>
-            </div>
-          </ng-template>
 
           <p class="message error" *ngIf="reportError">{{ reportError }}</p>
         </section>
@@ -1031,12 +1024,14 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
       justify-content: center;
       flex-direction: column;
       transform: translateY(-16px);
-      z-index: 500;
+      z-index: 1200;
+      filter: drop-shadow(0 14px 18px rgba(0, 0, 0, 0.35));
     }
 
     .pin-head {
-      width: 34px;
-      height: 34px;
+      display: block;
+      width: 44px;
+      height: 44px;
       border-radius: 50% 50% 50% 0;
       background: #c04f12;
       border: 4px solid #fff;

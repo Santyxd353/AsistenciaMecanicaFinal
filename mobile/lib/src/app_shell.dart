@@ -108,6 +108,33 @@ class _AppShellState extends State<AppShell> {
       );
     }
 
+    if (controller.currentUser?.role == 'tecnico') {
+      final pages = [
+        const WorkshopRequestsScreen(),
+        const SettingsScreen(),
+      ];
+      final selectedIndex = _normalizeIndex(pages.length);
+
+      return Scaffold(
+        body: IndexedStack(index: selectedIndex, children: pages),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: selectedIndex,
+          onDestinationSelected: (index) =>
+              setState(() => _currentIndex = index),
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.assignment_outlined),
+              label: 'Trabajos',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              label: 'Cuenta',
+            ),
+          ],
+        ),
+      );
+    }
+
     final pages = [
       OverviewScreen(
         onCreateReport: () => setState(() => _currentIndex = 1),

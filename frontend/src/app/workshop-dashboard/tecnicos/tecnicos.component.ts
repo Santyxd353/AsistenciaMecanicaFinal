@@ -118,7 +118,7 @@ export class TecnicosComponent implements OnInit {
       error: (err: unknown) => {
         console.error(err);
         this.loading = false;
-        this.mensajeError = 'No se pudieron cargar los técnicos.';
+        this.mensajeError = 'No se pudieron cargar los tÃƒÂ©cnicos.';
         this.cdr.detectChanges();
       }
     });
@@ -172,7 +172,7 @@ export class TecnicosComponent implements OnInit {
         this.especialidadesSeleccionadas = [...this.especialidadesSeleccionadas, existe];
         this.syncEspecialidadesSeleccionadas();
       }
-      this.modalMensajeExito = 'La especialidad ya existía y fue agregada a la selección.';
+      this.modalMensajeExito = 'La especialidad ya existÃƒÂ­a y fue agregada a la selecciÃƒÂ³n.';
       this.nuevaEspecialidad = '';
       this.especialidadSeleccionadaId = '';
       this.mostrarNuevaEspecialidad = false;
@@ -310,7 +310,7 @@ export class TecnicosComponent implements OnInit {
     }
 
     if (this.mostrarNuevaEspecialidad) {
-      this.modalMensajeError = 'Primero crea y agrega la nueva especialidad antes de guardar el técnico.';
+      this.modalMensajeError = 'Primero crea y agrega la nueva especialidad antes de guardar el tÃƒÂ©cnico.';
       this.guardando = false;
       return;
     }
@@ -327,14 +327,17 @@ export class TecnicosComponent implements OnInit {
   guardarTecnico(payload: TecnicoPayload) {
     if (this.editando) {
       this.tecnicoService.actualizarTecnico(this.form.id, payload).subscribe({
-        next: (_res: unknown) => {
-          this.mensajeExito = 'Técnico actualizado correctamente.';
+        next: (res: Tecnico) => {
+          const credenciales = res.usuario_username && res.password_temporal
+            ? ` Usuario: ${res.usuario_username} | ContraseÃ±a temporal: ${res.password_temporal}`
+            : '';
+          this.mensajeExito = `MecÃ¡nico creado correctamente.${credenciales}`;
           this.cerrarModal();
           setTimeout(() => this.cargar(), 0);
         },
         error: (err: unknown) => {
           console.error(err);
-          this.mensajeError = this.obtenerMensajeError(err, 'No se pudo actualizar el técnico.');
+          this.mensajeError = this.obtenerMensajeError(err, 'No se pudo actualizar el tÃƒÂ©cnico.');
           this.guardando = false;
         },
         complete: () => {
@@ -343,14 +346,17 @@ export class TecnicosComponent implements OnInit {
       });
     } else {
       this.tecnicoService.crearTecnico(payload).subscribe({
-        next: (_res: unknown) => {
-          this.mensajeExito = 'Técnico creado correctamente.';
+        next: (res: Tecnico) => {
+          const credenciales = res.usuario_username && res.password_temporal
+            ? ` Usuario: ${res.usuario_username} | Contraseña temporal: ${res.password_temporal}`
+            : '';
+          this.mensajeExito = `Mecánico creado correctamente.${credenciales}`;
           this.cerrarModal();
           setTimeout(() => this.cargar(), 0);
         },
         error: (err: unknown) => {
           console.error(err);
-          this.mensajeError = this.obtenerMensajeError(err, 'No se pudo crear el técnico.');
+          this.mensajeError = this.obtenerMensajeError(err, 'No se pudo crear el tÃƒÂ©cnico.');
           this.guardando = false;
         },
         complete: () => {
@@ -364,14 +370,14 @@ export class TecnicosComponent implements OnInit {
     this.mensajeExito = '';
     this.mensajeError = '';
 
-    if (confirm(`¿Eliminar al técnico ${t.nombre}?`)) {
+    if (confirm(`Ã‚Â¿Eliminar al tÃƒÂ©cnico ${t.nombre}?`)) {
       this.tecnicoService.eliminarTecnico(t.id).subscribe({
         next: () => {
-          this.mensajeExito = 'Técnico eliminado correctamente.';
+          this.mensajeExito = 'TÃƒÂ©cnico eliminado correctamente.';
           this.cargar();
         },
         error: (err: unknown) => {
-          this.mensajeError = 'No se pudo eliminar el técnico.';
+          this.mensajeError = 'No se pudo eliminar el tÃƒÂ©cnico.';
         }
       });
     }
@@ -411,14 +417,14 @@ export class TecnicosComponent implements OnInit {
     this.tecnicoService.actualizarTecnico(tecnico.id, payload).subscribe({
       next: () => {
         this.mensajeExito = nuevoEstado
-          ? `El técnico ${tecnico.nombre} fue reactivado y su acceso al sistema quedó habilitado.`
-          : `El técnico ${tecnico.nombre} fue dado de baja y su acceso al sistema quedó deshabilitado.`;
+          ? `El tÃƒÂ©cnico ${tecnico.nombre} fue reactivado y su acceso al sistema quedÃƒÂ³ habilitado.`
+          : `El tÃƒÂ©cnico ${tecnico.nombre} fue dado de baja y su acceso al sistema quedÃƒÂ³ deshabilitado.`;
         this.cargar();
       },
       error: (err: unknown) => {
         this.mensajeError = this.obtenerMensajeError(
           err,
-          nuevoEstado ? 'No se pudo reactivar el técnico.' : 'No se pudo dar de baja al técnico.'
+          nuevoEstado ? 'No se pudo reactivar el tÃƒÂ©cnico.' : 'No se pudo dar de baja al tÃƒÂ©cnico.'
         );
       }
     });
@@ -474,14 +480,14 @@ export class TecnicosComponent implements OnInit {
 
     this.tecnicoService.convertirATecnicoUsuario(this.tecnicoSeleccionadoParaUsuario.id, payload).subscribe({
       next: () => {
-        this.mensajeExito = `El técnico ${this.tecnicoSeleccionadoParaUsuario?.nombre} ahora forma parte del sistema como usuario.`;
+        this.mensajeExito = `El tÃƒÂ©cnico ${this.tecnicoSeleccionadoParaUsuario?.nombre} ahora forma parte del sistema como usuario.`;
         this.cerrarModalUsuario();
         this.cargar();
       },
       error: (err: unknown) => {
         this.modalMensajeError = this.obtenerMensajeError(
           err,
-          'No se pudo convertir el técnico en usuario del sistema.'
+          'No se pudo convertir el tÃƒÂ©cnico en usuario del sistema.'
         );
         this.convirtiendoUsuario = false;
       },
@@ -554,3 +560,4 @@ export class TecnicosComponent implements OnInit {
     return fallback;
   }
 }
+

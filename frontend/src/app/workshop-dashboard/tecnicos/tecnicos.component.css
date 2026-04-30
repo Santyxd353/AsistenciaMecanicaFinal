@@ -20,6 +20,7 @@
   min-height: 100vh;
   background: var(--bg-shell);
   color: var(--text-main);
+  font-family: "Nunito Sans", "Segoe UI", sans-serif;
 }
 
 * {

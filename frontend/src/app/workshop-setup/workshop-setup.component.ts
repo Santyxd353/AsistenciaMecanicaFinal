@@ -824,15 +824,18 @@ import { WorkshopSpecialtyService } from '../core/workshop-specialty.service';
       display: grid;
       place-items: center;
       pointer-events: none;
+      z-index: 1200;
+      filter: drop-shadow(0 14px 18px rgba(0, 0, 0, 0.35));
     }
 
     .center-pin .pin-head {
-      width: 34px;
-      height: 34px;
+      display: block;
+      width: 44px;
+      height: 44px;
       border-radius: 50% 50% 50% 0;
       background: #c04f12;
       border: 4px solid #fff;
-      transform: translateY(-22px) rotate(-45deg);
+      transform: translateY(-28px) rotate(-45deg);
       box-shadow: 0 12px 22px rgba(0, 0, 0, 0.28);
       position: relative;
       font-size: 0;
@@ -851,12 +854,12 @@ import { WorkshopSpecialtyService } from '../core/workshop-specialty.service';
     }
 
     .center-pin .pin-shadow {
-      width: 12px;
-      height: 12px;
+      width: 18px;
+      height: 8px;
       border-radius: 999px;
       background: #221912;
       display: block;
-      transform: translateY(-16px);
+      transform: translateY(-20px);
     }
 
     .map-modal-footer {

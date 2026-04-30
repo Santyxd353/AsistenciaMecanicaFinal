@@ -454,6 +454,11 @@
   line-height: 1.6;
 }
 
+.taller-solicitudes-detalle-seccion audio {
+  width: 100%;
+  margin: 8px 0 12px;
+}
+
 .taller-solicitudes-campo {
   display: grid;
   gap: 8px;

@@ -206,6 +206,8 @@ class Technician {
     required this.especialidad,
     required this.disponible,
     this.tallerId,
+    this.usuarioUsername,
+    this.passwordTemporal,
   });
 
   final int id;
@@ -213,6 +215,8 @@ class Technician {
   final String especialidad;
   final bool disponible;
   final int? tallerId;
+  final String? usuarioUsername;
+  final String? passwordTemporal;
 
   String get label => '$nombre - $especialidad';
 
@@ -222,6 +226,8 @@ class Technician {
     String? especialidad,
     bool? disponible,
     int? tallerId,
+    String? usuarioUsername,
+    String? passwordTemporal,
   }) {
     return Technician(
       id: id ?? this.id,
@@ -229,16 +235,29 @@ class Technician {
       especialidad: especialidad ?? this.especialidad,
       disponible: disponible ?? this.disponible,
       tallerId: tallerId ?? this.tallerId,
+      usuarioUsername: usuarioUsername ?? this.usuarioUsername,
+      passwordTemporal: passwordTemporal ?? this.passwordTemporal,
     );
   }
 
   factory Technician.fromApi(Map<String, dynamic> json) {
+    final especialidades = json['especialidades'] as List<dynamic>?;
+    final especialidadTexto = especialidades
+        ?.whereType<Map<String, dynamic>>()
+        .map((item) => item['nombre']?.toString() ?? '')
+        .where((item) => item.trim().isNotEmpty)
+        .join(', ');
     return Technician(
       id: json['id'] as int,
-      nombre: json['nombre'] as String? ?? 'Tecnico',
-      especialidad: json['especialidad'] as String? ?? 'General',
+      nombre: json['nombre'] as String? ?? 'Mecanico',
+      especialidad: (json['especialidad'] as String?) ??
+          (especialidadTexto == null || especialidadTexto.isEmpty
+              ? 'General'
+              : especialidadTexto),
       disponible: json['disponible'] as bool? ?? false,
       tallerId: json['taller_id'] as int?,
+      usuarioUsername: json['usuario_username'] as String?,
+      passwordTemporal: json['password_temporal'] as String?,
     );
   }
 }
@@ -412,6 +431,9 @@ class EmergencyRequest {
     this.tecnicoEspecialidad,
     this.vehiculoPlaca,
     this.vehiculoDescripcion,
+    this.audioUrl,
+    this.audioResumenIa,
+    this.rutaRecomendadaIa,
   });
 
   final int id;
@@ -437,6 +459,9 @@ class EmergencyRequest {
   final String? tecnicoEspecialidad;
   final String? vehiculoPlaca;
   final String? vehiculoDescripcion;
+  final String? audioUrl;
+  final String? audioResumenIa;
+  final String? rutaRecomendadaIa;
 
   bool get isClosed => estado == 'resuelta' || estado == 'cancelada';
   bool get canBeCancelled => !isClosed;
@@ -516,6 +541,9 @@ class EmergencyRequest {
       tecnicoEspecialidad: json['tecnico_especialidad'] as String?,
       vehiculoPlaca: json['vehiculo_placa'] as String?,
       vehiculoDescripcion: json['vehiculo_descripcion'] as String?,
+      audioUrl: json['audio_url'] as String?,
+      audioResumenIa: json['audio_resumen_ia'] as String?,
+      rutaRecomendadaIa: json['ruta_recomendada_ia'] as String?,
     );
   }
 }

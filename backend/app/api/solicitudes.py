@@ -3,25 +3,29 @@ import unicodedata
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlmodel import Session, select
 
 from app.api.deps import get_current_user
 from app.db.session import get_session
 from app.models.domain import (
     EstadoSolicitud,
+    Evidencia,
     Solicitud,
     SolicitudCreate,
     SolicitudRead,
     Taller,
     Tecnico,
     TipoNotificacion,
+    TipoEvidencia,
     Vehiculo,
 )
 from app.models.user import User, UserRole
-from app.services.ai import analyze_incident
+from app.services.ai import analyze_incident, summarize_audio_file
 from app.services.notificaciones import crear_notificacion, crear_notificaciones_para_usuarios
+from app.services.storage import save_upload_file, url_to_path
 
 router = APIRouter()
 
@@ -391,6 +395,9 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
     tecnico_longitud = None
     vehiculo_placa = None
     vehiculo_descripcion = None
+    audio_url = None
+    audio_resumen_ia = None
+    ruta_recomendada_ia = None
 
     if solicitud.taller_id:
         taller = session.get(Taller, solicitud.taller_id)
@@ -415,6 +422,28 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
         vehiculo_placa = vehiculo.placa
         vehiculo_descripcion = f"{vehiculo.marca} {vehiculo.modelo}".strip()
 
+    audio = session.exec(
+        select(Evidencia)
+        .where(Evidencia.solicitud_id == solicitud.id)
+        .where(Evidencia.tipo_evidencia == TipoEvidencia.AUDIO)
+        .order_by(Evidencia.fecha_subida.desc())
+    ).first()
+    if audio:
+        audio_url = audio.ruta_archivo
+
+    if solicitud.resumen_ia and "Resumen del audio:" in solicitud.resumen_ia:
+        audio_resumen_ia = solicitud.resumen_ia.split("Resumen del audio:", 1)[1].strip()
+
+    if solicitud.latitud is not None and solicitud.longitud is not None:
+        origin_lat = tecnico_latitud if tecnico_latitud is not None else taller_latitud
+        origin_lng = tecnico_longitud if tecnico_longitud is not None else taller_longitud
+        if origin_lat is not None and origin_lng is not None:
+            ruta_recomendada_ia = (
+                "Ruta sugerida: salir desde el punto asignado del taller/mecanico y usar la via mas rapida "
+                f"hacia {solicitud.latitud:.6f}, {solicitud.longitud:.6f}. "
+                f"ETA estimado: {solicitud.tiempo_estimado_minutos or estimate_eta_minutes(solicitud, None, None)} minutos."
+            )
+
     return data.model_copy(
         update={
             "taller_nombre": taller_nombre,
@@ -426,6 +455,9 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
             "tecnico_longitud": tecnico_longitud,
             "vehiculo_placa": vehiculo_placa,
             "vehiculo_descripcion": vehiculo_descripcion,
+            "audio_url": audio_url,
+            "audio_resumen_ia": audio_resumen_ia,
+            "ruta_recomendada_ia": ruta_recomendada_ia,
         }
     )
 
@@ -445,6 +477,14 @@ def ensure_request_visible_to_user(session: Session, solicitud: Solicitud, curre
         )
 
         if not solicitud_asignada_al_taller and not solicitud_pendiente_candidata:
+            raise HTTPException(status_code=403, detail="No tienes permisos para ver esta solicitud")
+        return
+
+    if current_user.role == UserRole.TECNICO:
+        tecnico = session.exec(
+            select(Tecnico).where(Tecnico.id_usuario == current_user.id)
+        ).first()
+        if not tecnico or solicitud.tecnico_id != tecnico.id:
             raise HTTPException(status_code=403, detail="No tienes permisos para ver esta solicitud")
         return
 
@@ -600,7 +640,7 @@ def listar_solicitudes_pendientes_taller(
 
     solicitudes = session.exec(
         select(Solicitud)
-        .where(Solicitud.taller_id.is_(None))
+        .where(or_(Solicitud.taller_id.is_(None), Solicitud.taller_id == taller.id))
         .where(Solicitud.estado == EstadoSolicitud.PENDIENTE)
         .order_by(Solicitud.fecha_creacion.desc())
     ).all()
@@ -643,23 +683,33 @@ def listar_reportes_cliente(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
-    if current_user.role != UserRole.WORKSHOP:
+    if current_user.role == UserRole.WORKSHOP:
+        taller = _obtener_taller_actual(session, current_user)
+        solicitudes = session.exec(
+            select(Solicitud)
+            .where(Solicitud.taller_id == taller.id)
+            .order_by(Solicitud.fecha_creacion.desc())
+            .offset(skip)
+            .limit(limit)
+        ).all()
+        return [build_solicitud_read(session, solicitud) for solicitud in solicitudes]
+
+    if current_user.role != UserRole.DRIVER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo los talleres pueden consultar sus solicitudes.",
+            detail="Solo el cliente puede consultar sus reportes.",
         )
-
-    taller = _obtener_taller_actual(session, current_user)
 
     solicitudes = session.exec(
         select(Solicitud)
-        .where(Solicitud.taller_id == taller.id)
+        .join(Vehiculo)
+        .where(Vehiculo.propietario_id == current_user.id)
         .order_by(Solicitud.fecha_creacion.desc())
         .offset(skip)
         .limit(limit)
     ).all()
 
-    return solicitudes
+    return [build_solicitud_read(session, solicitud) for solicitud in solicitudes]
 
 
 @router.get("/mis-asignaciones", response_model=List[SolicitudRead])
@@ -686,7 +736,7 @@ def listar_mis_asignaciones(
         .limit(limit)
     ).all()
 
-    return solicitudes
+    return [build_solicitud_read(session, solicitud) for solicitud in solicitudes]
 
 
 @router.patch("/mis-asignaciones/{solicitud_id}/estado", response_model=SolicitudRead)
@@ -744,7 +794,7 @@ def actualizar_mi_asignacion_estado(
     session.add(solicitud)
     session.commit()
     session.refresh(solicitud)
-    return solicitud
+    return build_solicitud_read(session, solicitud)
 
 
 @router.patch("/{solicitud_id}/aceptar", response_model=SolicitudRead)
@@ -790,7 +840,7 @@ def aceptar_solicitud_taller(
     notificar_solicitud_aceptada_conductor(session, solicitud, taller)
     session.commit()
     session.refresh(solicitud)
-    return solicitud
+    return build_solicitud_read(session, solicitud)
 
 
 @router.patch("/{solicitud_id}/asignar-tecnico", response_model=SolicitudRead)
@@ -839,8 +889,7 @@ def asignar_tecnico_solicitud(
     notificar_tecnico_asignado(session, solicitud, nuevo_tecnico)
     session.commit()
     session.refresh(solicitud)
-    return solicitud
-
+    return build_solicitud_read(session, solicitud)
 
 @router.get("/{solicitud_id}", response_model=SolicitudRead)
 def obtener_solicitud(
@@ -852,7 +901,50 @@ def obtener_solicitud(
     solicitud = session.get(Solicitud, solicitud_id)
     if not solicitud:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+
     ensure_request_visible_to_user(session, solicitud, current_user)
+    return build_solicitud_read(session, solicitud)
+
+
+@router.post("/{solicitud_id}/audio", response_model=SolicitudRead)
+async def subir_audio_solicitud(
+    *,
+    session: Session = Depends(get_session),
+    solicitud_id: int,
+    audio: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    solicitud = session.get(Solicitud, solicitud_id)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+
+    ensure_request_visible_to_user(session, solicitud, current_user)
+    if current_user.role != UserRole.DRIVER:
+        raise HTTPException(status_code=403, detail="Solo el cliente puede adjuntar audio a su reporte")
+
+    relative_url = await save_upload_file(
+        upload=audio,
+        category="request-audio",
+        prefix=f"solicitud-{solicitud_id}-audio",
+    )
+    local_path = url_to_path(relative_url)
+    summary = summarize_audio_file(
+        audio_path=str(local_path) if local_path else "",
+        descripcion=solicitud.descripcion,
+    )
+
+    evidencia = Evidencia(
+        solicitud_id=solicitud.id,
+        tipo_evidencia=TipoEvidencia.AUDIO,
+        ruta_archivo=relative_url,
+    )
+    base_summary = (solicitud.resumen_ia or "").split("Resumen del audio:", 1)[0].strip()
+    solicitud.resumen_ia = f"{base_summary}\nResumen del audio: {summary}".strip()
+
+    session.add(evidencia)
+    session.add(solicitud)
+    session.commit()
+    session.refresh(solicitud)
     return build_solicitud_read(session, solicitud)
 
 

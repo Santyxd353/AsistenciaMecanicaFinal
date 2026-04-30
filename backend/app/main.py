@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.db.session import init_db
 from app.models.user import User
 from app.models.domain import (
@@ -14,6 +15,7 @@ from app.models.domain import (
     Vehiculo,
 )
 from app.api import auth, solicitudes, tecnicos, vehiculos, talleres, especialidades, especialidades_taller, notificaciones
+from app.services.storage import UPLOAD_ROOT, ensure_upload_root
 
 app = FastAPI(
     title="Plataforma Inteligente de Emergencias Vehiculares",
@@ -25,6 +27,7 @@ app = FastAPI(
 @app.on_event("startup")
 def on_startup():
     init_db()
+    ensure_upload_root()
 
 # Configurar CORS
 app.add_middleware(
@@ -48,3 +51,4 @@ app.include_router(talleres.router, prefix="/api/v1/talleres", tags=["Talleres"]
 app.include_router(especialidades.router, prefix="/api/v1/especialidades", tags=["Especialidades"])
 app.include_router(especialidades_taller.router, prefix="/api/v1/especialidades-taller", tags=["Especialidades Taller"])
 app.include_router(notificaciones.router, prefix="/api/v1/notificaciones", tags=["Notificaciones"])
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_ROOT)), name="uploads")

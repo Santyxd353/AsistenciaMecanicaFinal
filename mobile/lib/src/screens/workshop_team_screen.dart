@@ -23,7 +23,7 @@ class WorkshopTeamScreen extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Equipo tecnico',
+                    'Equipo mecanico',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
@@ -40,7 +40,7 @@ class WorkshopTeamScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Registra tecnicos y controla disponibilidad desde el movil del taller.',
+              'Registra mecanicos y controla disponibilidad desde el movil del taller.',
               style: TextStyle(color: Color(0xFF6F655B), height: 1.5),
             ),
             const SizedBox(height: 16),
@@ -61,7 +61,7 @@ class WorkshopTeamScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'Sin un taller creado el backend no permite registrar tecnicos.',
+                        'Sin un taller creado el backend no permite registrar mecanicos.',
                         style: TextStyle(height: 1.5),
                       ),
                       const SizedBox(height: 14),
@@ -81,7 +81,7 @@ class WorkshopTeamScreen extends StatelessWidget {
                   child: _MetricCard(
                     title: 'Registrados',
                     value: '${controller.technicians.length}',
-                    caption: 'Tecnicos visibles',
+                    caption: 'Mecanicos visibles',
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -100,7 +100,7 @@ class WorkshopTeamScreen extends StatelessWidget {
                 child: Padding(
                   padding: EdgeInsets.all(18),
                   child: Text(
-                    'Todavia no hay tecnicos registrados.',
+                    'Todavia no hay mecanicos registrados.',
                     style: TextStyle(color: Color(0xFF6F655B)),
                   ),
                 ),
@@ -124,10 +124,10 @@ class WorkshopTeamScreen extends StatelessWidget {
     final nameController = TextEditingController();
     final specialtyController = TextEditingController();
 
-    final created = await showDialog<bool>(
+    final created = await showDialog<Technician?>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Registrar tecnico'),
+        title: const Text('Registrar mecanico'),
         content: Form(
           key: formKey,
           child: Column(
@@ -153,7 +153,7 @@ class WorkshopTeamScreen extends StatelessWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Cancelar'),
           ),
           FilledButton(
@@ -162,14 +162,14 @@ class WorkshopTeamScreen extends StatelessWidget {
                 return;
               }
               try {
-                await controller.addTechnician(
+                final createdTechnician = await controller.addTechnician(
                   nombre: nameController.text,
                   especialidad: specialtyController.text,
                 );
                 if (!dialogContext.mounted) {
                   return;
                 }
-                Navigator.of(dialogContext).pop(true);
+                Navigator.of(dialogContext).pop(createdTechnician);
               } catch (error) {
                 if (!dialogContext.mounted) {
                   return;
@@ -192,9 +192,14 @@ class WorkshopTeamScreen extends StatelessWidget {
     nameController.dispose();
     specialtyController.dispose();
 
-    if (created == true && context.mounted) {
+    if (created != null && context.mounted) {
+      final user = created.usuarioUsername;
+      final password = created.passwordTemporal;
+      final message = user != null && password != null
+          ? 'Mecanico creado. Usuario: $user | Contrasena: $password'
+          : 'Mecanico registrado correctamente.';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tecnico registrado correctamente.')),
+        SnackBar(content: Text(message)),
       );
     }
   }

@@ -41,6 +41,12 @@ class AppController extends ChangeNotifier {
   int? get workshopId => _workshopProfile?.id;
 
   List<EmergencyRequest> get workshopInboxRequests {
+    if (_currentUser?.role == 'tecnico') {
+      return _requests.where((request) => !request.isClosed).toList()
+        ..sort(
+          (left, right) => right.fechaCreacion.compareTo(left.fechaCreacion),
+        );
+    }
     final wid = workshopId;
     return _requests.where((request) {
       if (request.isClosed) {
@@ -56,6 +62,12 @@ class AppController extends ChangeNotifier {
   }
 
   List<EmergencyRequest> get workshopManagedRequests {
+    if (_currentUser?.role == 'tecnico') {
+      return _requests.toList()
+        ..sort(
+          (left, right) => right.fechaCreacion.compareTo(left.fechaCreacion),
+        );
+    }
     final wid = workshopId;
     return _requests.where((request) {
       if (isAdmin) {
@@ -386,28 +398,30 @@ class AppController extends ChangeNotifier {
     });
   }
 
-  Future<void> addTechnician({
+  Future<Technician?> addTechnician({
     required String nombre,
     required String especialidad,
   }) async {
     if (!isAuthenticated || !isWorkshopLike) {
-      return;
+      return null;
     }
 
     if (_workshopProfile == null && !isAdmin) {
       throw ApiException('Primero registra el perfil del taller.');
     }
 
+    Technician? created;
     await _executeWithLoading(() async {
       final prefs = await SharedPreferences.getInstance();
       final storage = LocalRepository(prefs);
       final api = ApiClient(baseUrl: _baseUrl, token: _accessToken);
-      await api.createTechnician(
+      created = await api.createTechnician(
         nombre: nombre.trim(),
         especialidad: especialidad.trim(),
       );
       await _refreshRemoteData(storage);
     });
+    return created;
   }
 
   Future<void> setTechnicianAvailability({
@@ -459,7 +473,8 @@ class AppController extends ChangeNotifier {
     required EmergencyRequest request,
     required String estado,
   }) async {
-    if (!isAuthenticated || !isWorkshopLike) {
+    final isMechanic = _currentUser?.role == 'tecnico';
+    if (!isAuthenticated || (!isWorkshopLike && !isMechanic)) {
       return;
     }
 
@@ -471,7 +486,14 @@ class AppController extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final storage = LocalRepository(prefs);
       final api = ApiClient(baseUrl: _baseUrl, token: _accessToken);
-      await api.updateRequestStatus(requestId: request.id, estado: estado);
+      if (isMechanic) {
+        await api.updateMechanicAssignmentStatus(
+          requestId: request.id,
+          estado: estado,
+        );
+      } else {
+        await api.updateRequestStatus(requestId: request.id, estado: estado);
+      }
       await _refreshRemoteData(storage);
     });
   }
@@ -490,7 +512,7 @@ class AppController extends ChangeNotifier {
       throw ApiException('Debes iniciar sesion para reportar una emergencia.');
     }
 
-    late final EmergencyRequest created;
+    late EmergencyRequest created;
     await _executeWithLoading(() async {
       final prefs = await SharedPreferences.getInstance();
       final storage = LocalRepository(prefs);
@@ -504,17 +526,23 @@ class AppController extends ChangeNotifier {
           'Adjuntos capturados desde Flutter: ${imagePaths.length} foto(s)${audioPath != null ? " y 1 audio" : ""}.',
       ].join('. ');
 
-      created = await ApiClient(baseUrl: _baseUrl, token: _accessToken)
-          .createRequest(
-            descripcion: composedDescription,
-            latitud: latitud,
-            longitud: longitud,
-            vehiculoId: vehicle.remoteId,
-            incidentType: incidentType,
-            extraNotes: extraNotes.trim(),
-            imagePaths: imagePaths,
-            audioPath: audioPath,
-          );
+      final api = ApiClient(baseUrl: _baseUrl, token: _accessToken);
+      created = await api.createRequest(
+        descripcion: composedDescription,
+        latitud: latitud,
+        longitud: longitud,
+        vehiculoId: vehicle.remoteId,
+        incidentType: incidentType,
+        extraNotes: extraNotes.trim(),
+        imagePaths: imagePaths,
+        audioPath: audioPath,
+      );
+      if (audioPath != null && audioPath.isNotEmpty) {
+        created = await api.uploadRequestAudio(
+          requestId: created.id,
+          audioPath: audioPath,
+        );
+      }
 
       final meta = LocalRequestMeta(
         requestId: created.id,
@@ -701,6 +729,9 @@ class AppController extends ChangeNotifier {
     if (request.isClosed) {
       return false;
     }
+    if (_currentUser?.role == 'tecnico') {
+      return request.tecnicoId != null;
+    }
     if (isAdmin) {
       return true;
     }
@@ -802,6 +833,20 @@ class AppController extends ChangeNotifier {
 
       _buildNotifications(previousRequests, _requests);
       await _persistDriverState(storage);
+    } else if (remoteUser.role == 'tecnico') {
+      _vehicles = const [];
+      _requestMetas = const [];
+      _workshopProfile = null;
+      _workshopStats = null;
+      _technicians = const [];
+      _requests = await api.fetchMechanicAssignments()
+        ..sort(
+          (left, right) => right.fechaCreacion.compareTo(left.fechaCreacion),
+        );
+
+      await storage.saveVehicles(_vehicles);
+      await storage.saveRequestMetas(_requestMetas);
+      await storage.saveNotifications(_notifications);
     } else if (remoteUser.isWorkshopLike) {
       _vehicles = const [];
       _requestMetas = const [];
@@ -810,7 +855,12 @@ class AppController extends ChangeNotifier {
           ? null
           : await api.fetchWorkshopStats();
       _technicians = await api.fetchTechnicians();
-      _requests = await api.fetchRequests()
+      final pending = await api.fetchWorkshopPendingRequests();
+      final managed = await api.fetchWorkshopManagedRequests();
+      final byId = {
+        for (final request in [...pending, ...managed]) request.id: request,
+      };
+      _requests = byId.values.toList()
         ..sort(
           (left, right) => right.fechaCreacion.compareTo(left.fechaCreacion),
         );

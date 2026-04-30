@@ -82,6 +82,16 @@ async def previsualizar_vehiculo_desde_fotos(
             resumen=analysis.resumen,
             source=analysis.source,
         )
+    except Exception as exc:
+        return VehiclePreviewRead(
+            placa="",
+            marca="",
+            modelo="",
+            anio=None,
+            color="",
+            resumen=f"No se pudo analizar automaticamente: {exc}. Completa los datos manualmente.",
+            source="safe-error",
+        )
     finally:
         for relative_url in relative_urls:
             delete_relative_url(relative_url)

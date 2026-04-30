@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../app_controller.dart';
 import '../models.dart';
+import '../repositories.dart';
 
 class WorkshopRequestDetailScreen extends StatelessWidget {
   const WorkshopRequestDetailScreen({super.key, required this.requestId});
@@ -95,7 +97,34 @@ class WorkshopRequestDetailScreen extends StatelessWidget {
                     label: 'Resumen',
                     value: request.resumenIa ?? 'Sin resumen',
                   ),
+                  if (request.audioResumenIa?.trim().isNotEmpty ?? false)
+                    _InfoLine(
+                      label: 'Resumen IA del audio',
+                      value: request.audioResumenIa!.trim(),
+                    ),
+                  if (request.audioUrl?.trim().isNotEmpty ?? false)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: OutlinedButton.icon(
+                        onPressed: () => _openAudio(context, controller, request),
+                        icon: const Icon(Icons.play_circle_outline),
+                        label: const Text('Escuchar audio del cliente'),
+                      ),
+                    ),
                   _InfoLine(label: 'Descripcion', value: request.descripcion),
+                  if (request.rutaRecomendadaIa?.trim().isNotEmpty ?? false)
+                    _InfoLine(
+                      label: 'Ruta sugerida',
+                      value: request.rutaRecomendadaIa!.trim(),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openRoute(request),
+                      icon: const Icon(Icons.map_outlined),
+                      label: const Text('Abrir ruta en mapas'),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -191,6 +220,25 @@ class WorkshopRequestDetailScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  static Future<void> _openAudio(
+    BuildContext context,
+    AppController controller,
+    EmergencyRequest request,
+  ) async {
+    final url = ApiClient(baseUrl: controller.baseUrl).resolveAssetUrl(request.audioUrl);
+    if (url == null) {
+      return;
+    }
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  }
+
+  static Future<void> _openRoute(EmergencyRequest request) async {
+    final uri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=${request.latitud},${request.longitud}&travelmode=driving',
+    );
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 }
 

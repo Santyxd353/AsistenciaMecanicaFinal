@@ -138,7 +138,20 @@ def analyze_vehicle_photos(*, image_paths: list[str], file_names: Optional[list[
             )
 
     try:
-        return _analyze_vehicle_with_gemini(image_paths=image_paths, file_names=file_names or [])
+        result = _analyze_vehicle_with_gemini(image_paths=image_paths, file_names=file_names or [])
+        if not any([result.placa, result.marca, result.modelo, result.color, result.anio]):
+            fallback = _analyze_vehicle_with_best_fallback(image_paths=image_paths, file_names=file_names or [])
+            if any([fallback.placa, fallback.marca, fallback.modelo, fallback.color, fallback.anio]):
+                return VehiclePhotoAnalysis(
+                    placa=fallback.placa,
+                    marca=fallback.marca,
+                    modelo=fallback.modelo,
+                    anio=fallback.anio,
+                    color=fallback.color,
+                    resumen=f"{result.resumen} Se completo con analisis local de respaldo.",
+                    source="gemini+local",
+                )
+        return result
     except Exception:
         try:
             return _analyze_vehicle_with_best_fallback(image_paths=image_paths, file_names=file_names or [])
@@ -149,9 +162,34 @@ def analyze_vehicle_photos(*, image_paths: list[str], file_names: Optional[list[
                 modelo="",
                 anio=None,
                 color="",
-                resumen="La IA no pudo generar una sugerencia automatica. Completa el formulario manualmente.",
+                resumen="La IA no pudo identificar datos suficientes. Completa o corrige los campos manualmente.",
                 source="safe-fallback",
             )
+
+
+def summarize_audio_file(*, audio_path: str, descripcion: str = "") -> str:
+    if not audio_path:
+        return "No se adjunto audio descriptivo."
+
+    if not GEMINI_API_KEY:
+        return "Audio recibido. No se genero resumen automatico porque Gemini no esta configurado."
+
+    prompt = (
+        "Transcribe mentalmente este audio de una emergencia vehicular y devuelve un resumen breve en espanol. "
+        "Incluye: falla principal, sintomas mencionados, urgencia percibida y cualquier referencia de ubicacion. "
+        f"Descripcion escrita por el cliente: {descripcion or 'No registrada'}"
+    )
+    try:
+        payload = {
+            "contents": [{"parts": [{"text": prompt}, _file_part(audio_path)]}],
+            "generationConfig": {"temperature": 0.2},
+        }
+        return _sanitize_text(
+            _extract_text(_call_gemini(payload)),
+            "Audio recibido, pero no se pudo extraer un resumen claro.",
+        )
+    except Exception:
+        return "Audio recibido. La IA no pudo resumirlo automaticamente, pero el taller puede escucharlo."
 
 
 def warm_vehicle_ai() -> None:
@@ -216,22 +254,8 @@ def _analyze_with_gemini(
         },
     }
 
-    request = Request(
-        url=(
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-        ),
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-
-    with urlopen(request, timeout=45) as response:
-        raw = response.read().decode("utf-8")
-
-    parsed = json.loads(raw)
-    text = _extract_text(parsed)
-    data = json.loads(text)
+    text = _extract_text(_call_gemini(payload))
+    data = _parse_json_object(text)
 
     return IncidentAnalysis(
         clasificacion=_sanitize_text(data.get("clasificacion"), "Incidente general"),
@@ -248,10 +272,11 @@ def _analyze_vehicle_with_gemini(*, image_paths: list[str], file_names: list[str
     prompt = (
         "Analiza las fotos de un vehiculo y devuelve solo JSON valido con estas claves exactas: "
         "placa, marca, modelo, anio, color, resumen. "
-        "Si no estas seguro de una clave textual devuelve cadena vacia. "
+        "Si es una foto clara del exterior de un auto, identifica marca, modelo aproximado, anio aproximado y color. "
+        "Si la placa es visible, transcribela. Si no hay placa visible devuelve cadena vacia en placa. "
+        "Usa inferencias razonables cuando el modelo del auto sea reconocible, pero marca en resumen si el anio es aproximado. "
         "Si no puedes inferir el anio devuelve null. "
-        "Debes leer la placa visible en las fotos si aparece. "
-        "No inventes datos que no se vean razonablemente en las imagenes."
+        "No devuelvas todos los campos vacios si el auto es visible."
     )
 
     parts: list[dict[str, object]] = [{"text": prompt}]
@@ -276,22 +301,8 @@ def _analyze_vehicle_with_gemini(*, image_paths: list[str], file_names: list[str
         },
     }
 
-    request = Request(
-        url=(
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-        ),
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-
-    with urlopen(request, timeout=45) as response:
-        raw = response.read().decode("utf-8")
-
-    parsed = json.loads(raw)
-    text = _extract_text(parsed)
-    data = json.loads(text)
+    text = _extract_text(_call_gemini(payload))
+    data = _parse_json_object(text)
 
     anio_value = data.get("anio")
     anio: Optional[int] = None
@@ -465,6 +476,41 @@ def _file_part(path: str) -> dict[str, object]:
     }
 
 
+def _gemini_model_candidates() -> list[str]:
+    configured = (GEMINI_MODEL or "").strip()
+    candidates = [
+        configured,
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+    ]
+    unique: list[str] = []
+    for model in candidates:
+        if model and model not in unique:
+            unique.append(model)
+    return unique
+
+
+def _call_gemini(payload: dict[str, object]) -> dict[str, object]:
+    last_error: Exception | None = None
+    for model in _gemini_model_candidates():
+        request = Request(
+            url=(
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{model}:generateContent?key={GEMINI_API_KEY}"
+            ),
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=45) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+            last_error = exc
+            continue
+    raise RuntimeError("Gemini no respondio correctamente.") from last_error
+
+
 def _extract_text(payload: dict[str, object]) -> str:
     candidates = payload.get("candidates")
     if not isinstance(candidates, list) or not candidates:
@@ -479,6 +525,26 @@ def _extract_text(payload: dict[str, object]) -> str:
     if not isinstance(text, str) or not text.strip():
         raise ValueError("Gemini no devolvio texto.")
     return text
+
+
+def _parse_json_object(text: str) -> dict[str, object]:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?", "", cleaned, flags=re.IGNORECASE).strip()
+        cleaned = re.sub(r"```$", "", cleaned).strip()
+
+    try:
+        payload = json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise
+        payload = json.loads(cleaned[start:end + 1])
+
+    if not isinstance(payload, dict):
+        raise ValueError("Gemini no devolvio un objeto JSON.")
+    return payload
 
 
 @lru_cache(maxsize=1)

@@ -15,6 +15,8 @@ export interface Tecnico {
   activo: boolean;
   taller_id?: number;
   id_usuario?: number | null;
+  usuario_username?: string | null;
+  password_temporal?: string | null;
 }
 
 export interface TecnicoPayload {

@@ -1,3 +1,6 @@
+import re
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy.exc import IntegrityError
@@ -15,9 +18,10 @@ router = APIRouter()
 
 class TecnicoIn(BaseModel):
     nombre: str
-    ci: str
-    direccion: str
-    especialidad_ids: list[int]
+    ci: str | None = None
+    direccion: str | None = None
+    especialidad_ids: list[int] = []
+    especialidad: str | None = None
     disponible: bool = True
     activo: bool = True
     latitud: float | None = None
@@ -34,17 +38,21 @@ class TecnicoIn(BaseModel):
 
     @field_validator("ci")
     @classmethod
-    def validar_ci(cls, value: str) -> str:
+    def validar_ci(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         value = value.strip()
         if not value:
-            raise ValueError("El CI es obligatorio")
+            return None
         if len(value) > 10:
             raise ValueError("El CI no puede exceder los 10 caracteres")
         return value
 
     @field_validator("direccion")
     @classmethod
-    def validar_direccion(cls, value: str) -> str:
+    def validar_direccion(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         value = value.strip()
         if not value:
             raise ValueError("La dirección es obligatoria")
@@ -111,12 +119,52 @@ def _obtener_especialidades(
     return [especialidades_por_id[especialidad_id] for especialidad_id in ids_unicos]
 
 
+def _obtener_o_crear_especialidad(session: Session, nombre: str) -> Especialidad:
+    nombre_normalizado = nombre.strip() or "General"
+    especialidad = session.exec(
+        select(Especialidad).where(Especialidad.nombre == nombre_normalizado)
+    ).first()
+    if especialidad:
+        return especialidad
+
+    especialidad = Especialidad(nombre=nombre_normalizado)
+    session.add(especialidad)
+    session.flush()
+    return especialidad
+
+
+def _resolver_especialidades(session: Session, tecnico_in: TecnicoIn) -> list[Especialidad]:
+    if tecnico_in.especialidad_ids:
+        return _obtener_especialidades(session, tecnico_in.especialidad_ids)
+    return [_obtener_o_crear_especialidad(session, tecnico_in.especialidad or "General")]
+
+
 def _obtener_tecnico_con_especialidades(session: Session, tecnico_id: int) -> Tecnico | None:
     return session.exec(
         select(Tecnico)
         .options(selectinload(Tecnico.especialidades))
         .where(Tecnico.id == tecnico_id)
     ).first()
+
+
+def _username_base(nombre: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", ".", nombre.lower()).strip(".")
+    return cleaned or "mecanico"
+
+
+def _username_unico(session: Session, nombre: str) -> str:
+    base = _username_base(nombre)
+    username = base
+    counter = 1
+    while session.exec(select(User).where(User.username == username)).first():
+        counter += 1
+        username = f"{base}{counter}"
+    return username
+
+
+def _password_temporal(ci: str) -> str:
+    suffix = re.sub(r"[^0-9A-Za-z]", "", ci)[-4:] or secrets.token_hex(2)
+    return f"Mec-{suffix}-{secrets.token_hex(2)}"
 
 
 @router.get("/mi-perfil", response_model=TecnicoRead)
@@ -194,18 +242,33 @@ def crear_tecnico(
     if not taller:
         raise HTTPException(status_code=400, detail="Debes tener un taller registrado para crear tecnicos")
 
+    ci_value = tecnico_in.ci or f"AUTO{secrets.token_hex(3).upper()}"[:10]
+    direccion_value = tecnico_in.direccion or "Pendiente"
+    username = _username_unico(session, tecnico_in.nombre)
+    password_temporal = _password_temporal(ci_value)
+    usuario = User(
+        username=username,
+        email=f"{username}@mecanico.local",
+        full_name=tecnico_in.nombre,
+        role=UserRole.TECNICO,
+        is_active=tecnico_in.activo,
+        hashed_password=get_password_hash(password_temporal),
+    )
+    session.add(usuario)
+    session.flush()
+
     tecnico = Tecnico(
         nombre=tecnico_in.nombre,
-        ci=tecnico_in.ci,
-        direccion=tecnico_in.direccion,
+        ci=ci_value,
+        direccion=direccion_value,
         disponible=tecnico_in.disponible,
         activo=tecnico_in.activo,
         latitud=tecnico_in.latitud,
         longitud=tecnico_in.longitud,
-        id_usuario=None,
+        id_usuario=usuario.id,
         taller_id=taller.id,
     )
-    tecnico.especialidades = _obtener_especialidades(session, tecnico_in.especialidad_ids)
+    tecnico.especialidades = _resolver_especialidades(session, tecnico_in)
 
     session.add(tecnico)
     try:
@@ -219,7 +282,12 @@ def crear_tecnico(
     tecnico_creado = _obtener_tecnico_con_especialidades(session, tecnico.id)
     if not tecnico_creado:
         raise HTTPException(status_code=500, detail="No se pudo cargar el técnico creado")
-    return tecnico_creado
+    return TecnicoRead.model_validate(tecnico_creado).model_copy(
+        update={
+            "usuario_username": username,
+            "password_temporal": password_temporal,
+        }
+    )
 
 @router.get("/", response_model=list[TecnicoRead])
 def listar_tecnicos(
