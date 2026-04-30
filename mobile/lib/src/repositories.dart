@@ -504,6 +504,31 @@ class ApiClient {
     return EmergencyRequest.fromApi(await _decodeObjectFromStream(response));
   }
 
+  Future<EmergencyRequest> uploadRequestImages({
+    required int requestId,
+    required List<String> imagePaths,
+  }) async {
+    if (imagePaths.isEmpty) {
+      throw ApiException('Debes seleccionar al menos una foto.');
+    }
+
+    final request = http.MultipartRequest(
+      'POST',
+      _uri('/api/v1/solicitudes/$requestId/imagenes'),
+    );
+    request.headers.addAll(_headers());
+    for (final path in imagePaths.take(6)) {
+      final file = File(path);
+      if (file.existsSync()) {
+        request.files.add(
+          await http.MultipartFile.fromPath('fotos', file.path),
+        );
+      }
+    }
+    final response = await request.send().timeout(const Duration(seconds: 60));
+    return EmergencyRequest.fromApi(await _decodeObjectFromStream(response));
+  }
+
   Future<EmergencyRequest> updateRequestStatus({
     required int requestId,
     required String estado,

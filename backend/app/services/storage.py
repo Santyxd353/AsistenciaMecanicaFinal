@@ -24,6 +24,13 @@ def _slugify(value: str) -> str:
 
 
 def guess_mime_type(path: str) -> str:
+    suffix = Path(path).suffix.lower()
+    if suffix == ".m4a":
+        return "audio/mp4"
+    if suffix == ".aac":
+        return "audio/aac"
+    if suffix == ".oga":
+        return "audio/ogg"
     return mimetypes.guess_type(path)[0] or "application/octet-stream"
 
 

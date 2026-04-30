@@ -146,13 +146,13 @@ def taller_es_compatible_con_solicitud(taller: Taller, solicitud: Solicitud) -> 
     ]
 
     if not especialidades:
-        return False
+        return True
 
     return any(
         palabra_clave in especialidad
         for especialidad in especialidades
         for palabra_clave in palabras_clave
-    )
+    ) or any(especialidad in {"general", "mecanica", "mecanica general"} for especialidad in especialidades)
 
 
 def obtener_talleres_candidatos_para_notificar(
@@ -167,7 +167,7 @@ def obtener_talleres_candidatos_para_notificar(
             continue
 
         distancia = distancia_taller_solicitud(solicitud, taller)
-        if distancia > RADIO_TALLERES_CANDIDATOS_KM:
+        if distancia != float("inf") and distancia > RADIO_TALLERES_CANDIDATOS_KM:
             continue
 
         candidatos.append((distancia, taller))
@@ -583,6 +583,74 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
             "audio_resumen_ia": audio_resumen_ia,
             "ruta_recomendada_ia": ruta_recomendada_ia,
         }
+    )
+
+
+def reanalizar_solicitud_con_evidencias(session: Session, solicitud: Solicitud) -> None:
+    evidencias = session.exec(
+        select(Evidencia).where(Evidencia.solicitud_id == solicitud.id)
+    ).all()
+    image_paths: list[str] = []
+    audio_paths: list[str] = []
+
+    for evidencia in evidencias:
+        local_path = url_to_path(evidencia.ruta_archivo)
+        if not local_path:
+            continue
+        if evidencia.tipo_evidencia == TipoEvidencia.IMAGEN:
+            image_paths.append(str(local_path))
+        elif evidencia.tipo_evidencia == TipoEvidencia.AUDIO:
+            audio_paths.append(str(local_path))
+
+    analysis = analyze_incident(
+        descripcion=solicitud.descripcion,
+        image_paths=image_paths,
+        audio_paths=audio_paths[:1],
+    )
+    audio_summary = None
+    if solicitud.resumen_ia and "Resumen del audio:" in solicitud.resumen_ia:
+        audio_summary = solicitud.resumen_ia.split("Resumen del audio:", 1)[1].strip()
+
+    solicitud.clasificacion_ia = analysis.clasificacion
+    solicitud.prioridad_ia = analysis.prioridad
+    solicitud.resumen_ia = analysis.resumen
+    if audio_summary:
+        solicitud.resumen_ia = f"{solicitud.resumen_ia}\nResumen del audio: {audio_summary}".strip()
+    solicitud.precio_cobrado, solicitud.comision_plataforma = estimate_pricing(
+        solicitud.clasificacion_ia,
+        solicitud.prioridad_ia,
+    )
+    session.add(solicitud)
+
+
+def notificar_reporte_actualizado(
+    session: Session,
+    solicitud: Solicitud,
+    detalle: str,
+) -> None:
+    destinatarios: list[int] = []
+    if solicitud.taller_id:
+        taller = session.get(Taller, solicitud.taller_id)
+        if taller and taller.propietario_id is not None:
+            destinatarios.append(taller.propietario_id)
+    else:
+        destinatarios.extend(
+            taller.propietario_id
+            for taller in obtener_talleres_candidatos_para_notificar(session, solicitud)
+            if taller.propietario_id is not None
+        )
+
+    if not destinatarios:
+        return
+
+    crear_notificaciones_para_usuarios(
+        session,
+        destinatario_ids=destinatarios,
+        tipo=TipoNotificacion.GENERAL,
+        titulo="Reporte actualizado",
+        mensaje=f"La solicitud #{solicitud.id} se actualizo con {detalle}.",
+        solicitud_id=solicitud.id,
+        accion_url="/taller/solicitudes",
     )
 
 
@@ -1077,6 +1145,48 @@ async def subir_audio_solicitud(
 
     session.add(evidencia)
     session.add(solicitud)
+    session.flush()
+    reanalizar_solicitud_con_evidencias(session, solicitud)
+    notificar_reporte_actualizado(session, solicitud, "audio descriptivo y resumen IA")
+    session.commit()
+    session.refresh(solicitud)
+    return build_solicitud_read(session, solicitud)
+
+
+@router.post("/{solicitud_id}/imagenes", response_model=SolicitudRead)
+async def subir_imagenes_solicitud(
+    *,
+    session: Session = Depends(get_session),
+    solicitud_id: int,
+    fotos: list[UploadFile] = File(default=[]),
+    current_user: User = Depends(get_current_user),
+):
+    solicitud = session.get(Solicitud, solicitud_id)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+
+    ensure_request_visible_to_user(session, solicitud, current_user)
+    if current_user.role != UserRole.DRIVER:
+        raise HTTPException(status_code=403, detail="Solo el cliente puede adjuntar fotos a su reporte")
+    if not fotos:
+        raise HTTPException(status_code=400, detail="Debes enviar al menos una foto")
+
+    for index, foto in enumerate(fotos[:6], start=1):
+        relative_url = await save_upload_file(
+            upload=foto,
+            category="request-images",
+            prefix=f"solicitud-{solicitud_id}-foto-{index}",
+        )
+        evidencia = Evidencia(
+            solicitud_id=solicitud.id,
+            tipo_evidencia=TipoEvidencia.IMAGEN,
+            ruta_archivo=relative_url,
+        )
+        session.add(evidencia)
+
+    session.flush()
+    reanalizar_solicitud_con_evidencias(session, solicitud)
+    notificar_reporte_actualizado(session, solicitud, "fotografias del incidente")
     session.commit()
     session.refresh(solicitud)
     return build_solicitud_read(session, solicitud)

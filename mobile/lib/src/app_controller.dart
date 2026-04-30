@@ -537,6 +537,12 @@ class AppController extends ChangeNotifier {
         imagePaths: imagePaths,
         audioPath: audioPath,
       );
+      if (imagePaths.isNotEmpty) {
+        created = await api.uploadRequestImages(
+          requestId: created.id,
+          imagePaths: imagePaths,
+        );
+      }
       if (audioPath != null && audioPath.isNotEmpty) {
         created = await api.uploadRequestAudio(
           requestId: created.id,

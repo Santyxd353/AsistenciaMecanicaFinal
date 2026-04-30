@@ -17,8 +17,8 @@ from PIL import Image, ImageEnhance, ImageOps, ImageStat
 from app.services.storage import guess_mime_type
 
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_TIMEOUT_SECONDS = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "25"))
 HF_VEHICLE_MODEL = os.getenv("HF_VEHICLE_MODEL", "therealcyberlord/stanford-car-vit-patch16").strip()
 
 
@@ -97,7 +97,7 @@ def analyze_incident(
     audio_paths: Optional[list[str]] = None,
     vehicle_photo_path: Optional[str] = None,
 ) -> IncidentAnalysis:
-    if not GEMINI_API_KEY:
+    if not _gemini_api_key():
         return fallback_incident_analysis(descripcion=descripcion, incident_type=incident_type)
 
     try:
@@ -108,7 +108,8 @@ def analyze_incident(
             audio_paths=audio_paths or [],
             vehicle_photo_path=vehicle_photo_path,
         )
-    except Exception:
+    except Exception as exc:
+        print(f"Gemini incidente fallo: {exc}")
         return fallback_incident_analysis(descripcion=descripcion, incident_type=incident_type)
 
 
@@ -123,19 +124,8 @@ def analyze_vehicle_photos(*, image_paths: list[str], file_names: Optional[list[
             resumen="No se enviaron fotos para analizar.",
             source="fallback",
         )
-    if not GEMINI_API_KEY:
-        try:
-            return _analyze_vehicle_with_best_fallback(image_paths=image_paths, file_names=file_names or [])
-        except Exception:
-            return VehiclePhotoAnalysis(
-                placa="",
-                marca="",
-                modelo="",
-                anio=None,
-                color="",
-                resumen="No se pudo completar el analisis local del vehiculo. Completa los datos manualmente.",
-                source="safe-fallback",
-            )
+    if not _gemini_api_key():
+        return _analyze_vehicle_locally(image_paths=image_paths, file_names=file_names or [])
 
     try:
         result = _analyze_vehicle_with_gemini(image_paths=image_paths, file_names=file_names or [])
@@ -152,9 +142,15 @@ def analyze_vehicle_photos(*, image_paths: list[str], file_names: Optional[list[
                     source="gemini+local",
                 )
         return result
-    except Exception:
+    except Exception as exc:
+        print(f"Gemini vehiculo fallo: {exc}")
         try:
-            return _analyze_vehicle_with_best_fallback(image_paths=image_paths, file_names=file_names or [])
+            local = _analyze_vehicle_locally(image_paths=image_paths, file_names=file_names or [])
+            local.resumen = (
+                "Gemini no respondio correctamente. "
+                f"Se uso analisis local editable: {local.resumen}"
+            )
+            return local
         except Exception:
             return VehiclePhotoAnalysis(
                 placa="",
@@ -171,7 +167,7 @@ def summarize_audio_file(*, audio_path: str, descripcion: str = "") -> str:
     if not audio_path:
         return "No se adjunto audio descriptivo."
 
-    if not GEMINI_API_KEY:
+    if not _gemini_api_key():
         return "Audio recibido. No se genero resumen automatico porque Gemini no esta configurado."
 
     prompt = (
@@ -188,12 +184,13 @@ def summarize_audio_file(*, audio_path: str, descripcion: str = "") -> str:
             _extract_text(_call_gemini(payload)),
             "Audio recibido, pero no se pudo extraer un resumen claro.",
         )
-    except Exception:
+    except Exception as exc:
+        print(f"Gemini audio fallo: {exc}")
         return "Audio recibido. La IA no pudo resumirlo automaticamente, pero el taller puede escucharlo."
 
 
 def warm_vehicle_ai() -> None:
-    if GEMINI_API_KEY:
+    if _gemini_api_key():
         return
     try:
         _load_hf_vehicle_bundle()
@@ -273,6 +270,7 @@ def _analyze_vehicle_with_gemini(*, image_paths: list[str], file_names: list[str
         "Analiza las fotos de un vehiculo y devuelve solo JSON valido con estas claves exactas: "
         "placa, marca, modelo, anio, color, resumen. "
         "Si es una foto clara del exterior de un auto, identifica marca, modelo aproximado, anio aproximado y color. "
+        "Es obligatorio devolver tu mejor estimacion de marca/modelo/color si se ve un auto, aunque no estes 100% seguro. "
         "Si la placa es visible, transcribela. Si no hay placa visible devuelve cadena vacia en placa. "
         "Usa inferencias razonables cuando el modelo del auto sea reconocible, pero marca en resumen si el anio es aproximado. "
         "Si no puedes inferir el anio devuelve null. "
@@ -490,23 +488,41 @@ def _gemini_model_candidates() -> list[str]:
     return unique
 
 
+def _gemini_api_key() -> str:
+    return os.getenv("GEMINI_API_KEY", "").strip()
+
+
 def _call_gemini(payload: dict[str, object]) -> dict[str, object]:
     last_error: Exception | None = None
+    api_key = _gemini_api_key()
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY no esta configurada.")
+
     for model in _gemini_model_candidates():
+        model_name = model.replace("models/", "").strip()
         request = Request(
             url=(
                 f"https://generativelanguage.googleapis.com/v1beta/models/"
-                f"{model}:generateContent?key={GEMINI_API_KEY}"
+                f"{model_name}:generateContent?key={api_key}"
             ),
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
         try:
-            with urlopen(request, timeout=45) as response:
+            with urlopen(request, timeout=GEMINI_TIMEOUT_SECONDS) as response:
                 return json.loads(response.read().decode("utf-8"))
-        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
-            last_error = exc
+        except HTTPError as exc:
+            try:
+                detail = exc.read().decode("utf-8", errors="ignore")[:600]
+            except Exception:
+                detail = str(exc)
+            last_error = RuntimeError(f"{model_name}: HTTP {exc.code} {detail}")
+            print(f"Gemini error con {model_name}: {last_error}")
+            continue
+        except (URLError, TimeoutError, ValueError) as exc:
+            last_error = RuntimeError(f"{model_name}: {exc}")
+            print(f"Gemini error con {model_name}: {exc}")
             continue
     raise RuntimeError("Gemini no respondio correctamente.") from last_error
 

@@ -11,6 +11,3 @@ python-dotenv
 firebase-admin
 pytesseract
 Pillow
-torch
-torchvision
-transformers
