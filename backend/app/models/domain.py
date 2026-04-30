@@ -10,6 +10,52 @@ class EstadoSolicitud(str, Enum):
     RESUELTA = "resuelta"
     CANCELADA = "cancelada"
 
+
+class TipoNotificacion(str, Enum):
+    NUEVA_SOLICITUD_TALLER = "nueva_solicitud_taller"
+    SOLICITUD_ACEPTADA_CONDUCTOR = "solicitud_aceptada_conductor"
+    TECNICO_ASIGNADO = "tecnico_asignado"
+    TECNICO_EN_CAMINO = "tecnico_en_camino"
+    SOLICITUD_CANCELADA_CONDUCTOR = "solicitud_cancelada_conductor"
+    SOLICITUD_CANCELADA_TALLER = "solicitud_cancelada_taller"
+    SERVICIO_CONCLUIDO_PAGO = "servicio_concluido_pago"
+    GENERAL = "general"
+
+
+class NotificacionBase(SQLModel):
+    destinatario_id: int = Field(foreign_key="user.id", index=True)
+    tipo: TipoNotificacion = Field(default=TipoNotificacion.GENERAL, index=True)
+    titulo: str
+    mensaje: str
+    solicitud_id: Optional[int] = Field(default=None, foreign_key="solicitud.id", index=True)
+    leida: bool = Field(default=False, index=True)
+    accion_url: Optional[str] = None
+
+
+class Notificacion(NotificacionBase, table=True):
+    __tablename__ = "notificacion"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    fecha_creacion: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class NotificacionCreate(SQLModel):
+    destinatario_id: int
+    tipo: TipoNotificacion = TipoNotificacion.GENERAL
+    titulo: str
+    mensaje: str
+    solicitud_id: Optional[int] = None
+    accion_url: Optional[str] = None
+
+
+class NotificacionRead(NotificacionBase):
+    id: int
+    fecha_creacion: datetime
+
+
+class NotificacionesNoLeidasRead(SQLModel):
+    total: int
+
 class VehiculoBase(SQLModel):
     placa: str = Field(index=True, unique=True)
     marca: str

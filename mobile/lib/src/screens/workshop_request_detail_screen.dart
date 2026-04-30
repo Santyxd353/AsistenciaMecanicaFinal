@@ -251,10 +251,7 @@ class _ActionPanel extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: controller.loading
                   ? null
-                  : () => controller.advanceRequestStatus(
-                      request: request,
-                      estado: 'cancelada',
-                    ),
+                  : () => _confirmCancelRequest(context, controller),
               icon: const Icon(Icons.cancel_outlined),
               label: const Text('Cancelar solicitud'),
             ),
@@ -269,6 +266,54 @@ class _ActionPanel extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmCancelRequest(
+    BuildContext context,
+    AppController controller,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancelar solicitud'),
+        content: const Text(
+          'Se notificara al conductor que el taller cancelo la atencion de esta solicitud.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Volver'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Cancelar solicitud'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    try {
+      await controller.cancelRequest(request.id);
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Solicitud #${request.id} cancelada.')),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
   }
 
   Future<void> _pickTechnicianAndAssign(

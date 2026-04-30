@@ -170,6 +170,26 @@ class RequestDetailScreen extends StatelessWidget {
                 ],
               ),
             ),
+            if (request.canBeCancelled) ...[
+              const SizedBox(height: 14),
+              _SectionCard(
+                title: 'Acciones',
+                child: FilledButton.tonalIcon(
+                  style: FilledButton.styleFrom(
+                    foregroundColor: const Color(0xFFA22C29),
+                  ),
+                  onPressed: controller.loading
+                      ? null
+                      : () => _confirmCancelRequest(
+                            context,
+                            controller,
+                            request,
+                          ),
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('Cancelar solicitud'),
+                ),
+              ),
+            ],
             const SizedBox(height: 14),
             _SectionCard(
               title: 'Adjuntos mobile',
@@ -241,6 +261,55 @@ class RequestDetailScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmCancelRequest(
+    BuildContext context,
+    AppController controller,
+    EmergencyRequest request,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancelar solicitud'),
+        content: const Text(
+          'Esta accion avisara a los talleres involucrados y detendra el seguimiento de la solicitud.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Volver'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Cancelar solicitud'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    try {
+      await controller.cancelRequest(request.id);
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Solicitud #${request.id} cancelada.')),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
   }
 }
 

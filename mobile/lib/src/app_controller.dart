@@ -553,7 +553,11 @@ class AppController extends ChangeNotifier {
         message: 'La solicitud #${updated.id} fue cancelada correctamente.',
         requestId: updated.id,
       );
-      await _persistDriverState(storage);
+      if (isDriver) {
+        await _persistDriverState(storage);
+      } else {
+        await _refreshRemoteData(storage);
+      }
     });
   }
 

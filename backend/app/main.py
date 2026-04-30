@@ -6,13 +6,14 @@ from app.models.domain import (
     Especialidad,
     EspecialidadTaller,
     Evidencia,
+    Notificacion,
     Solicitud,
     Taller,
     TalleresEspecialidades,
     Tecnico,
     Vehiculo,
 )
-from app.api import auth, solicitudes, tecnicos, vehiculos, talleres, especialidades, especialidades_taller
+from app.api import auth, solicitudes, tecnicos, vehiculos, talleres, especialidades, especialidades_taller, notificaciones
 
 app = FastAPI(
     title="Plataforma Inteligente de Emergencias Vehiculares",
@@ -46,3 +47,4 @@ app.include_router(tecnicos.router, prefix="/api/v1/tecnicos", tags=["Técnicos"
 app.include_router(talleres.router, prefix="/api/v1/talleres", tags=["Talleres"])
 app.include_router(especialidades.router, prefix="/api/v1/especialidades", tags=["Especialidades"])
 app.include_router(especialidades_taller.router, prefix="/api/v1/especialidades-taller", tags=["Especialidades Taller"])
+app.include_router(notificaciones.router, prefix="/api/v1/notificaciones", tags=["Notificaciones"])

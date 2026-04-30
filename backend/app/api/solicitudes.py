@@ -1,4 +1,5 @@
 import math
+import unicodedata
 from datetime import datetime
 from typing import List, Optional
 
@@ -6,10 +7,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from app.db.session import get_session
-from app.models.domain import EstadoSolicitud, Solicitud, SolicitudCreate, SolicitudRead, Tecnico, Taller
-from app.models.user import User, UserRole
-from app.services.ai import analyze_incident
 from app.api.deps import get_current_user
 from app.db.session import get_session
 from app.models.domain import (
@@ -19,11 +16,17 @@ from app.models.domain import (
     SolicitudRead,
     Taller,
     Tecnico,
+    TipoNotificacion,
     Vehiculo,
 )
 from app.models.user import User, UserRole
+from app.services.ai import analyze_incident
+from app.services.notificaciones import crear_notificacion, crear_notificaciones_para_usuarios
 
 router = APIRouter()
+
+RADIO_TALLERES_CANDIDATOS_KM = 25.0
+MAX_TALLERES_CANDIDATOS = 12
 
 
 def _obtener_taller_actual(session: Session, current_user: User) -> Taller:
@@ -90,6 +93,248 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(d_lon / 2) ** 2
     )
     return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def normalizar_texto_busqueda(texto: Optional[str]) -> str:
+    if not texto:
+        return ""
+
+    texto_ascii = unicodedata.normalize("NFKD", texto)
+    texto_ascii = "".join(caracter for caracter in texto_ascii if not unicodedata.combining(caracter))
+    return " ".join(texto_ascii.casefold().split())
+
+
+def palabras_clave_para_solicitud(solicitud: Solicitud) -> list[str]:
+    texto = normalizar_texto_busqueda(
+        f"{solicitud.clasificacion_ia or ''} {solicitud.descripcion or ''}"
+    )
+
+    if any(palabra in texto for palabra in ["bateria", "electrico", "electricidad", "arranque", "alternador"]):
+        return ["bateria", "electrico", "electricidad", "arranque", "alternador"]
+
+    if any(palabra in texto for palabra in ["llanta", "neumatico", "rueda", "pinchada", "pinchado"]):
+        return ["llanta", "neumatico", "rueda", "pinchada", "vulcanizacion"]
+
+    if any(palabra in texto for palabra in ["motor", "recalentamiento", "humo", "radiador", "refrigerante"]):
+        return ["motor", "recalentamiento", "radiador", "mecanica", "refrigerante"]
+
+    if any(palabra in texto for palabra in ["cerrajeria", "llave", "cerradura", "bloqueo"]):
+        return ["cerrajeria", "llave", "cerradura", "bloqueo"]
+
+    return ["general", "mecanica", "auxilio", "emergencia"]
+
+
+def distancia_taller_solicitud(solicitud: Solicitud, taller: Taller) -> float:
+    if taller.latitud is None or taller.longitud is None:
+        return float("inf")
+
+    return haversine_km(solicitud.latitud, solicitud.longitud, taller.latitud, taller.longitud)
+
+
+def taller_es_compatible_con_solicitud(taller: Taller, solicitud: Solicitud) -> bool:
+    if not taller.notificaciones_push or not taller.notificaciones_nuevas_asignaciones:
+        return False
+
+    palabras_clave = palabras_clave_para_solicitud(solicitud)
+    especialidades = [
+        normalizar_texto_busqueda(especialidad.nombre)
+        for especialidad in taller.especialidades
+    ]
+
+    if not especialidades:
+        return False
+
+    return any(
+        palabra_clave in especialidad
+        for especialidad in especialidades
+        for palabra_clave in palabras_clave
+    )
+
+
+def obtener_talleres_candidatos_para_notificar(
+    session: Session,
+    solicitud: Solicitud,
+) -> list[Taller]:
+    talleres = session.exec(select(Taller)).all()
+    candidatos: list[tuple[float, Taller]] = []
+
+    for taller in talleres:
+        if not taller_es_compatible_con_solicitud(taller, solicitud):
+            continue
+
+        distancia = distancia_taller_solicitud(solicitud, taller)
+        if distancia > RADIO_TALLERES_CANDIDATOS_KM:
+            continue
+
+        candidatos.append((distancia, taller))
+
+    candidatos.sort(key=lambda item: item[0])
+    return [taller for _, taller in candidatos[:MAX_TALLERES_CANDIDATOS]]
+
+
+def taller_es_candidato_para_solicitud(
+    session: Session,
+    taller: Taller,
+    solicitud: Solicitud,
+) -> bool:
+    return any(
+        candidato.id == taller.id
+        for candidato in obtener_talleres_candidatos_para_notificar(session, solicitud)
+    )
+
+
+def notificar_talleres_candidatos(session: Session, solicitud: Solicitud) -> None:
+    talleres_candidatos = obtener_talleres_candidatos_para_notificar(session, solicitud)
+    destinatario_ids = [
+        taller.propietario_id
+        for taller in talleres_candidatos
+        if taller.propietario_id is not None
+    ]
+
+    if not destinatario_ids:
+        return
+
+    titulo = "Nueva solicitud de auxilio"
+    clasificacion = solicitud.clasificacion_ia or "Servicio mecanico"
+    mensaje = (
+        f"Hay una nueva solicitud compatible cerca de tu taller: {clasificacion}. "
+        "Revisa los detalles para aceptarla."
+    )
+
+    crear_notificaciones_para_usuarios(
+        session,
+        destinatario_ids=destinatario_ids,
+        tipo=TipoNotificacion.NUEVA_SOLICITUD_TALLER,
+        titulo=titulo,
+        mensaje=mensaje,
+        solicitud_id=solicitud.id,
+        accion_url="/taller/solicitudes",
+    )
+
+
+def notificar_cancelacion_conductor_a_talleres(
+    session: Session,
+    solicitud: Solicitud,
+) -> None:
+    talleres_destino: list[Taller] = []
+
+    if solicitud.taller_id:
+        taller = session.get(Taller, solicitud.taller_id)
+        if taller:
+            talleres_destino = [taller]
+    else:
+        talleres_destino = obtener_talleres_candidatos_para_notificar(session, solicitud)
+
+    destinatario_ids = [
+        taller.propietario_id
+        for taller in talleres_destino
+        if taller.propietario_id is not None
+    ]
+
+    if not destinatario_ids:
+        return
+
+    crear_notificaciones_para_usuarios(
+        session,
+        destinatario_ids=destinatario_ids,
+        tipo=TipoNotificacion.SOLICITUD_CANCELADA_CONDUCTOR,
+        titulo="Solicitud cancelada por el conductor",
+        mensaje="El conductor cancelo la solicitud de auxilio.",
+        solicitud_id=solicitud.id,
+        accion_url="/taller/solicitudes",
+    )
+
+
+def notificar_cancelacion_taller_a_conductor(
+    session: Session,
+    solicitud: Solicitud,
+    taller: Taller,
+) -> None:
+    vehiculo = request_vehicle(session, solicitud)
+    if not vehiculo or vehiculo.propietario_id is None:
+        return
+
+    crear_notificacion(
+        session,
+        destinatario_id=vehiculo.propietario_id,
+        tipo=TipoNotificacion.SOLICITUD_CANCELADA_TALLER,
+        titulo="Solicitud cancelada por el taller",
+        mensaje=(
+            f"{taller.nombre_comercial} cancelo la atencion de tu solicitud. "
+            "Puedes crear una nueva solicitud si todavia necesitas auxilio."
+        ),
+        solicitud_id=solicitud.id,
+        accion_url="/cliente",
+    )
+
+
+def notificar_solicitud_aceptada_conductor(
+    session: Session,
+    solicitud: Solicitud,
+    taller: Taller,
+) -> None:
+    vehiculo = request_vehicle(session, solicitud)
+    if not vehiculo or vehiculo.propietario_id is None:
+        return
+
+    crear_notificacion(
+        session,
+        destinatario_id=vehiculo.propietario_id,
+        tipo=TipoNotificacion.SOLICITUD_ACEPTADA_CONDUCTOR,
+        titulo="Solicitud aceptada",
+        mensaje=(
+            f"{taller.nombre_comercial} acepto tu solicitud de auxilio. "
+            "Pronto recibiras la informacion del tecnico asignado."
+        ),
+        solicitud_id=solicitud.id,
+        accion_url="/cliente",
+    )
+
+
+def notificar_tecnico_asignado(
+    session: Session,
+    solicitud: Solicitud,
+    tecnico: Tecnico,
+) -> None:
+    if tecnico.id_usuario is None:
+        return
+
+    crear_notificacion(
+        session,
+        destinatario_id=tecnico.id_usuario,
+        tipo=TipoNotificacion.TECNICO_ASIGNADO,
+        titulo="Nueva solicitud asignada",
+        mensaje=(
+            "Se te asigno una solicitud de auxilio mecanico. "
+            "Revisa los detalles para iniciar la atencion."
+        ),
+        solicitud_id=solicitud.id,
+        accion_url="/tecnico",
+    )
+
+
+def notificar_tecnico_en_camino_conductor(
+    session: Session,
+    solicitud: Solicitud,
+    tecnico: Tecnico,
+) -> None:
+    vehiculo = request_vehicle(session, solicitud)
+    if not vehiculo or vehiculo.propietario_id is None:
+        return
+
+    mensaje = f"{tecnico.nombre} esta en camino para atender tu solicitud."
+    if solicitud.tiempo_estimado_minutos:
+        mensaje += f" Tiempo estimado: {solicitud.tiempo_estimado_minutos} minutos."
+
+    crear_notificacion(
+        session,
+        destinatario_id=vehiculo.propietario_id,
+        tipo=TipoNotificacion.TECNICO_EN_CAMINO,
+        titulo="Tecnico en camino",
+        mensaje=mensaje,
+        solicitud_id=solicitud.id,
+        accion_url="/cliente",
+    )
 
 
 def estimate_eta_minutes(solicitud: Solicitud, tecnico: Optional[Tecnico], taller: Optional[Taller]) -> int:
@@ -191,7 +436,15 @@ def ensure_request_visible_to_user(session: Session, solicitud: Solicitud, curre
 
     if current_user.role == UserRole.WORKSHOP:
         taller = obtener_taller_del_usuario(session, current_user)
-        if not taller or solicitud.taller_id != taller.id:
+        solicitud_asignada_al_taller = taller and solicitud.taller_id == taller.id
+        solicitud_pendiente_candidata = (
+            taller
+            and solicitud.taller_id is None
+            and solicitud.estado == EstadoSolicitud.PENDIENTE
+            and taller_es_candidato_para_solicitud(session, taller, solicitud)
+        )
+
+        if not solicitud_asignada_al_taller and not solicitud_pendiente_candidata:
             raise HTTPException(status_code=403, detail="No tienes permisos para ver esta solicitud")
         return
 
@@ -283,24 +536,16 @@ def crear_solicitud(
         if current_user.role == UserRole.DRIVER and vehiculo.propietario_id != current_user.id:
             raise HTTPException(status_code=403, detail="No puedes reportar con un vehiculo de otro usuario")
 
-    tecnico, taller = assign_best_technician(session, solicitud)
-    if tecnico:
-        solicitud.estado = EstadoSolicitud.ASIGNADA
-        solicitud.tecnico_id = tecnico.id
-        solicitud.taller_id = tecnico.taller_id
-        solicitud.tiempo_estimado_minutos = estimate_eta_minutes(solicitud, tecnico, taller)
-        tecnico.disponible = False
-        session.add(tecnico)
-    else:
-        solicitud.estado = EstadoSolicitud.PENDIENTE
-        taller = assign_best_workshop(session, solicitud)
-        if taller:
-            solicitud.taller_id = taller.id
-            solicitud.tiempo_estimado_minutos = estimate_eta_minutes(solicitud, None, taller)
+    solicitud.estado = EstadoSolicitud.PENDIENTE
+    solicitud.taller_id = None
+    solicitud.tecnico_id = None
+    solicitud.tiempo_estimado_minutos = None
 
     session.add(solicitud)
     session.commit()
     session.refresh(solicitud)
+    notificar_talleres_candidatos(session, solicitud)
+    session.commit()
     return build_solicitud_read(session, solicitud)
 
 
@@ -351,18 +596,23 @@ def listar_solicitudes_pendientes_taller(
             detail="Solo los talleres pueden consultar solicitudes pendientes.",
         )
 
-    _obtener_taller_actual(session, current_user)
+    taller = _obtener_taller_actual(session, current_user)
 
     solicitudes = session.exec(
         select(Solicitud)
         .where(Solicitud.taller_id.is_(None))
         .where(Solicitud.estado == EstadoSolicitud.PENDIENTE)
         .order_by(Solicitud.fecha_creacion.desc())
-        .offset(skip)
-        .limit(limit)
     ).all()
 
-    return solicitudes
+    solicitudes_candidatas = [
+        solicitud
+        for solicitud in solicitudes
+        if taller_es_candidato_para_solicitud(session, taller, solicitud)
+    ]
+
+    solicitudes_paginadas = solicitudes_candidatas[skip:skip + limit]
+    return [build_solicitud_read(session, solicitud) for solicitud in solicitudes_paginadas]
 
 
 @router.get("/taller/mis-solicitudes", response_model=List[SolicitudRead])
@@ -489,6 +739,7 @@ def actualizar_mi_asignacion_estado(
     if nuevo_estado == EstadoSolicitud.EN_PROGRESO:
         tecnico.disponible = False
         session.add(tecnico)
+        notificar_tecnico_en_camino_conductor(session, solicitud, tecnico)
 
     session.add(solicitud)
     session.commit()
@@ -527,8 +778,16 @@ def aceptar_solicitud_taller(
             detail="Solo se pueden aceptar solicitudes pendientes.",
         )
 
+    if not taller_es_candidato_para_solicitud(session, taller, solicitud):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tu taller no es candidato para esta solicitud.",
+        )
+
     solicitud.taller_id = taller.id
+    solicitud.tiempo_estimado_minutos = estimate_eta_minutes(solicitud, None, taller)
     session.add(solicitud)
+    notificar_solicitud_aceptada_conductor(session, solicitud, taller)
     session.commit()
     session.refresh(solicitud)
     return solicitud
@@ -577,67 +836,10 @@ def asignar_tecnico_solicitud(
     nuevo_tecnico.disponible = False
     session.add(nuevo_tecnico)
     session.add(solicitud)
+    notificar_tecnico_asignado(session, solicitud, nuevo_tecnico)
     session.commit()
     session.refresh(solicitud)
     return solicitud
-
-
-@router.patch("/{solicitud_id}/cancelar", response_model=SolicitudRead)
-def cancelar_solicitud_taller(
-    *,
-    solicitud_id: int,
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
-):
-    if current_user.role != UserRole.WORKSHOP:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo los talleres pueden cancelar solicitudes.",
-        )
-
-    taller = _obtener_taller_actual(session, current_user)
-    solicitud = session.get(Solicitud, solicitud_id)
-
-    if not solicitud:
-        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
-
-    if solicitud.taller_id != taller.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo puedes cancelar solicitudes tomadas por tu taller.",
-        )
-
-    if solicitud.estado == EstadoSolicitud.RESUELTA:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No se puede cancelar una solicitud ya resuelta.",
-        )
-
-    if solicitud.estado == EstadoSolicitud.CANCELADA:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="La solicitud ya se encuentra cancelada.",
-        )
-
-    tecnico_actual = session.get(Tecnico, solicitud.tecnico_id) if solicitud.tecnico_id else None
-    if tecnico_actual:
-        tecnico_actual.disponible = True
-        session.add(tecnico_actual)
-
-    solicitud.estado = EstadoSolicitud.CANCELADA
-    session.add(solicitud)
-    session.commit()
-    session.refresh(solicitud)
-    return solicitud
-    current_user: User = Depends(get_current_user),
-    solicitudes = session.exec(
-        select(Solicitud)
-        .join(Vehiculo)
-        .where(Vehiculo.propietario_id == current_user.id)
-        .offset(skip)
-        .limit(limit)
-    ).all()
-    return [build_solicitud_read(session, solicitud) for solicitud in solicitudes]
 
 
 @router.get("/{solicitud_id}", response_model=SolicitudRead)
@@ -650,8 +852,6 @@ def obtener_solicitud(
     solicitud = session.get(Solicitud, solicitud_id)
     if not solicitud:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
-    return solicitud
-
     ensure_request_visible_to_user(session, solicitud, current_user)
     return build_solicitud_read(session, solicitud)
 
@@ -741,12 +941,26 @@ def cancelar_solicitud(
     if not solicitud:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
 
-    ensure_request_visible_to_user(session, solicitud, current_user)
-    if current_user.role != UserRole.DRIVER:
-        raise HTTPException(status_code=403, detail="Solo el cliente puede cancelar su solicitud desde este flujo")
-
     if solicitud.estado in (EstadoSolicitud.RESUELTA, EstadoSolicitud.CANCELADA):
         raise HTTPException(status_code=400, detail="La solicitud ya esta cerrada")
+
+    taller_cancelador: Optional[Taller] = None
+    if current_user.role == UserRole.WORKSHOP:
+        taller_cancelador = _obtener_taller_actual(session, current_user)
+        if solicitud.taller_id != taller_cancelador.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo puedes cancelar solicitudes tomadas por tu taller.",
+            )
+        notificar_cancelacion_taller_a_conductor(session, solicitud, taller_cancelador)
+    elif current_user.role == UserRole.DRIVER:
+        ensure_request_visible_to_user(session, solicitud, current_user)
+        notificar_cancelacion_conductor_a_talleres(session, solicitud)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el conductor o el taller asignado pueden cancelar la solicitud.",
+        )
 
     solicitud.estado = EstadoSolicitud.CANCELADA
     solicitud.tiempo_estimado_minutos = 0
