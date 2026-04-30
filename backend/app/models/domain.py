@@ -7,6 +7,7 @@ class EstadoSolicitud(str, Enum):
     PENDIENTE = "pendiente"
     ASIGNADA = "asignada"
     EN_PROGRESO = "en_progreso"
+    LLEGADA = "llegada"
     RESUELTA = "resuelta"
     CANCELADA = "cancelada"
 
@@ -16,8 +17,11 @@ class TipoNotificacion(str, Enum):
     SOLICITUD_ACEPTADA_CONDUCTOR = "solicitud_aceptada_conductor"
     TECNICO_ASIGNADO = "tecnico_asignado"
     TECNICO_EN_CAMINO = "tecnico_en_camino"
+    TECNICO_LLEGO = "tecnico_llego"
     SOLICITUD_CANCELADA_CONDUCTOR = "solicitud_cancelada_conductor"
     SOLICITUD_CANCELADA_TALLER = "solicitud_cancelada_taller"
+    SOLICITUD_CANCELADA_MECANICO = "solicitud_cancelada_mecanico"
+    SERVICIO_TERMINADO = "servicio_terminado"
     SERVICIO_CONCLUIDO_PAGO = "servicio_concluido_pago"
     GENERAL = "general"
 
@@ -55,6 +59,32 @@ class NotificacionRead(NotificacionBase):
 
 class NotificacionesNoLeidasRead(SQLModel):
     total: int
+
+
+class DispositivoTokenBase(SQLModel):
+    usuario_id: int = Field(foreign_key="user.id", index=True)
+    token: str = Field(index=True, unique=True)
+    plataforma: str = Field(default="android", max_length=30)
+    activo: bool = Field(default=True, index=True)
+
+
+class DispositivoToken(DispositivoTokenBase, table=True):
+    __tablename__ = "dispositivo_token"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    fecha_creacion: datetime = Field(default_factory=datetime.utcnow)
+    fecha_actualizacion: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DispositivoTokenCreate(SQLModel):
+    token: str
+    plataforma: str = "android"
+
+
+class DispositivoTokenRead(DispositivoTokenBase):
+    id: int
+    fecha_creacion: datetime
+    fecha_actualizacion: datetime
 
 class VehiculoBase(SQLModel):
     placa: str = Field(index=True, unique=True)

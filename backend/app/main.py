@@ -6,6 +6,7 @@ from app.models.user import User
 from app.models.domain import (
     Especialidad,
     EspecialidadTaller,
+    DispositivoToken,
     Evidencia,
     Notificacion,
     Solicitud,
@@ -14,7 +15,7 @@ from app.models.domain import (
     Tecnico,
     Vehiculo,
 )
-from app.api import auth, solicitudes, tecnicos, vehiculos, talleres, especialidades, especialidades_taller, notificaciones
+from app.api import auth, dispositivos, solicitudes, tecnicos, vehiculos, talleres, especialidades, especialidades_taller, notificaciones
 from app.services.storage import UPLOAD_ROOT, ensure_upload_root
 
 app = FastAPI(
@@ -51,4 +52,5 @@ app.include_router(talleres.router, prefix="/api/v1/talleres", tags=["Talleres"]
 app.include_router(especialidades.router, prefix="/api/v1/especialidades", tags=["Especialidades"])
 app.include_router(especialidades_taller.router, prefix="/api/v1/especialidades-taller", tags=["Especialidades Taller"])
 app.include_router(notificaciones.router, prefix="/api/v1/notificaciones", tags=["Notificaciones"])
+app.include_router(dispositivos.router, prefix="/api/v1/dispositivos", tags=["Dispositivos"])
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_ROOT)), name="uploads")

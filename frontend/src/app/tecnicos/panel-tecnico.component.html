@@ -105,7 +105,7 @@
             <span *ngIf="asignacion.prioridad_ia">Prioridad: {{ asignacion.prioridad_ia }}</span>
           </div>
 
-          <div class="panel-tecnico-acciones" *ngIf="asignacion.estado === 'asignada' || asignacion.estado === 'en_progreso'">
+          <div class="panel-tecnico-acciones" *ngIf="asignacion.estado === 'asignada' || asignacion.estado === 'en_progreso' || asignacion.estado === 'llegada'">
             <button
               class="boton-secundario"
               type="button"
@@ -120,6 +120,17 @@
               class="boton-secundario"
               type="button"
               [disabled]="actualizandoSolicitudId === asignacion.id"
+              *ngIf="asignacion.estado === 'en_progreso'"
+              (click)="actualizarEstadoAsignacion(asignacion.id, 'llegada')"
+            >
+              {{ actualizandoSolicitudId === asignacion.id ? 'Actualizando...' : 'Marcar llegada' }}
+            </button>
+
+            <button
+              class="boton-secundario"
+              type="button"
+              [disabled]="actualizandoSolicitudId === asignacion.id"
+              *ngIf="asignacion.estado === 'llegada'"
               (click)="actualizarEstadoAsignacion(asignacion.id, 'resuelta')"
             >
               {{ actualizandoSolicitudId === asignacion.id ? 'Actualizando...' : 'Marcar resuelta' }}

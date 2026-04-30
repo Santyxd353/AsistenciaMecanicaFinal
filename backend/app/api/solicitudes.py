@@ -341,6 +341,130 @@ def notificar_tecnico_en_camino_conductor(
     )
 
 
+def notificar_tecnico_en_camino_taller(
+    session: Session,
+    solicitud: Solicitud,
+    tecnico: Tecnico,
+) -> None:
+    if not solicitud.taller_id:
+        return
+
+    taller = session.get(Taller, solicitud.taller_id)
+    if not taller or taller.propietario_id is None:
+        return
+
+    crear_notificacion(
+        session,
+        destinatario_id=taller.propietario_id,
+        tipo=TipoNotificacion.TECNICO_EN_CAMINO,
+        titulo="Mecanico en camino",
+        mensaje=f"{tecnico.nombre} salio rumbo al incidente de la solicitud #{solicitud.id}.",
+        solicitud_id=solicitud.id,
+        accion_url="/taller/solicitudes",
+    )
+
+
+def notificar_llegada_mecanico(
+    session: Session,
+    solicitud: Solicitud,
+    tecnico: Tecnico,
+) -> None:
+    destinatarios: list[int] = []
+    vehiculo = request_vehicle(session, solicitud)
+    if vehiculo and vehiculo.propietario_id is not None:
+        destinatarios.append(vehiculo.propietario_id)
+
+    if solicitud.taller_id:
+        taller = session.get(Taller, solicitud.taller_id)
+        if taller and taller.propietario_id is not None:
+            destinatarios.append(taller.propietario_id)
+
+    crear_notificaciones_para_usuarios(
+        session,
+        destinatario_ids=destinatarios,
+        tipo=TipoNotificacion.TECNICO_LLEGO,
+        titulo="Mecanico llego al incidente",
+        mensaje=f"{tecnico.nombre} llego al punto de asistencia de la solicitud #{solicitud.id}.",
+        solicitud_id=solicitud.id,
+        accion_url="/solicitudes",
+    )
+
+
+def notificar_servicio_terminado(
+    session: Session,
+    solicitud: Solicitud,
+    tecnico: Optional[Tecnico] = None,
+) -> None:
+    destinatarios: list[int] = []
+    vehiculo = request_vehicle(session, solicitud)
+    if vehiculo and vehiculo.propietario_id is not None:
+        destinatarios.append(vehiculo.propietario_id)
+
+    if solicitud.taller_id:
+        taller = session.get(Taller, solicitud.taller_id)
+        if taller and taller.propietario_id is not None:
+            destinatarios.append(taller.propietario_id)
+
+    nombre = tecnico.nombre if tecnico else "El mecanico"
+    crear_notificaciones_para_usuarios(
+        session,
+        destinatario_ids=destinatarios,
+        tipo=TipoNotificacion.SERVICIO_TERMINADO,
+        titulo="Servicio finalizado",
+        mensaje=f"{nombre} marco como finalizado el servicio de la solicitud #{solicitud.id}.",
+        solicitud_id=solicitud.id,
+        accion_url="/solicitudes",
+    )
+
+
+def notificar_cancelacion_a_mecanico(
+    session: Session,
+    solicitud: Solicitud,
+) -> None:
+    if not solicitud.tecnico_id:
+        return
+
+    tecnico = session.get(Tecnico, solicitud.tecnico_id)
+    if not tecnico or tecnico.id_usuario is None:
+        return
+
+    crear_notificacion(
+        session,
+        destinatario_id=tecnico.id_usuario,
+        tipo=TipoNotificacion.SOLICITUD_CANCELADA_MECANICO,
+        titulo="Solicitud cancelada",
+        mensaje=f"La solicitud #{solicitud.id} fue cancelada.",
+        solicitud_id=solicitud.id,
+        accion_url="/tecnico",
+    )
+
+
+def notificar_cancelacion_mecanico_a_taller_y_conductor(
+    session: Session,
+    solicitud: Solicitud,
+    tecnico: Tecnico,
+) -> None:
+    destinatarios: list[int] = []
+    vehiculo = request_vehicle(session, solicitud)
+    if vehiculo and vehiculo.propietario_id is not None:
+        destinatarios.append(vehiculo.propietario_id)
+
+    if solicitud.taller_id:
+        taller = session.get(Taller, solicitud.taller_id)
+        if taller and taller.propietario_id is not None:
+            destinatarios.append(taller.propietario_id)
+
+    crear_notificaciones_para_usuarios(
+        session,
+        destinatario_ids=destinatarios,
+        tipo=TipoNotificacion.SOLICITUD_CANCELADA_MECANICO,
+        titulo="Solicitud cancelada por el mecanico",
+        mensaje=f"{tecnico.nombre} cancelo la atencion de la solicitud #{solicitud.id}.",
+        solicitud_id=solicitud.id,
+        accion_url="/solicitudes",
+    )
+
+
 def estimate_eta_minutes(solicitud: Solicitud, tecnico: Optional[Tecnico], taller: Optional[Taller]) -> int:
     if tecnico and tecnico.latitud is not None and tecnico.longitud is not None:
         distance_km = haversine_km(solicitud.latitud, solicitud.longitud, tecnico.latitud, tecnico.longitud)
@@ -772,12 +896,13 @@ def actualizar_mi_asignacion_estado(
 
     if nuevo_estado not in {
         EstadoSolicitud.EN_PROGRESO,
+        EstadoSolicitud.LLEGADA,
         EstadoSolicitud.RESUELTA,
         EstadoSolicitud.CANCELADA,
     }:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El tecnico solo puede marcar la asignacion como en progreso, resuelta o cancelada.",
+            detail="El mecanico solo puede marcar la asignacion como en progreso, llegada, resuelta o cancelada.",
         )
 
     solicitud.estado = nuevo_estado
@@ -790,6 +915,15 @@ def actualizar_mi_asignacion_estado(
         tecnico.disponible = False
         session.add(tecnico)
         notificar_tecnico_en_camino_conductor(session, solicitud, tecnico)
+        notificar_tecnico_en_camino_taller(session, solicitud, tecnico)
+    elif nuevo_estado == EstadoSolicitud.LLEGADA:
+        tecnico.disponible = False
+        session.add(tecnico)
+        notificar_llegada_mecanico(session, solicitud, tecnico)
+    elif nuevo_estado == EstadoSolicitud.RESUELTA:
+        notificar_servicio_terminado(session, solicitud, tecnico)
+    elif nuevo_estado == EstadoSolicitud.CANCELADA:
+        notificar_cancelacion_mecanico_a_taller_y_conductor(session, solicitud, tecnico)
 
     session.add(solicitud)
     session.commit()
@@ -976,6 +1110,7 @@ def actualizar_estado_solicitud(
         if solicitud.taller_id is not None and solicitud.taller_id != taller.id:
             raise HTTPException(status_code=403, detail="No tienes permisos para modificar esta solicitud")
 
+    estado_anterior = solicitud.estado
     was_resolved = solicitud.estado == EstadoSolicitud.RESUELTA
     assigned_tecnico: Optional[Tecnico] = None
 
@@ -1005,6 +1140,8 @@ def actualizar_estado_solicitud(
         solicitud.tiempo_estimado_minutos = estimate_eta_minutes(solicitud, assigned_tecnico, reference_taller)
     elif nuevo_estado == EstadoSolicitud.EN_PROGRESO:
         solicitud.tiempo_estimado_minutos = max(5, int((solicitud.tiempo_estimado_minutos or 20) * 0.55))
+    elif nuevo_estado == EstadoSolicitud.LLEGADA:
+        solicitud.tiempo_estimado_minutos = 0
     elif nuevo_estado in (EstadoSolicitud.RESUELTA, EstadoSolicitud.CANCELADA):
         solicitud.tiempo_estimado_minutos = 0
 
@@ -1013,6 +1150,27 @@ def actualizar_estado_solicitud(
             solicitud.clasificacion_ia,
             solicitud.prioridad_ia,
         )
+
+    if nuevo_estado != estado_anterior:
+        if nuevo_estado == EstadoSolicitud.ASIGNADA:
+            if assigned_tecnico:
+                notificar_tecnico_asignado(session, solicitud, assigned_tecnico)
+            reference_taller = session.get(Taller, solicitud.taller_id) if solicitud.taller_id else taller
+            if reference_taller:
+                notificar_solicitud_aceptada_conductor(session, solicitud, reference_taller)
+        elif nuevo_estado == EstadoSolicitud.EN_PROGRESO and assigned_tecnico:
+            notificar_tecnico_en_camino_conductor(session, solicitud, assigned_tecnico)
+            notificar_tecnico_en_camino_taller(session, solicitud, assigned_tecnico)
+        elif nuevo_estado == EstadoSolicitud.LLEGADA and assigned_tecnico:
+            notificar_llegada_mecanico(session, solicitud, assigned_tecnico)
+        elif nuevo_estado == EstadoSolicitud.RESUELTA:
+            notificar_servicio_terminado(session, solicitud, assigned_tecnico)
+        elif nuevo_estado == EstadoSolicitud.CANCELADA:
+            if current_user.role == UserRole.WORKSHOP and taller:
+                notificar_cancelacion_taller_a_conductor(session, solicitud, taller)
+                notificar_cancelacion_a_mecanico(session, solicitud)
+            else:
+                notificar_cancelacion_a_mecanico(session, solicitud)
 
     solicitud.estado = nuevo_estado
     session.add(solicitud)
@@ -1045,9 +1203,11 @@ def cancelar_solicitud(
                 detail="Solo puedes cancelar solicitudes tomadas por tu taller.",
             )
         notificar_cancelacion_taller_a_conductor(session, solicitud, taller_cancelador)
+        notificar_cancelacion_a_mecanico(session, solicitud)
     elif current_user.role == UserRole.DRIVER:
         ensure_request_visible_to_user(session, solicitud, current_user)
         notificar_cancelacion_conductor_a_talleres(session, solicitud)
+        notificar_cancelacion_a_mecanico(session, solicitud)
     else:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

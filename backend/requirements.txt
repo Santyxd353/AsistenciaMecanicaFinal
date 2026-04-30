@@ -8,6 +8,7 @@ python-jose[cryptography]
 bcrypt
 python-multipart
 python-dotenv
+firebase-admin
 pytesseract
 Pillow
 torch

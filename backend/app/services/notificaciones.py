@@ -3,6 +3,7 @@ from typing import Iterable, Optional
 from sqlmodel import Session
 
 from app.models.domain import Notificacion, TipoNotificacion
+from app.services.push_fcm import enviar_push_al_usuario
 
 
 def crear_notificacion(
@@ -25,6 +26,17 @@ def crear_notificacion(
         accion_url=accion_url,
     )
     session.add(notificacion)
+    session.flush()
+
+    enviar_push_al_usuario(
+        session,
+        usuario_id=destinatario_id,
+        titulo=titulo,
+        mensaje=mensaje,
+        solicitud_id=solicitud_id,
+        tipo=tipo.value,
+        accion_url=accion_url,
+    )
 
     if commit:
         session.commit()

@@ -106,7 +106,8 @@ class WorkshopRequestDetailScreen extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: OutlinedButton.icon(
-                        onPressed: () => _openAudio(context, controller, request),
+                        onPressed: () =>
+                            _openAudio(context, controller, request),
                         icon: const Icon(Icons.play_circle_outline),
                         label: const Text('Escuchar audio del cliente'),
                       ),
@@ -227,7 +228,9 @@ class WorkshopRequestDetailScreen extends StatelessWidget {
     AppController controller,
     EmergencyRequest request,
   ) async {
-    final url = ApiClient(baseUrl: controller.baseUrl).resolveAssetUrl(request.audioUrl);
+    final url = ApiClient(
+      baseUrl: controller.baseUrl,
+    ).resolveAssetUrl(request.audioUrl);
     if (url == null) {
       return;
     }
@@ -282,6 +285,18 @@ class _ActionPanel extends StatelessWidget {
               label: const Text('Marcar tecnico en camino'),
             ),
           if (request.estado == 'en_progreso' &&
+              controller.canWorkshopManageRequest(request))
+            FilledButton.icon(
+              onPressed: controller.loading
+                  ? null
+                  : () => controller.advanceRequestStatus(
+                      request: request,
+                      estado: 'llegada',
+                    ),
+              icon: const Icon(Icons.location_on_outlined),
+              label: const Text('Marcar llegada al incidente'),
+            ),
+          if (request.estado == 'llegada' &&
               controller.canWorkshopManageRequest(request))
             FilledButton.icon(
               onPressed: controller.loading

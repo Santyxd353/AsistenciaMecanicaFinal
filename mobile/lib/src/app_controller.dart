@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
 import 'repositories.dart';
+import 'services/push_notifications.dart';
 
 class AppController extends ChangeNotifier {
   bool _initialized = false;
@@ -42,10 +43,9 @@ class AppController extends ChangeNotifier {
 
   List<EmergencyRequest> get workshopInboxRequests {
     if (_currentUser?.role == 'tecnico') {
-      return _requests.where((request) => !request.isClosed).toList()
-        ..sort(
-          (left, right) => right.fechaCreacion.compareTo(left.fechaCreacion),
-        );
+      return _requests.where((request) => !request.isClosed).toList()..sort(
+        (left, right) => right.fechaCreacion.compareTo(left.fechaCreacion),
+      );
     }
     final wid = workshopId;
     return _requests.where((request) {
@@ -63,10 +63,9 @@ class AppController extends ChangeNotifier {
 
   List<EmergencyRequest> get workshopManagedRequests {
     if (_currentUser?.role == 'tecnico') {
-      return _requests.toList()
-        ..sort(
-          (left, right) => right.fechaCreacion.compareTo(left.fechaCreacion),
-        );
+      return _requests.toList()..sort(
+        (left, right) => right.fechaCreacion.compareTo(left.fechaCreacion),
+      );
     }
     final wid = workshopId;
     return _requests.where((request) {
@@ -108,6 +107,7 @@ class AppController extends ChangeNotifier {
     if (isAuthenticated) {
       try {
         await _refreshRemoteData(storage);
+        await _registerPushNotifications();
       } catch (_) {
         _accessToken = null;
         _currentUser = null;
@@ -611,9 +611,13 @@ class AppController extends ChangeNotifier {
     });
   }
 
-  Future<VehiclePhotoPreview> previewVehicleFromPhotos(List<String> imagePaths) async {
+  Future<VehiclePhotoPreview> previewVehicleFromPhotos(
+    List<String> imagePaths,
+  ) async {
     if (!isAuthenticated) {
-      throw ApiException('Debes iniciar sesion para analizar fotos del vehiculo.');
+      throw ApiException(
+        'Debes iniciar sesion para analizar fotos del vehiculo.',
+      );
     }
 
     late final VehiclePhotoPreview preview;
@@ -768,6 +772,31 @@ class AppController extends ChangeNotifier {
     _accessToken = auth.accessToken;
     _currentUser = auth.user;
     await storage.saveSession(token: auth.accessToken, user: auth.user);
+    await _registerPushNotifications();
+  }
+
+  Future<void> _registerPushNotifications() async {
+    final token = _accessToken;
+    if (token == null || token.isEmpty) {
+      return;
+    }
+
+    await PushNotificationsService.registerDevice(
+      baseUrl: _baseUrl,
+      accessToken: token,
+      onForegroundMessage:
+          ({required String title, required String message, int? requestId}) {
+            _pushNotification(
+              title: title,
+              message: message,
+              requestId: requestId,
+            );
+            notifyListeners();
+            SharedPreferences.getInstance().then((prefs) {
+              LocalRepository(prefs).saveNotifications(_notifications);
+            });
+          },
+    );
   }
 
   Future<void> _refreshRemoteData(LocalRepository storage) async {
@@ -822,12 +851,12 @@ class AppController extends ChangeNotifier {
       final requests = await api.fetchRequests();
       _technicians = await api.fetchTechnicians();
       final trackedIds = _requestMetas.map((meta) => meta.requestId).toSet();
-      _requests = requests
-          .where((request) => trackedIds.contains(request.id))
-          .toList()
-        ..sort(
-          (left, right) => right.fechaCreacion.compareTo(left.fechaCreacion),
-        );
+      _requests =
+          requests.where((request) => trackedIds.contains(request.id)).toList()
+            ..sort(
+              (left, right) =>
+                  right.fechaCreacion.compareTo(left.fechaCreacion),
+            );
       _workshopProfile = null;
       _workshopStats = null;
 
@@ -902,7 +931,8 @@ class AppController extends ChangeNotifier {
       if (old.estado != request.estado) {
         _pushNotification(
           title: 'Cambio de estado',
-          message: 'La solicitud #${request.id} cambio a ${request.statusLabel}.',
+          message:
+              'La solicitud #${request.id} cambio a ${request.statusLabel}.',
           requestId: request.id,
         );
       }
@@ -917,7 +947,8 @@ class AppController extends ChangeNotifier {
         );
       }
 
-      if (old.estadoPago != request.estadoPago && request.estadoPago == 'pagado') {
+      if (old.estadoPago != request.estadoPago &&
+          request.estadoPago == 'pagado') {
         _pushNotification(
           title: 'Pago confirmado',
           message: 'La solicitud #${request.id} ya figura como pagada.',
@@ -955,8 +986,11 @@ class AppController extends ChangeNotifier {
   }
 
   void _replaceRequest(EmergencyRequest updated) {
-    _requests = _requests.map((item) => item.id == updated.id ? updated : item).toList()
-      ..sort((left, right) => right.fechaCreacion.compareTo(left.fechaCreacion));
+    _requests =
+        _requests.map((item) => item.id == updated.id ? updated : item).toList()
+          ..sort(
+            (left, right) => right.fechaCreacion.compareTo(left.fechaCreacion),
+          );
   }
 
   Future<void> _persistDriverState(LocalRepository storage) async {

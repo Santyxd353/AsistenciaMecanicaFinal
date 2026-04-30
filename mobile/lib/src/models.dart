@@ -250,7 +250,8 @@ class Technician {
     return Technician(
       id: json['id'] as int,
       nombre: json['nombre'] as String? ?? 'Mecanico',
-      especialidad: (json['especialidad'] as String?) ??
+      especialidad:
+          (json['especialidad'] as String?) ??
           (especialidadTexto == null || especialidadTexto.isEmpty
               ? 'General'
               : especialidadTexto),
@@ -469,8 +470,10 @@ class EmergencyRequest {
       !isClosed &&
       precioCobrado != null &&
       (estadoPago ?? 'pendiente') != 'pagado';
-  bool get paymentReady => estado == 'en_progreso' || estado == 'resuelta';
-  bool get serviceInProgress => estado == 'asignada' || estado == 'en_progreso';
+  bool get paymentReady =>
+      estado == 'en_progreso' || estado == 'llegada' || estado == 'resuelta';
+  bool get serviceInProgress =>
+      estado == 'asignada' || estado == 'en_progreso' || estado == 'llegada';
 
   String get statusLabel {
     switch (estado) {
@@ -480,6 +483,8 @@ class EmergencyRequest {
         return 'Asignada';
       case 'en_progreso':
         return 'En progreso';
+      case 'llegada':
+        return 'Mecanico en sitio';
       case 'resuelta':
         return 'Atendida';
       case 'cancelada':

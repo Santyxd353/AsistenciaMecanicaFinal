@@ -107,7 +107,7 @@ export class PanelTecnicoComponent implements OnInit {
             : this.perfilTecnico;
         }
 
-        if (estado === 'en_progreso') {
+        if (estado === 'en_progreso' || estado === 'llegada') {
           this.perfilTecnico = this.perfilTecnico
             ? { ...this.perfilTecnico, disponible: false }
             : this.perfilTecnico;
@@ -127,6 +127,7 @@ export class PanelTecnicoComponent implements OnInit {
       pendiente: 'Pendiente',
       asignada: 'Asignada',
       en_progreso: 'En progreso',
+      llegada: 'Mecanico en sitio',
       resuelta: 'Resuelta',
       cancelada: 'Cancelada'
     };

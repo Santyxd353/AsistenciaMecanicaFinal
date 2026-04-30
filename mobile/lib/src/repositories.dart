@@ -32,18 +32,24 @@ class LocalRepository {
     final vehicles = vehiclesRaw == null
         ? <Vehicle>[]
         : (jsonDecode(vehiclesRaw) as List<dynamic>)
-            .map((item) => Vehicle.fromJson(item as Map<String, dynamic>))
-            .toList();
+              .map((item) => Vehicle.fromJson(item as Map<String, dynamic>))
+              .toList();
     final requestMetas = requestsRaw == null
         ? <LocalRequestMeta>[]
         : (jsonDecode(requestsRaw) as List<dynamic>)
-            .map((item) => LocalRequestMeta.fromJson(item as Map<String, dynamic>))
-            .toList();
+              .map(
+                (item) =>
+                    LocalRequestMeta.fromJson(item as Map<String, dynamic>),
+              )
+              .toList();
     final notifications = notificationsRaw == null
         ? <AppNotification>[]
         : (jsonDecode(notificationsRaw) as List<dynamic>)
-            .map((item) => AppNotification.fromJson(item as Map<String, dynamic>))
-            .toList();
+              .map(
+                (item) =>
+                    AppNotification.fromJson(item as Map<String, dynamic>),
+              )
+              .toList();
 
     final storedBaseUrl = _prefs.getString(_baseUrlKey);
     final normalizedBaseUrl = normalizeBaseUrl(storedBaseUrl ?? defaultBaseUrl);
@@ -99,14 +105,16 @@ class LocalRepository {
   Future<void> saveNotifications(List<AppNotification> notifications) async {
     await _prefs.setString(
       _notificationsKey,
-      jsonEncode(notifications.map((notification) => notification.toJson()).toList()),
+      jsonEncode(
+        notifications.map((notification) => notification.toJson()).toList(),
+      ),
     );
   }
 }
 
 class ApiClient {
   ApiClient({required String baseUrl, this.token})
-      : _baseUrl = normalizeBaseUrl(baseUrl);
+    : _baseUrl = normalizeBaseUrl(baseUrl);
 
   final String _baseUrl;
   final String? token;
@@ -116,7 +124,8 @@ class ApiClient {
     if (relativeUrl == null || relativeUrl.trim().isEmpty) {
       return null;
     }
-    if (relativeUrl.startsWith('http://') || relativeUrl.startsWith('https://')) {
+    if (relativeUrl.startsWith('http://') ||
+        relativeUrl.startsWith('https://')) {
       return relativeUrl;
     }
     return '$_baseUrl${relativeUrl.startsWith('/') ? relativeUrl : '/$relativeUrl'}';
@@ -129,8 +138,24 @@ class ApiClient {
     };
   }
 
+  Future<void> registerDeviceToken(String fcmToken) async {
+    final response = await http
+        .post(
+          _uri('/api/v1/dispositivos/token'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'token': fcmToken,
+            'plataforma': Platform.isAndroid ? 'android' : 'mobile',
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    _decodeObject(response);
+  }
+
   Future<Map<String, dynamic>> ping() async {
-    final response = await http.get(_uri('/')).timeout(const Duration(seconds: 8));
+    final response = await http
+        .get(_uri('/'))
+        .timeout(const Duration(seconds: 8));
     return _decodeObject(response);
   }
 
@@ -138,12 +163,14 @@ class ApiClient {
     required String username,
     required String password,
   }) async {
-    final response = await http.post(
-      _uri('/api/v1/auth/login'),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body:
-          'username=${Uri.encodeQueryComponent(username)}&password=${Uri.encodeQueryComponent(password)}',
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .post(
+          _uri('/api/v1/auth/login'),
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body:
+              'username=${Uri.encodeQueryComponent(username)}&password=${Uri.encodeQueryComponent(password)}',
+        )
+        .timeout(const Duration(seconds: 12));
     return AuthPayload.fromJson(_decodeObject(response));
   }
 
@@ -154,16 +181,18 @@ class ApiClient {
     required String fullName,
     required String password,
   }) async {
-    final response = await http.post(
-      _uri(path),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'username': username,
-        'email': email,
-        'full_name': fullName,
-        'password': password,
-      }),
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .post(
+          _uri(path),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'username': username,
+            'email': email,
+            'full_name': fullName,
+            'password': password,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
     return AuthPayload.fromJson(_decodeObject(response));
   }
 
@@ -179,15 +208,17 @@ class ApiClient {
     required String email,
     required String fullName,
   }) async {
-    final response = await http.put(
-      _uri('/api/v1/auth/me'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'username': username,
-        'email': email,
-        'full_name': fullName,
-      }),
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .put(
+          _uri('/api/v1/auth/me'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'username': username,
+            'email': email,
+            'full_name': fullName,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
     return AppUser.fromJson(_decodeObject(response));
   }
 
@@ -207,10 +238,13 @@ class ApiClient {
 
     return payload.map((item) {
       final id = item['id'] as int?;
-      final fallbackLocalId = 'vehicle-${id ?? DateTime.now().millisecondsSinceEpoch}';
+      final fallbackLocalId =
+          'vehicle-${id ?? DateTime.now().millisecondsSinceEpoch}';
       return Vehicle.fromApi(
         item,
-        localId: id == null ? fallbackLocalId : (localVehiclesByRemote[id] ?? fallbackLocalId),
+        localId: id == null
+            ? fallbackLocalId
+            : (localVehiclesByRemote[id] ?? fallbackLocalId),
         photoPath: id == null ? null : localPhotosByRemote[id],
         photoUrl: resolveAssetUrl(item['foto_url']?.toString()),
       );
@@ -218,16 +252,18 @@ class ApiClient {
   }
 
   Future<Vehicle> createVehicle(Vehicle vehicle) async {
-    final response = await http.post(
-      _uri('/api/v1/vehiculos/'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'placa': vehicle.placa,
-        'marca': vehicle.marca,
-        'modelo': vehicle.modelo,
-        'color': vehicle.color,
-      }),
-    ).timeout(const Duration(seconds: 20));
+    final response = await http
+        .post(
+          _uri('/api/v1/vehiculos/'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'placa': vehicle.placa,
+            'marca': vehicle.marca,
+            'modelo': vehicle.modelo,
+            'color': vehicle.color,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
     final payload = _decodeObject(response);
     return Vehicle.fromApi(
       payload,
@@ -242,16 +278,18 @@ class ApiClient {
       throw ApiException('El vehiculo aun no tiene identificador remoto.');
     }
 
-    final response = await http.put(
-      _uri('/api/v1/vehiculos/${vehicle.remoteId}'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'placa': vehicle.placa,
-        'marca': vehicle.marca,
-        'modelo': vehicle.modelo,
-        'color': vehicle.color,
-      }),
-    ).timeout(const Duration(seconds: 20));
+    final response = await http
+        .put(
+          _uri('/api/v1/vehiculos/${vehicle.remoteId}'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'placa': vehicle.placa,
+            'marca': vehicle.marca,
+            'modelo': vehicle.modelo,
+            'color': vehicle.color,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
     final payload = _decodeObject(response);
     return Vehicle.fromApi(
       payload,
@@ -261,7 +299,9 @@ class ApiClient {
     );
   }
 
-  Future<VehiclePhotoPreview> previewVehicleFromPhotos(List<String> imagePaths) async {
+  Future<VehiclePhotoPreview> previewVehicleFromPhotos(
+    List<String> imagePaths,
+  ) async {
     if (imagePaths.isEmpty) {
       throw ApiException('Debes seleccionar al menos una foto del vehiculo.');
     }
@@ -274,7 +314,9 @@ class ApiClient {
     for (final path in imagePaths.take(4)) {
       final file = File(path);
       if (file.existsSync()) {
-        request.files.add(await http.MultipartFile.fromPath('fotos', file.path));
+        request.files.add(
+          await http.MultipartFile.fromPath('fotos', file.path),
+        );
       }
     }
     final response = await request.send().timeout(const Duration(seconds: 45));
@@ -299,7 +341,10 @@ class ApiClient {
 
   Future<List<EmergencyRequest>> fetchWorkshopManagedRequests() async {
     final response = await http
-        .get(_uri('/api/v1/solicitudes/taller/mis-solicitudes'), headers: _headers())
+        .get(
+          _uri('/api/v1/solicitudes/taller/mis-solicitudes'),
+          headers: _headers(),
+        )
         .timeout(const Duration(seconds: 12));
     final payload = _decodeList(response);
     return payload.map(EmergencyRequest.fromApi).toList();
@@ -343,31 +388,35 @@ class ApiClient {
     double? latitud,
     double? longitud,
   }) async {
-    final response = await http.post(
-      _uri('/api/v1/talleres/'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'nombre_comercial': nombreComercial,
-        'direccion': direccion,
-        'telefono': telefono,
-        'email_contacto': emailContacto,
-        'horario_atencion': horarioAtencion,
-        'especialidades': especialidades,
-        'descripcion': descripcion,
-        'sitio_web': sitioWeb,
-        'latitud': latitud,
-        'longitud': longitud,
-      }),
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .post(
+          _uri('/api/v1/talleres/'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'nombre_comercial': nombreComercial,
+            'direccion': direccion,
+            'telefono': telefono,
+            'email_contacto': emailContacto,
+            'horario_atencion': horarioAtencion,
+            'especialidades': especialidades,
+            'descripcion': descripcion,
+            'sitio_web': sitioWeb,
+            'latitud': latitud,
+            'longitud': longitud,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
     return WorkshopProfile.fromApi(_decodeObject(response));
   }
 
   Future<WorkshopProfile> updateWorkshop(Map<String, dynamic> payload) async {
-    final response = await http.put(
-      _uri('/api/v1/talleres/mi-taller'),
-      headers: _headers(json: true),
-      body: jsonEncode(payload),
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .put(
+          _uri('/api/v1/talleres/mi-taller'),
+          headers: _headers(json: true),
+          body: jsonEncode(payload),
+        )
+        .timeout(const Duration(seconds: 12));
     return WorkshopProfile.fromApi(_decodeObject(response));
   }
 
@@ -386,15 +435,17 @@ class ApiClient {
     required String especialidad,
     bool disponible = true,
   }) async {
-    final response = await http.post(
-      _uri('/api/v1/tecnicos/'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'nombre': nombre,
-        'especialidad': especialidad,
-        'disponible': disponible,
-      }),
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .post(
+          _uri('/api/v1/tecnicos/'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'nombre': nombre,
+            'especialidad': especialidad,
+            'disponible': disponible,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
     return Technician.fromApi(_decodeObject(response));
   }
 
@@ -402,10 +453,14 @@ class ApiClient {
     required int tecnicoId,
     required bool disponible,
   }) async {
-    final response = await http.patch(
-      _uri('/api/v1/tecnicos/$tecnicoId/disponibilidad?disponible=$disponible'),
-      headers: _headers(json: true),
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .patch(
+          _uri(
+            '/api/v1/tecnicos/$tecnicoId/disponibilidad?disponible=$disponible',
+          ),
+          headers: _headers(json: true),
+        )
+        .timeout(const Duration(seconds: 12));
     return Technician.fromApi(_decodeObject(response));
   }
 
@@ -419,17 +474,19 @@ class ApiClient {
     List<String> imagePaths = const [],
     String? audioPath,
   }) async {
-    final response = await http.post(
-      _uri('/api/v1/solicitudes/'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        'descripcion': descripcion,
-        'latitud': latitud,
-        'longitud': longitud,
-        'estado': 'pendiente',
-        if (vehiculoId != null) 'vehiculo_id': vehiculoId,
-      }),
-    ).timeout(const Duration(seconds: 30));
+    final response = await http
+        .post(
+          _uri('/api/v1/solicitudes/'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'descripcion': descripcion,
+            'latitud': latitud,
+            'longitud': longitud,
+            'estado': 'pendiente',
+            if (vehiculoId != null) 'vehiculo_id': vehiculoId,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
     return EmergencyRequest.fromApi(_decodeObject(response));
   }
 
@@ -457,11 +514,9 @@ class ApiClient {
     if (tecnicoId != null) {
       path += '&tecnico_id=$tecnicoId';
     }
-    final response = await http.patch(
-      _uri(path),
-      headers: _headers(json: true),
-      body: jsonEncode({}),
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .patch(_uri(path), headers: _headers(json: true), body: jsonEncode({}))
+        .timeout(const Duration(seconds: 12));
     return EmergencyRequest.fromApi(_decodeObject(response));
   }
 
@@ -469,30 +524,36 @@ class ApiClient {
     required int requestId,
     required String estado,
   }) async {
-    final response = await http.patch(
-      _uri('/api/v1/solicitudes/mis-asignaciones/$requestId/estado?estado=${Uri.encodeQueryComponent(estado)}'),
-      headers: _headers(json: true),
-      body: jsonEncode({}),
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .patch(
+          _uri(
+            '/api/v1/solicitudes/mis-asignaciones/$requestId/estado?estado=${Uri.encodeQueryComponent(estado)}',
+          ),
+          headers: _headers(json: true),
+          body: jsonEncode({}),
+        )
+        .timeout(const Duration(seconds: 12));
     return EmergencyRequest.fromApi(_decodeObject(response));
   }
 
   Future<EmergencyRequest> cancelRequest(int requestId) async {
-    final response = await http.patch(
-      _uri('/api/v1/solicitudes/$requestId/cancelar'),
-      headers: _headers(json: true),
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .patch(
+          _uri('/api/v1/solicitudes/$requestId/cancelar'),
+          headers: _headers(json: true),
+        )
+        .timeout(const Duration(seconds: 12));
     return EmergencyRequest.fromApi(_decodeObject(response));
   }
 
   Future<EmergencyRequest> payRequest(int requestId, {double? amount}) async {
-    final response = await http.post(
-      _uri('/api/v1/solicitudes/$requestId/pago'),
-      headers: _headers(json: true),
-      body: jsonEncode({
-        if (amount != null) 'monto': amount,
-      }),
-    ).timeout(const Duration(seconds: 12));
+    final response = await http
+        .post(
+          _uri('/api/v1/solicitudes/$requestId/pago'),
+          headers: _headers(json: true),
+          body: jsonEncode({if (amount != null) 'monto': amount}),
+        )
+        .timeout(const Duration(seconds: 12));
     return EmergencyRequest.fromApi(_decodeObject(response));
   }
 
@@ -508,7 +569,9 @@ class ApiClient {
     return json;
   }
 
-  Future<Map<String, dynamic>> _decodeObjectFromStream(http.StreamedResponse response) async {
+  Future<Map<String, dynamic>> _decodeObjectFromStream(
+    http.StreamedResponse response,
+  ) async {
     final body = await response.stream.bytesToString();
     final json = _decodeJson(body);
     if (response.statusCode >= 400) {
