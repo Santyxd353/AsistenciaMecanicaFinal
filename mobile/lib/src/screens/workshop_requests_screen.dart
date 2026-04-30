@@ -40,7 +40,7 @@ class _WorkshopRequestsScreenState extends State<WorkshopRequestsScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Gestiona la bandeja de incidentes, asigna tecnico y deja visible el punto donde se integrara la pasarela de pago.',
+              'Gestiona la bandeja de incidentes, asigna mecanico y administra los cobros QR.',
               style: TextStyle(color: Color(0xFF6F655B), height: 1.5),
             ),
             const SizedBox(height: 16),
@@ -221,7 +221,7 @@ class _RequestCard extends StatelessWidget {
                   child: const Padding(
                     padding: EdgeInsets.all(12),
                     child: Text(
-                      'Cobro listo: este servicio ya puede abrir checkout cuando se conecte la pasarela real.',
+                      'Cobro listo: el cliente ya puede pagar por QR.',
                       style: TextStyle(color: Color(0xFF8B4C18), height: 1.45),
                     ),
                   ),

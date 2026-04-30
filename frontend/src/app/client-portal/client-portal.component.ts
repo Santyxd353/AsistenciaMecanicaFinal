@@ -243,10 +243,9 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
           <div class="panel-head">
             <div>
               <p class="section-kicker">Cobros</p>
-              <h2>Pasarela lista para integrar</h2>
+              <h2>Pago QR del servicio</h2>
               <p>
-                Estos servicios ya entran a etapa de cobro. El boton abre solo una interfaz placeholder mientras se
-                conecta la pasarela real.
+                Estos servicios ya pueden pagarse por QR cuando el taller define el monto final del trabajo.
               </p>
             </div>
             <button class="btn-secondary" type="button" (click)="loadReports()">Actualizar</button>
@@ -286,11 +285,11 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
               </div>
 
               <div class="payment-box">
-                <strong>{{ canOpenGateway(report) ? 'Checkout preparado' : 'Aun no cobrable' }}</strong>
+                <strong>{{ report.estado_pago === 'pagado' ? 'Pago confirmado' : 'Pago QR disponible' }}</strong>
                 <p>
                   {{
-                    canOpenGateway(report)
-                      ? 'Este es el punto donde tu companero conectara la pasarela y el proveedor externo.'
+                    report.estado_pago === 'pagado'
+                      ? 'El servicio ya fue marcado como pagado.'
                       : 'El cobro se habilitara cuando el taller marque el servicio en ejecucion o finalizado.'
                   }}
                 </p>
@@ -315,11 +314,10 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
 
       <div class="modal-backdrop" *ngIf="selectedReportForPayment" (click)="closePaymentPlaceholder()">
         <section class="payment-modal" (click)="$event.stopPropagation()">
-          <p class="eyebrow">Pasarela placeholder</p>
+          <p class="eyebrow">Pasarela QR</p>
           <h3>Servicio #{{ selectedReportForPayment.id }}</h3>
           <p>
-            Aqui debe abrirse el checkout real. La UI ya esta lista para monto, confirmacion y retorno desde el
-            proveedor externo.
+            Escanea el QR con tu banco o billetera movil y confirma el pago del servicio.
           </p>
 
           <div class="modal-grid">
@@ -342,14 +340,30 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
           </div>
 
           <div class="payment-box">
-            <strong>Integracion pendiente</strong>
-            <p>
-              Tu companero debe reemplazar este modal por la pasarela real. Esta estructura ya deja fijo el lugar del
-              checkout.
-            </p>
+            <strong>Pago seguro por QR</strong>
+            <p>Usa el monto indicado y conserva el comprobante de la transaccion.</p>
           </div>
 
+          <div class="qr-pay-panel">
+            <img src="/assets/payment-qr.jpeg" alt="QR de pago del servicio" />
+            <div>
+              <strong>{{ amountLabel(selectedReportForPayment) }}</strong>
+              <span>Referencia: Servicio #{{ selectedReportForPayment.id }}</span>
+            </div>
+          </div>
+
+          <p class="message success" *ngIf="paymentMessage">{{ paymentMessage }}</p>
+          <p class="message error" *ngIf="paymentError">{{ paymentError }}</p>
+
           <div class="panel-actions">
+            <button
+              class="btn-primary"
+              type="button"
+              [disabled]="paymentProcessing || selectedReportForPayment.estado_pago === 'pagado'"
+              (click)="confirmPayment()"
+            >
+              {{ paymentProcessing ? 'Confirmando...' : 'Confirmar pago' }}
+            </button>
             <button class="btn-secondary" type="button" (click)="closePaymentPlaceholder()">Cerrar</button>
           </div>
         </section>
@@ -880,6 +894,36 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
       line-height: 1.6;
     }
 
+    .qr-pay-panel {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 18px;
+      align-items: center;
+      margin: 18px 0;
+      padding: 16px;
+      border: 1px solid #ead8c6;
+      border-radius: 22px;
+      background: #fffaf5;
+    }
+
+    .qr-pay-panel img {
+      width: 100%;
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 18px 35px rgba(43, 28, 20, .12);
+    }
+
+    .qr-pay-panel strong {
+      display: block;
+      font-size: 26px;
+      color: #24130d;
+    }
+
+    .qr-pay-panel span {
+      color: #7b6a5f;
+      font-weight: 700;
+    }
+
     .status-chip {
       display: inline-flex;
       align-items: center;
@@ -1178,6 +1222,9 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
   vehicleError = '';
   reportMessage = '';
   reportError = '';
+  paymentProcessing = false;
+  paymentMessage = '';
+  paymentError = '';
 
   constructor(
     private fb: FormBuilder,
@@ -1554,11 +1601,40 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
     if (!this.canOpenGateway(report)) {
       return;
     }
+    this.paymentMessage = '';
+    this.paymentError = '';
     this.selectedReportForPayment = report;
   }
 
   closePaymentPlaceholder() {
     this.selectedReportForPayment = null;
+    this.paymentProcessing = false;
+    this.paymentMessage = '';
+    this.paymentError = '';
+  }
+
+  confirmPayment() {
+    if (!this.selectedReportForPayment || this.selectedReportForPayment.estado_pago === 'pagado') {
+      return;
+    }
+    this.paymentProcessing = true;
+    this.paymentMessage = '';
+    this.paymentError = '';
+    this.solicitudService.pagarSolicitud(
+      this.selectedReportForPayment.id,
+      this.selectedReportForPayment.precio_cobrado
+    ).subscribe({
+      next: (updated) => {
+        this.reports = this.reports.map((report) => report.id === updated.id ? updated : report);
+        this.selectedReportForPayment = updated;
+        this.paymentProcessing = false;
+        this.paymentMessage = 'Pago confirmado correctamente.';
+      },
+      error: (error) => {
+        this.paymentProcessing = false;
+        this.paymentError = error?.error?.detail || 'No se pudo confirmar el pago.';
+      }
+    });
   }
 
   logout() {

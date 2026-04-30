@@ -241,7 +241,8 @@ class _ReportScreenState extends State<ReportScreen> {
                                     ),
                                     const SizedBox(height: 6),
                                     Text(
-                                      _selectedLat == null || _selectedLng == null
+                                      _selectedLat == null ||
+                                              _selectedLng == null
                                           ? 'Todavia no elegiste una ubicacion.'
                                           : '${_selectedLat!.toStringAsFixed(6)}, ${_selectedLng!.toStringAsFixed(6)}',
                                       style: const TextStyle(
@@ -358,7 +359,7 @@ class _ReportScreenState extends State<ReportScreen> {
                               ? null
                               : () => _submit(controller, selectedVehicle),
                           icon: const Icon(Icons.send_outlined),
-                          label: const Text('Enviar solicitud al backend'),
+                          label: const Text('Enviar solicitud'),
                         ),
                       ),
                     ],
@@ -491,13 +492,16 @@ class _ReportScreenState extends State<ReportScreen> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Concede permiso de microfono para grabar audio.')),
+        const SnackBar(
+          content: Text('Concede permiso de microfono para grabar audio.'),
+        ),
       );
       return;
     }
 
     final dir = await getTemporaryDirectory();
-    final path = '${dir.path}/reporte-${DateTime.now().millisecondsSinceEpoch}.m4a';
+    final path =
+        '${dir.path}/reporte-${DateTime.now().millisecondsSinceEpoch}.m4a';
     await _audioRecorder.start(
       const RecordConfig(encoder: AudioEncoder.aacLc),
       path: path,
@@ -526,7 +530,9 @@ class _ReportScreenState extends State<ReportScreen> {
     if (latitud == null || longitud == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Selecciona una ubicacion valida usando GPS o el mapa.'),
+          content: Text(
+            'Selecciona una ubicacion valida usando GPS o el mapa.',
+          ),
         ),
       );
       return;
@@ -581,7 +587,6 @@ class _ReportScreenState extends State<ReportScreen> {
       );
     }
   }
-
 }
 
 class _AttachmentList extends StatelessWidget {

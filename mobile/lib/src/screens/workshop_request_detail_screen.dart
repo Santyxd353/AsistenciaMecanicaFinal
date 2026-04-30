@@ -147,7 +147,7 @@ class WorkshopRequestDetailScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _InfoLine(
-                            label: 'Monto referencial',
+                            label: 'Monto final',
                             value: request.precioCobrado == null
                                 ? 'Pendiente de definir'
                                 : 'Bs ${request.precioCobrado!.toStringAsFixed(2)}',
@@ -159,10 +159,10 @@ class WorkshopRequestDetailScreen extends StatelessWidget {
                                 : 'Bs ${request.comisionPlataforma!.toStringAsFixed(2)}',
                           ),
                           _InfoLine(
-                            label: 'Estado de integracion',
+                            label: 'Estado de pago',
                             value: request.paymentReady
-                                ? 'Listo para abrir checkout externo'
-                                : 'Esperando que el tecnico vaya en camino o cierre el servicio',
+                                ? 'Pago QR disponible para el cliente'
+                                : 'Esperando que el mecanico vaya en camino o cierre el servicio',
                           ),
                         ],
                       ),
@@ -170,14 +170,28 @@ class WorkshopRequestDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Aqui ira la pasarela real. La app ya define el momento visual del cobro; falta conectar el proveedor, la confirmacion y los estados finales del pago.',
+                    'Define el monto que debe pagar el cliente. El cliente vera el QR y confirmara el pago desde su cuenta.',
                     style: TextStyle(color: Color(0xFF6F655B), height: 1.5),
                   ),
                   const SizedBox(height: 12),
-                  FilledButton.tonalIcon(
-                    onPressed: () => _showGatewayPlaceholder(context),
-                    icon: const Icon(Icons.payment_outlined),
-                    label: const Text('Abrir interfaz de pago'),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed: () =>
+                            _showCostEditor(context, controller, request),
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('Editar monto'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: request.paymentReady
+                            ? () => _showGatewayQr(context, request)
+                            : null,
+                        icon: const Icon(Icons.qr_code_2_outlined),
+                        label: const Text('Ver QR de pago'),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -205,13 +219,33 @@ class WorkshopRequestDetailScreen extends StatelessWidget {
     return null;
   }
 
-  static void _showGatewayPlaceholder(BuildContext context) {
+  static void _showGatewayQr(BuildContext context, EmergencyRequest request) {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Pasarela pendiente'),
-        content: const Text(
-          'Este boton ya representa el punto donde tu companero debe abrir el checkout real. La interfaz esta lista; solo falta conectar el proveedor de pagos.',
+        title: Text('QR de pago - Solicitud #${request.id}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Image.asset(
+                'assets/payment_qr.jpeg',
+                width: 220,
+                height: 220,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              request.precioCobrado == null
+                  ? 'Monto definido por el taller'
+                  : 'Monto: Bs ${request.precioCobrado!.toStringAsFixed(2)}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            Text('Referencia: Solicitud #${request.id}'),
+          ],
         ),
         actions: [
           TextButton(
@@ -219,6 +253,72 @@ class WorkshopRequestDetailScreen extends StatelessWidget {
             child: const Text('Cerrar'),
           ),
         ],
+      ),
+    );
+  }
+
+  static void _showCostEditor(
+    BuildContext context,
+    AppController controller,
+    EmergencyRequest request,
+  ) {
+    final amountController = TextEditingController(
+      text: request.precioCobrado?.toStringAsFixed(2) ?? '',
+    );
+    String? errorText;
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text('Monto de la solicitud #${request.id}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: amountController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Monto a cobrar (Bs)',
+                  errorText: errorText,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Este monto sera visible para el cliente en la pasarela QR.',
+                style: TextStyle(color: Color(0xFF6F655B), fontSize: 12),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: controller.loading
+                  ? null
+                  : () async {
+                      final amount = double.tryParse(
+                        amountController.text.replaceAll(',', '.'),
+                      );
+                      if (amount == null || amount <= 0) {
+                        setState(() {
+                          errorText = 'Ingresa un monto valido.';
+                        });
+                        return;
+                      }
+                      await controller.updateRequestCost(request.id, amount);
+                      if (dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                      }
+                    },
+              child: const Text('Guardar monto'),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -62,7 +62,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'Cliente y taller comparten autenticacion con el backend del proyecto.',
+                          'Cliente y taller comparten la misma cuenta del sistema.',
                           style: TextStyle(
                             color: Color(0xFF6F655B),
                             height: 1.5,

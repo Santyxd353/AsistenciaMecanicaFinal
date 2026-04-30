@@ -582,6 +582,20 @@ class ApiClient {
     return EmergencyRequest.fromApi(_decodeObject(response));
   }
 
+  Future<EmergencyRequest> updateRequestCost(
+    int requestId, {
+    required double amount,
+  }) async {
+    final response = await http
+        .patch(
+          _uri('/api/v1/solicitudes/$requestId/costo'),
+          headers: _headers(json: true),
+          body: jsonEncode({'monto': amount}),
+        )
+        .timeout(const Duration(seconds: 12));
+    return EmergencyRequest.fromApi(_decodeObject(response));
+  }
+
   Map<String, dynamic> _decodeObject(http.Response response) {
     final body = utf8.decode(response.bodyBytes);
     final json = _decodeJson(body);
@@ -589,7 +603,7 @@ class ApiClient {
       throw ApiException(_readDetail(json));
     }
     if (json is! Map<String, dynamic>) {
-      throw ApiException('El backend devolvio una respuesta inesperada.');
+      throw ApiException('El servicio devolvio una respuesta inesperada.');
     }
     return json;
   }
@@ -603,7 +617,7 @@ class ApiClient {
       throw ApiException(_readDetail(json));
     }
     if (json is! Map<String, dynamic>) {
-      throw ApiException('El backend devolvio una respuesta inesperada.');
+      throw ApiException('El servicio devolvio una respuesta inesperada.');
     }
     return json;
   }
@@ -615,7 +629,7 @@ class ApiClient {
       throw ApiException(_readDetail(json));
     }
     if (json is! List<dynamic>) {
-      throw ApiException('El backend devolvio una respuesta inesperada.');
+      throw ApiException('El servicio devolvio una respuesta inesperada.');
     }
     return json.map((item) => item as Map<String, dynamic>).toList();
   }
@@ -625,7 +639,7 @@ class ApiClient {
       return body.trim().isEmpty ? null : jsonDecode(body);
     } on FormatException {
       throw ApiException(
-        'El backend no devolvio JSON valido. Revisa que la API este levantada en $_baseUrl.',
+        'El servicio no devolvio JSON valido. Revisa que la API este levantada en $_baseUrl.',
       );
     }
   }
@@ -634,7 +648,7 @@ class ApiClient {
     if (payload is Map<String, dynamic> && payload['detail'] != null) {
       return payload['detail'].toString();
     }
-    return 'No se pudo completar la solicitud al backend.';
+    return 'No se pudo completar la solicitud al servicio.';
   }
 }
 

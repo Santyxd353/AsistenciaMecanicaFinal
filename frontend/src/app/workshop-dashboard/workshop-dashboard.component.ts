@@ -147,7 +147,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
                 <p class="panel-kicker">Estadísticas</p>
                 <h3>Análisis de rendimiento</h3>
               </div>
-              <p>Una lectura más útil del desempeño actual del taller a partir de las métricas que ya entrega el backend.</p>
+              <p>Una lectura más útil del desempeño actual del taller a partir de las métricas del sistema.</p>
             </div>
 
             <div class="analytics-grid">
@@ -247,7 +247,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
             </div>
 
             <ng-template #emptyStats>
-              <p class="empty-copy">Las métricas aparecerán aquí cuando el backend devuelva estadísticas del taller.</p>
+              <p class="empty-copy">Las métricas aparecerán aquí cuando existan estadísticas del taller.</p>
             </ng-template>
           </article>
 
@@ -1378,7 +1378,7 @@ export class WorkshopDashboardComponent implements OnInit {
   get completionInsight(): string {
     const completed = this.estadisticas?.servicios.total_completados ?? 0;
     return completed > 0
-      ? `El backend registra ${completed} servicio(s) completado(s) para este taller.`
+      ? `El sistema registra ${completed} servicio(s) completado(s) para este taller.`
       : 'Todavía no hay servicios completados registrados para este taller.';
   }
 

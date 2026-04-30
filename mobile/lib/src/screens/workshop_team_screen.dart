@@ -61,7 +61,7 @@ class WorkshopTeamScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'Sin un taller creado el backend no permite registrar mecanicos.',
+                        'Sin un taller creado no se pueden registrar mecanicos.',
                         style: TextStyle(height: 1.5),
                       ),
                       const SizedBox(height: 14),
@@ -198,9 +198,9 @@ class WorkshopTeamScreen extends StatelessWidget {
       final message = user != null && password != null
           ? 'Mecanico creado. Usuario: $user | Contrasena: $password'
           : 'Mecanico registrado correctamente.';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 }

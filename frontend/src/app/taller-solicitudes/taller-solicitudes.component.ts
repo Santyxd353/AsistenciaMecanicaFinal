@@ -32,6 +32,10 @@ export class TallerSolicitudesComponent implements OnInit {
   errorAsignarTecnico = '';
   cancelandoSolicitud = false;
   errorCancelarSolicitud = '';
+  guardandoCostoSolicitud = false;
+  errorCostoSolicitud = '';
+  mensajeCostoSolicitud = '';
+  montoCobro: number | null = null;
   tecnicoSeleccionadoId: number | null = null;
   vistaActiva: 'pendientes' | 'mis-solicitudes' = 'pendientes';
   solicitudSeleccionada: Solicitud | null = null;
@@ -209,6 +213,10 @@ export class TallerSolicitudesComponent implements OnInit {
     this.asignandoTecnico = false;
     this.errorCancelarSolicitud = '';
     this.cancelandoSolicitud = false;
+    this.errorCostoSolicitud = '';
+    this.mensajeCostoSolicitud = '';
+    this.guardandoCostoSolicitud = false;
+    this.montoCobro = solicitud.precio_cobrado ?? null;
     this.tecnicoSeleccionadoId = solicitud.tecnico_id ?? null;
     this.solicitudSeleccionada = solicitud;
   }
@@ -220,8 +228,50 @@ export class TallerSolicitudesComponent implements OnInit {
     this.asignandoTecnico = false;
     this.errorCancelarSolicitud = '';
     this.cancelandoSolicitud = false;
+    this.errorCostoSolicitud = '';
+    this.mensajeCostoSolicitud = '';
+    this.guardandoCostoSolicitud = false;
+    this.montoCobro = null;
     this.tecnicoSeleccionadoId = null;
     this.solicitudSeleccionada = null;
+  }
+
+  get comisionCobroLabel(): string {
+    if (this.montoCobro === null || !Number.isFinite(Number(this.montoCobro)) || Number(this.montoCobro) <= 0) {
+      return 'Pendiente';
+    }
+    return `Bs ${(Number(this.montoCobro) * 0.10).toFixed(2)}`;
+  }
+
+  guardarCostoSolicitud(): void {
+    if (!this.solicitudSeleccionada) {
+      return;
+    }
+
+    const monto = Number(this.montoCobro);
+    if (!Number.isFinite(monto) || monto <= 0) {
+      this.errorCostoSolicitud = 'Ingresa un monto valido para cobrar.';
+      this.mensajeCostoSolicitud = '';
+      return;
+    }
+
+    this.guardandoCostoSolicitud = true;
+    this.errorCostoSolicitud = '';
+    this.mensajeCostoSolicitud = '';
+
+    this.solicitudService.actualizarCosto(this.solicitudSeleccionada.id, monto).subscribe({
+      next: (solicitudActualizada) => {
+        this.solicitudSeleccionada = solicitudActualizada;
+        this.montoCobro = solicitudActualizada.precio_cobrado ?? monto;
+        this.guardandoCostoSolicitud = false;
+        this.mensajeCostoSolicitud = 'Monto actualizado para la pasarela QR.';
+        this.cargarSolicitudes();
+      },
+      error: (error) => {
+        this.errorCostoSolicitud = error?.error?.detail || 'No se pudo actualizar el monto.';
+        this.guardandoCostoSolicitud = false;
+      }
+    });
   }
 
   aceptarSolicitudSeleccionada(): void {

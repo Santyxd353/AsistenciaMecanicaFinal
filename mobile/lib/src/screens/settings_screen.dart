@@ -62,7 +62,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.workshopMode ? 'Cuenta de taller' : 'Configuracion mobile'),
+        title: Text(
+          widget.workshopMode ? 'Cuenta de taller' : 'Configuracion mobile',
+        ),
         actions: [
           IconButton(
             tooltip: 'Cerrar sesion',
@@ -94,14 +96,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.workshopMode ? 'Perfil del taller' : 'Perfil del cliente',
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                    widget.workshopMode
+                        ? 'Perfil del taller'
+                        : 'Perfil del cliente',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _nameController,
                     decoration: InputDecoration(
-                      labelText: widget.workshopMode ? 'Nombre del taller' : 'Nombre completo',
+                      labelText: widget.workshopMode
+                          ? 'Nombre del taller'
+                          : 'Nombre completo',
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -137,11 +146,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const Expanded(
                           child: Text(
                             'Vehiculos',
-                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
                           ),
                         ),
                         FilledButton.tonalIcon(
-                          onPressed: controller.loading ? null : _showVehicleDialog,
+                          onPressed: controller.loading
+                              ? null
+                              : _showVehicleDialog,
                           icon: const Icon(Icons.add),
                           label: const Text('Registrar'),
                         ),
@@ -168,19 +182,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             decoration: BoxDecoration(
                               color: const Color(0xFFF8F4ED),
                               borderRadius: BorderRadius.circular(18),
-                              border: Border.all(color: const Color(0xFFE5D8C9)),
+                              border: Border.all(
+                                color: const Color(0xFFE5D8C9),
+                              ),
                             ),
                             child: ListTile(
                               leading: CircleAvatar(
                                 backgroundColor: const Color(0xFFFFE2CC),
                                 backgroundImage: imageProvider,
                                 child: imageProvider == null
-                                    ? const Icon(Icons.directions_car_filled_outlined)
+                                    ? const Icon(
+                                        Icons.directions_car_filled_outlined,
+                                      )
                                     : null,
                               ),
                               title: Text(
                                 vehicle.placa,
-                                style: const TextStyle(fontWeight: FontWeight.w700),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                               subtitle: Text(detail),
                               trailing: Text('#${vehicle.remoteId ?? '-'}'),
@@ -209,9 +229,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Perfil actualizado.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Perfil actualizado.')));
     } catch (error) {
       _showMessage(error.toString());
     }
@@ -246,7 +266,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vehiculo registrado en el backend.')),
+        const SnackBar(content: Text('Vehiculo registrado correctamente.')),
       );
     } catch (error) {
       _showMessage(error.toString());
@@ -377,9 +397,13 @@ class _VehicleDialogState extends State<_VehicleDialog> {
                           label: const Text('Camara'),
                         ),
                         FilledButton.tonalIcon(
-                          onPressed: _photoPaths.isEmpty || _analyzing ? null : _analyzePhotos,
+                          onPressed: _photoPaths.isEmpty || _analyzing
+                              ? null
+                              : _analyzePhotos,
                           icon: const Icon(Icons.auto_awesome_outlined),
-                          label: Text(_analyzing ? 'Analizando...' : 'Analizar'),
+                          label: Text(
+                            _analyzing ? 'Analizando...' : 'Analizar',
+                          ),
                         ),
                       ],
                     ),
@@ -421,11 +445,19 @@ class _VehicleDialogState extends State<_VehicleDialog> {
                       ),
                       if (_preview != null) ...[
                         const SizedBox(height: 10),
-                        Text('Placa: ${_preview!.placa.isEmpty ? "-" : _preview!.placa}'),
-                        Text('Marca: ${_preview!.marca.isEmpty ? "-" : _preview!.marca}'),
-                        Text('Modelo: ${_preview!.modelo.isEmpty ? "-" : _preview!.modelo}'),
+                        Text(
+                          'Placa: ${_preview!.placa.isEmpty ? "-" : _preview!.placa}',
+                        ),
+                        Text(
+                          'Marca: ${_preview!.marca.isEmpty ? "-" : _preview!.marca}',
+                        ),
+                        Text(
+                          'Modelo: ${_preview!.modelo.isEmpty ? "-" : _preview!.modelo}',
+                        ),
                         Text('Anio: ${_preview!.anio?.toString() ?? "-"}'),
-                        Text('Color: ${_preview!.color.isEmpty ? "-" : _preview!.color}'),
+                        Text(
+                          'Color: ${_preview!.color.isEmpty ? "-" : _preview!.color}',
+                        ),
                       ],
                     ],
                   ),
@@ -469,7 +501,10 @@ class _VehicleDialogState extends State<_VehicleDialog> {
       return;
     }
     setState(() {
-      _photoPaths = [..._photoPaths, ...images.map((item) => item.path)].take(4).toList();
+      _photoPaths = [
+        ..._photoPaths,
+        ...images.map((item) => item.path),
+      ].take(4).toList();
     });
   }
 
@@ -489,7 +524,9 @@ class _VehicleDialogState extends State<_VehicleDialog> {
       _analyzing = true;
     });
     try {
-      final preview = await context.read<AppController>().previewVehicleFromPhotos(_photoPaths);
+      final preview = await context
+          .read<AppController>()
+          .previewVehicleFromPhotos(_photoPaths);
       if (!mounted) {
         return;
       }
@@ -517,7 +554,9 @@ class _VehicleDialogState extends State<_VehicleDialog> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
       );
     } finally {
       if (mounted) {

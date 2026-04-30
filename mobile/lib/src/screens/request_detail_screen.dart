@@ -100,7 +100,7 @@ class RequestDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             _SectionCard(
-              title: 'Analisis del backend',
+              title: 'Analisis IA',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -143,10 +143,10 @@ class RequestDetailScreen extends StatelessWidget {
                                 : 'Bs ${request.precioCobrado!.toStringAsFixed(2)}',
                           ),
                           _InfoLine(
-                            label: 'Estado de checkout',
+                            label: 'Estado de pago',
                             value: request.paymentReady
-                                ? 'Listo para integrar pasarela'
-                                : 'Se habilitara cuando el tecnico este en camino o finalice el trabajo',
+                                ? 'Pago QR disponible'
+                                : 'Se habilitara cuando el mecanico este en camino o finalice el trabajo',
                           ),
                         ],
                       ),
@@ -154,7 +154,7 @@ class RequestDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Este es el espacio donde se conectara la pasarela real. Tu companero solo tendra que enlazar el proveedor y la confirmacion del pago.',
+                    'Escanea el QR, realiza el pago con el monto definido por el taller y confirma la transaccion.',
                     style: TextStyle(
                       color: Color(0xFF6F655B),
                       fontSize: 12,
@@ -163,9 +163,11 @@ class RequestDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   FilledButton.tonalIcon(
-                    onPressed: () => _showPaymentPlaceholder(context),
+                    onPressed: request.paymentReady
+                        ? () => _showPaymentQr(context, controller, request)
+                        : null,
                     icon: const Icon(Icons.payment_outlined),
-                    label: const Text('Ver checkout preparado'),
+                    label: const Text('Pagar por QR'),
                   ),
                 ],
               ),
@@ -180,11 +182,8 @@ class RequestDetailScreen extends StatelessWidget {
                   ),
                   onPressed: controller.loading
                       ? null
-                      : () => _confirmCancelRequest(
-                            context,
-                            controller,
-                            request,
-                          ),
+                      : () =>
+                            _confirmCancelRequest(context, controller, request),
                   icon: const Icon(Icons.cancel_outlined),
                   label: const Text('Cancelar solicitud'),
                 ),
@@ -215,7 +214,7 @@ class RequestDetailScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Los adjuntos se conservan localmente mientras el backend no tenga carga de archivos.',
+                    'Los adjuntos enviados quedan disponibles para el taller y el mecanico asignado.',
                     style: TextStyle(
                       color: Color(0xFF6F655B),
                       fontSize: 12,
@@ -245,18 +244,59 @@ class RequestDetailScreen extends StatelessWidget {
     return null;
   }
 
-  void _showPaymentPlaceholder(BuildContext context) {
+  void _showPaymentQr(
+    BuildContext context,
+    AppController controller,
+    EmergencyRequest request,
+  ) {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Checkout pendiente'),
-        content: const Text(
-          'Aqui se abrira la pasarela cuando el proveedor real este conectado. La interfaz ya esta reservada para ese paso.',
+        title: Text('Pago QR - Servicio #${request.id}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Image.asset(
+                'assets/payment_qr.jpeg',
+                width: 220,
+                height: 220,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              request.precioCobrado == null
+                  ? 'Monto definido por el taller'
+                  : 'Monto: Bs ${request.precioCobrado!.toStringAsFixed(2)}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Referencia: Solicitud #${request.id}',
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Cerrar'),
+          ),
+          FilledButton(
+            onPressed: controller.loading
+                ? null
+                : () async {
+                    await controller.payRequest(
+                      request.id,
+                      amount: request.precioCobrado,
+                    );
+                    if (dialogContext.mounted) {
+                      Navigator.of(dialogContext).pop();
+                    }
+                  },
+            child: const Text('Confirmar pago'),
           ),
         ],
       ),

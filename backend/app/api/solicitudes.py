@@ -65,6 +65,10 @@ class PagoPayload(BaseModel):
     metodo: Optional[str] = "tarjeta"
 
 
+class CostoPayload(BaseModel):
+    monto: float
+
+
 def simular_procesamiento_ia(descripcion: str):
     clasificacion = "General"
     prioridad = "Baja"
@@ -1332,6 +1336,43 @@ def cancelar_solicitud(
             tecnico.disponible = True
             session.add(tecnico)
 
+    session.add(solicitud)
+    session.commit()
+    session.refresh(solicitud)
+    return build_solicitud_read(session, solicitud)
+
+
+@router.patch("/{solicitud_id}/costo", response_model=SolicitudRead)
+def actualizar_costo_solicitud(
+    *,
+    session: Session = Depends(get_session),
+    solicitud_id: int,
+    payload: CostoPayload,
+    current_user: User = Depends(get_current_user),
+):
+    solicitud = session.get(Solicitud, solicitud_id)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+
+    if current_user.role not in (UserRole.WORKSHOP, UserRole.ADMIN):
+        raise HTTPException(status_code=403, detail="Solo el taller puede definir el monto del servicio")
+
+    if current_user.role == UserRole.WORKSHOP:
+        taller = _obtener_taller_actual(session, current_user)
+        if solicitud.taller_id != taller.id:
+            raise HTTPException(status_code=403, detail="Solo puedes cobrar servicios asignados a tu taller")
+
+    if solicitud.estado == EstadoSolicitud.CANCELADA:
+        raise HTTPException(status_code=400, detail="No se puede cobrar una solicitud cancelada")
+    if solicitud.estado_pago == "pagado":
+        raise HTTPException(status_code=400, detail="No se puede modificar un servicio ya pagado")
+
+    monto = round(float(payload.monto), 2)
+    if monto <= 0:
+        raise HTTPException(status_code=400, detail="Monto de pago invalido")
+
+    solicitud.precio_cobrado = monto
+    solicitud.comision_plataforma = round(monto * 0.10, 2)
     session.add(solicitud)
     session.commit()
     session.refresh(solicitud)

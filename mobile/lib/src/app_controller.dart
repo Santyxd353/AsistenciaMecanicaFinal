@@ -617,6 +617,29 @@ class AppController extends ChangeNotifier {
     });
   }
 
+  Future<void> updateRequestCost(int requestId, double amount) async {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    await _executeWithLoading(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final storage = LocalRepository(prefs);
+      final updated = await ApiClient(
+        baseUrl: _baseUrl,
+        token: _accessToken,
+      ).updateRequestCost(requestId, amount: amount);
+      _replaceRequest(updated);
+      _pushNotification(
+        title: 'Cobro actualizado',
+        message:
+            'La solicitud #${updated.id} tiene monto Bs ${amount.toStringAsFixed(2)}.',
+        requestId: updated.id,
+      );
+      await _refreshRemoteData(storage);
+    });
+  }
+
   Future<VehiclePhotoPreview> previewVehicleFromPhotos(
     List<String> imagePaths,
   ) async {

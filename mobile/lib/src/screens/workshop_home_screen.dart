@@ -111,7 +111,7 @@ class WorkshopHomeScreen extends StatelessWidget {
                   child: _MetricCard(
                     label: 'Cobro listo',
                     value: '${controller.paymentReadyCount}',
-                    caption: 'Servicios donde ya puede abrirse checkout',
+                    caption: 'Servicios listos para pago QR',
                   ),
                 ),
               ],
@@ -195,7 +195,6 @@ class WorkshopHomeScreen extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _HeroCard extends StatelessWidget {

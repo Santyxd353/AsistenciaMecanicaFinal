@@ -528,6 +528,15 @@
   font-weight: 700;
 }
 
+.taller-solicitudes-alerta-exito {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #edf9ef;
+  border: 1px solid #bfe7c7;
+  color: #166534;
+  font-weight: 700;
+}
+
 .taller-solicitudes-detalle-ia {
   background: #fff4e8;
 }

@@ -77,4 +77,12 @@ export class SolicitudService {
   actualizarMiAsignacionEstado(solicitudId: number, estado: string): Observable<Solicitud> {
     return this.http.patch<Solicitud>(`${this.apiUrl}mis-asignaciones/${solicitudId}/estado?estado=${estado}`, {});
   }
+
+  actualizarCosto(solicitudId: number, monto: number): Observable<Solicitud> {
+    return this.http.patch<Solicitud>(`${this.apiUrl}${solicitudId}/costo`, { monto });
+  }
+
+  pagarSolicitud(solicitudId: number, monto?: number): Observable<Solicitud> {
+    return this.http.post<Solicitud>(`${this.apiUrl}${solicitudId}/pago`, monto ? { monto } : {});
+  }
 }

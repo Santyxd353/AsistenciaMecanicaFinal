@@ -3,7 +3,7 @@
     <div class="taller-solicitudes-hero-acciones">
       <a routerLink="/taller" class="taller-solicitudes-volver">Volver al panel del taller</a>
       <button type="button" class="taller-solicitudes-accion-principal" (click)="abrirNuevaSolicitud()">
-        Nueva solicitud de prueba
+        Nueva solicitud manual
       </button>
     </div>
     <p class="taller-solicitudes-kicker">Operacion del taller</p>
@@ -222,6 +222,45 @@
           </div>
         </div>
 
+        <div class="taller-solicitudes-detalle-seccion">
+          <span class="taller-solicitudes-detalle-label">Cobro del servicio</span>
+          <div class="taller-solicitudes-form-grid">
+            <label class="taller-solicitudes-campo">
+              <span>Monto a cobrar (Bs)</span>
+              <input
+                [(ngModel)]="montoCobro"
+                type="number"
+                min="1"
+                step="0.01"
+                placeholder="Ej. 120.00"
+              />
+            </label>
+            <div class="taller-solicitudes-detalle-card">
+              <span class="taller-solicitudes-detalle-label">Comision plataforma</span>
+              <strong>{{ comisionCobroLabel }}</strong>
+            </div>
+          </div>
+          <p class="taller-solicitudes-subtexto">
+            El cliente vera este monto en la pasarela QR cuando el servicio este en camino o finalizado.
+          </p>
+          <div *ngIf="errorCostoSolicitud" class="taller-solicitudes-alerta-error">
+            {{ errorCostoSolicitud }}
+          </div>
+          <div *ngIf="mensajeCostoSolicitud" class="taller-solicitudes-alerta-exito">
+            {{ mensajeCostoSolicitud }}
+          </div>
+          <div class="taller-solicitudes-mapa-acciones">
+            <button
+              type="button"
+              class="taller-solicitudes-boton-primario"
+              [disabled]="guardandoCostoSolicitud"
+              (click)="guardarCostoSolicitud()"
+            >
+              {{ guardandoCostoSolicitud ? 'Guardando...' : 'Guardar monto' }}
+            </button>
+          </div>
+        </div>
+
         <div *ngIf="errorAceptarSolicitud" class="taller-solicitudes-alerta-error">
           {{ errorAceptarSolicitud }}
         </div>
@@ -303,15 +342,15 @@
     <div class="taller-solicitudes-modal taller-solicitudes-modal-formulario" role="dialog" aria-modal="true">
       <div class="taller-solicitudes-modal-header">
         <div>
-          <p class="taller-solicitudes-kicker">Pruebas</p>
-          <h2>Nueva solicitud de prueba</h2>
+          <p class="taller-solicitudes-kicker">Registro manual</p>
+          <h2>Nueva solicitud manual</h2>
         </div>
         <button type="button" class="taller-solicitudes-modal-close" (click)="cerrarNuevaSolicitud()">✕</button>
       </div>
 
       <div class="taller-solicitudes-modal-body">
         <p class="taller-solicitudes-subtexto">
-          Usa este formulario temporal para poblar solicitudes y validar el flujo del taller.
+          Registra una solicitud operativa para asignarla al taller y validar la atencion.
         </p>
 
         <label class="taller-solicitudes-campo">
