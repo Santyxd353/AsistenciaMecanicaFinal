@@ -17,7 +17,7 @@ from PIL import Image, ImageEnhance, ImageOps, ImageStat
 from app.services.storage import guess_mime_type
 
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_TIMEOUT_SECONDS = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "25"))
 HF_VEHICLE_MODEL = os.getenv("HF_VEHICLE_MODEL", "therealcyberlord/stanford-car-vit-patch16").strip()
 
@@ -267,10 +267,11 @@ def _analyze_with_gemini(
 
 def _analyze_vehicle_with_gemini(*, image_paths: list[str], file_names: list[str]) -> VehiclePhotoAnalysis:
     prompt = (
-        "Analiza las fotos de un vehiculo y devuelve solo JSON valido con estas claves exactas: "
-        "placa, marca, modelo, anio, color, resumen. "
+        "Eres un perito automotriz. Analiza las fotos de un vehiculo y devuelve solo JSON valido, sin markdown, "
+        "con estas claves exactas: placa, marca, modelo, anio, color, resumen. "
         "Si es una foto clara del exterior de un auto, identifica marca, modelo aproximado, anio aproximado y color. "
-        "Es obligatorio devolver tu mejor estimacion de marca/modelo/color si se ve un auto, aunque no estes 100% seguro. "
+        "Es obligatorio devolver tu mejor estimacion de marca, modelo y color si se ve un auto, aunque no estes 100% seguro. "
+        "No uses palabras del nombre del archivo como placa. No inventes placa si no se ve claramente. "
         "Si la placa es visible, transcribela. Si no hay placa visible devuelve cadena vacia en placa. "
         "Usa inferencias razonables cuando el modelo del auto sea reconocible, pero marca en resumen si el anio es aproximado. "
         "Si no puedes inferir el anio devuelve null. "
@@ -285,21 +286,23 @@ def _analyze_vehicle_with_gemini(*, image_paths: list[str], file_names: list[str
                     "text": (
                         "Nombre original del archivo: "
                         f"{file_names[index].strip()}. "
-                        "Usalo solo como pista complementaria si coincide con la imagen."
+                        "No lo uses para placa. Usalo solo como pista de marca/modelo si coincide visualmente."
                     )
                 }
             )
-        parts.append(_file_part(path))
+        parts.append(_image_file_part_for_gemini(path))
 
-    payload = {
+    payload: dict[str, object] = {
         "contents": [{"parts": parts}],
         "generationConfig": {
             "temperature": 0.1,
-            "responseMimeType": "application/json",
         },
     }
 
-    text = _extract_text(_call_gemini(payload))
+    try:
+        text = _extract_text(_call_gemini({**payload, "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"}}))
+    except Exception:
+        text = _extract_text(_call_gemini(payload))
     data = _parse_json_object(text)
 
     anio_value = data.get("anio")
@@ -474,6 +477,26 @@ def _file_part(path: str) -> dict[str, object]:
     }
 
 
+def _image_file_part_for_gemini(path: str) -> dict[str, object]:
+    file_path = Path(path)
+    try:
+        image = Image.open(file_path).convert("RGB")
+        image.thumbnail((1280, 1280))
+        from io import BytesIO
+
+        buffer = BytesIO()
+        image.save(buffer, format="JPEG", quality=82, optimize=True)
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        return {
+            "inline_data": {
+                "mime_type": "image/jpeg",
+                "data": encoded,
+            }
+        }
+    except Exception:
+        return _file_part(path)
+
+
 def _gemini_model_candidates() -> list[str]:
     configured = (GEMINI_MODEL or "").strip()
     candidates = [
@@ -537,8 +560,12 @@ def _extract_text(payload: dict[str, object]) -> str:
     parts = content.get("parts")
     if not isinstance(parts, list) or not parts:
         raise ValueError("Gemini no devolvio partes.")
-    text = parts[0].get("text")
-    if not isinstance(text, str) or not text.strip():
+    text = "\n".join(
+        part.get("text", "")
+        for part in parts
+        if isinstance(part, dict) and isinstance(part.get("text"), str)
+    ).strip()
+    if not text:
         raise ValueError("Gemini no devolvio texto.")
     return text
 
@@ -556,7 +583,10 @@ def _parse_json_object(text: str) -> dict[str, object]:
         end = cleaned.rfind("}")
         if start == -1 or end == -1 or end <= start:
             raise
-        payload = json.loads(cleaned[start:end + 1])
+        candidate = cleaned[start:end + 1]
+        candidate = re.sub(r",\s*}", "}", candidate)
+        candidate = re.sub(r",\s*]", "]", candidate)
+        payload = json.loads(candidate)
 
     if not isinstance(payload, dict):
         raise ValueError("Gemini no devolvio un objeto JSON.")
@@ -651,6 +681,10 @@ def _find_plate(text: str) -> str:
         "RENAULT",
         "COROLLA",
         "FRONT",
+        "SCALED",
+        "IMG",
+        "JPEG",
+        "JPG",
         "SEDAN",
         "PHOTO",
         "IMAGE",
