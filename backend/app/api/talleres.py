@@ -10,11 +10,39 @@ from app.models.domain import (
     TallerCreate,
     TallerRead,
     TallerUpdate,
+    Tenant,
 )
 from app.models.user import User, UserRole
 from app.api.deps import get_current_user
 
 router = APIRouter()
+
+
+@router.get("/public/search")
+def buscar_talleres_publico(
+    q: str,
+    session: Session = Depends(get_session),
+):
+    texto = q.strip()
+    if len(texto) < 2:
+        return []
+    talleres = session.exec(
+        select(Taller)
+        .where(Taller.activo == True)
+        .where(Taller.nombre_comercial.ilike(f"%{texto}%"))
+        .limit(15)
+    ).all()
+    response = []
+    for taller in talleres:
+        tenant = session.get(Tenant, taller.tenant_id) if taller.tenant_id else None
+        response.append({
+            "id": taller.id,
+            "nombre_comercial": taller.nombre_comercial,
+            "direccion": taller.direccion,
+            "tenant_id": taller.tenant_id,
+            "tenant_nombre": tenant.nombre if tenant else None,
+        })
+    return response
 
 
 def _obtener_especialidades_taller(
@@ -64,7 +92,9 @@ def crear_taller(
 
     # Verificar que el usuario no tenga ya un taller
     existing_taller = session.exec(
-        select(Taller).where(Taller.propietario_id == current_user.id)
+        select(Taller)
+        .where(Taller.propietario_id == current_user.id)
+        .where(Taller.tenant_id == current_user.tenant_id)
     ).first()
 
     if existing_taller:
@@ -79,7 +109,8 @@ def crear_taller(
     taller_data = taller_in.model_dump(exclude={"especialidad_ids"})
     taller = Taller(
         **taller_data,
-        propietario_id=current_user.id
+        propietario_id=current_user.id,
+        tenant_id=current_user.tenant_id,
     )
     taller.especialidades = especialidades
 
@@ -100,7 +131,9 @@ def obtener_mi_taller(
     Obtener la información del taller del usuario actual.
     """
     taller = session.exec(
-        select(Taller).where(Taller.propietario_id == current_user.id)
+        select(Taller)
+        .where(Taller.propietario_id == current_user.id)
+        .where(Taller.tenant_id == current_user.tenant_id)
     ).first()
 
     if not taller:
@@ -123,7 +156,9 @@ def actualizar_mi_taller(
     Actualizar la información del taller del usuario actual.
     """
     taller = session.exec(
-        select(Taller).where(Taller.propietario_id == current_user.id)
+        select(Taller)
+        .where(Taller.propietario_id == current_user.id)
+        .where(Taller.tenant_id == current_user.tenant_id)
     ).first()
 
     if not taller:
@@ -159,7 +194,9 @@ def obtener_estadisticas_taller(
     Obtener estadísticas del taller del usuario actual.
     """
     taller = session.exec(
-        select(Taller).where(Taller.propietario_id == current_user.id)
+        select(Taller)
+        .where(Taller.propietario_id == current_user.id)
+        .where(Taller.tenant_id == current_user.tenant_id)
     ).first()
 
     if not taller:
@@ -178,6 +215,7 @@ def obtener_estadisticas_taller(
             func.sum(Solicitud.comision_plataforma).label("comisiones_totales")
         ).where(
             Solicitud.taller_id == taller.id,
+            Solicitud.tenant_id == taller.tenant_id,
             Solicitud.estado == EstadoSolicitud.RESUELTA
         )
     ).first()
@@ -190,7 +228,7 @@ def obtener_estadisticas_taller(
             func.sum(
                 case((Tecnico.disponible == True, 1), else_=0)
             ).label("tecnicos_disponibles")
-        ).where(Tecnico.taller_id == taller.id)
+        ).where(Tecnico.taller_id == taller.id, Tecnico.tenant_id == taller.tenant_id)
     ).first()
 
     return {

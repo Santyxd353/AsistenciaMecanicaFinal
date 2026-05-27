@@ -39,7 +39,7 @@ export interface VehiclePhotoPreview {
   providedIn: 'root'
 })
 export class VehicleService {
-  private apiUrl = 'https://backend-958497253028.europe-west1.run.app/api/v1/vehiculos/';
+  private apiUrl = 'http://localhost:8000/api/v1/vehiculos/';
 
   constructor(private http: HttpClient) {}
 

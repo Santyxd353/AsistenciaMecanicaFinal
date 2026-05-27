@@ -6,13 +6,14 @@ import { timeout } from 'rxjs';
 
 import { AuthService } from '../core/auth.service';
 import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-profile.service';
+import { KpiDashboardComponent } from '../shared/kpi-dashboard/kpi-dashboard.component';
 
 @Component({
   selector: 'app-workshop-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiDashboardComponent],
   template: `
-    <div class="dashboard-shell">
+    <div class="dashboard-shell" [class.dark-mode]="darkMode">
       <header class="topbar">
         <div class="brand">
           <div class="brand-mark">
@@ -28,6 +29,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
 
         <div class="topbar-actions">
           <button class="btn-ghost" (click)="cargarDatos()">Actualizar</button>
+          <button class="btn-ghost" (click)="toggleDarkMode()">{{ darkMode ? 'Modo claro' : 'Modo oscuro' }}</button>
           <button class="btn-ghost" (click)="logout()">Cerrar sesión</button>
         </div>
       </header>
@@ -107,6 +109,8 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
             </article>
           </section>
         </ng-template>
+
+        <app-kpi-dashboard></app-kpi-dashboard>
 
         <section class="dashboard-grid">
           <article class="panel detail-panel" *ngIf="mostrarPerfil">
@@ -205,6 +209,11 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
                 <span class="action-badge">Equipo</span>
                 <strong>Gestionar técnicos</strong>
                 <p>Administra disponibilidad y especialidades del personal.</p>
+              </button>
+              <button class="action-card" (click)="irAAdministradores()">
+                <span class="action-badge">SaaS</span>
+                <strong>Administradores</strong>
+                <p>Gestiona accesos administrativos y limites del plan.</p>
               </button>
               <button class="action-card" (click)="irASolicitudes()">
                 <span class="action-badge">Atención</span>
@@ -357,7 +366,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
       min-height: 100vh;
       background:
         radial-gradient(circle at top left, rgba(218, 119, 30, 0.18), transparent 28%),
-        linear-gradient(180deg, #f9efe2 0%, #f5f7fb 46%, #ffffff 100%);
+        linear-gradient(180deg, #eef2f7 0%, #f8fafc 46%, #ffffff 100%);
       color: #18120e;
     }
 
@@ -366,7 +375,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     .panel,
     .loading-card {
       background: rgba(255, 255, 255, 0.9);
-      border: 1px solid #eadcca;
+      border: 1px solid #dbe3ef;
       box-shadow: 0 16px 42px rgba(64, 37, 18, 0.08);
     }
 
@@ -396,8 +405,8 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
       border-radius: 16px;
       display: grid;
       place-items: center;
-      background: linear-gradient(135deg, #201510 0%, #d26b1c 100%);
-      color: #fff7ef;
+      background: linear-gradient(135deg, #0f172a 0%, #0e7490 100%);
+      color: #ffffff;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
     }
 
@@ -406,7 +415,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.16em;
-      color: #9f6b3d;
+      color: #0e7490;
       font-weight: 800;
     }
 
@@ -448,18 +457,18 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     }
 
     .btn-primary {
-      background: #171411;
+      background: #0f172a;
       color: #ffffff;
     }
 
     .btn-secondary {
-      background: #f4ebdf;
-      color: #4d3d2f;
+      background: #e0f2fe;
+      color: #075985;
     }
 
     .btn-ghost {
-      background: #fff7ef;
-      color: #3e2e22;
+      background: #ffffff;
+      color: #0f172a;
       border: 1px solid #ead7c2;
     }
 
@@ -498,7 +507,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
 
     .hero-text {
       margin: 0;
-      color: #6a594b;
+      color: #475569;
       line-height: 1.6;
       max-width: 760px;
     }
@@ -514,15 +523,15 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
       min-width: 170px;
       padding: 14px 16px;
       border-radius: 18px;
-      background: #fff8ef;
-      border: 1px solid #efdfcd;
+      background: #f8fafc;
+      border: 1px solid #dbe3ef;
       display: flex;
       flex-direction: column;
       gap: 4px;
     }
 
     .meta-chip span {
-      color: #8d6b4f;
+      color: #64748b;
       font-size: 12px;
       font-weight: 700;
       text-transform: uppercase;
@@ -531,7 +540,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
 
     .meta-chip strong {
       font-size: 15px;
-      color: #231912;
+      color: #0f172a;
       line-height: 1.35;
     }
 
@@ -545,7 +554,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     .health-card {
       border-radius: 24px;
       background: rgba(255, 255, 255, 0.68);
-      border: 1px solid #efdfcd;
+      border: 1px solid #dbe3ef;
       padding: 20px;
       display: flex;
       flex-direction: column;
@@ -598,7 +607,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
       border-radius: 24px;
       padding: 20px;
       background: rgba(255,255,255,0.86);
-      border: 1px solid #eadcca;
+      border: 1px solid #dbe3ef;
       box-shadow: 0 12px 34px rgba(64, 37, 18, 0.06);
       display: flex;
       flex-direction: column;
@@ -606,7 +615,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     }
 
     .stat-card-strong {
-      background: linear-gradient(145deg, #1c1612 0%, #64411f 100%);
+      background: linear-gradient(145deg, #0f172a 0%, #0e7490 100%);
       color: #fff8f1;
     }
 
@@ -632,7 +641,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
 
     .stat-card p {
       margin: 0;
-      color: #6d5c4d;
+      color: #475569;
       line-height: 1.5;
       font-size: 13px;
     }
@@ -664,7 +673,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     .panel-head p:last-child {
       max-width: 320px;
       margin: 0;
-      color: #6c5b4d;
+      color: #475569;
       line-height: 1.6;
       font-size: 14px;
     }
@@ -675,7 +684,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.16em;
-      color: #a3632b;
+      color: #0e7490;
     }
 
     .detail-panel {
@@ -696,15 +705,15 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     .info-item {
       padding: 16px;
       border-radius: 18px;
-      background: #fff8ef;
-      border: 1px solid #efdfcd;
+      background: #f8fafc;
+      border: 1px solid #dbe3ef;
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
 
     .info-item span {
-      color: #8d6b4f;
+      color: #64748b;
       font-size: 12px;
       font-weight: 700;
       text-transform: uppercase;
@@ -726,8 +735,8 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     .tag {
       padding: 8px 12px;
       border-radius: 999px;
-      background: #f5ecdf;
-      color: #7b582f;
+      background: #e0f2fe;
+      color: #075985;
       font-size: 12px;
       font-weight: 700;
     }
@@ -742,8 +751,8 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
       text-align: left;
       padding: 18px;
       border-radius: 22px;
-      background: #fffaf4;
-      border: 1px solid #efdfcd;
+      background: #ffffff;
+      border: 1px solid #dbe3ef;
       display: flex;
       flex-direction: column;
       gap: 8px;
@@ -753,8 +762,8 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
       align-self: flex-start;
       padding: 7px 10px;
       border-radius: 999px;
-      background: #f4ebdf;
-      color: #8a5b31;
+      background: #e0f2fe;
+      color: #075985;
       font-size: 11px;
       font-weight: 800;
       text-transform: uppercase;
@@ -769,7 +778,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
 
     .action-card p {
       margin: 0;
-      color: #6f5d4e;
+      color: #475569;
       line-height: 1.6;
       font-size: 14px;
     }
@@ -790,21 +799,21 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     .analytics-card {
       padding: 18px;
       border-radius: 20px;
-      background: #fff8ef;
-      border: 1px solid #efdfcd;
+      background: #f8fafc;
+      border: 1px solid #dbe3ef;
       display: flex;
       flex-direction: column;
       gap: 8px;
     }
 
     .analytics-card-strong {
-      background: linear-gradient(145deg, #1c1612 0%, #64411f 100%);
+      background: linear-gradient(145deg, #0f172a 0%, #0e7490 100%);
       color: #fff8f1;
       border-color: transparent;
     }
 
     .analytics-card span {
-      color: #8d6b4f;
+      color: #64748b;
       font-size: 12px;
       font-weight: 700;
       text-transform: uppercase;
@@ -820,12 +829,12 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     .analytics-card strong {
       font-size: 26px;
       line-height: 1.05;
-      color: #241a13;
+      color: #0f172a;
     }
 
     .analytics-card p {
       margin: 0;
-      color: #6d5c4d;
+      color: #475569;
       line-height: 1.55;
       font-size: 13px;
     }
@@ -839,8 +848,8 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     .insight-callout,
     .insight-list {
       border-radius: 20px;
-      background: #fffaf4;
-      border: 1px solid #efdfcd;
+      background: #ffffff;
+      border: 1px solid #dbe3ef;
       padding: 18px;
     }
 
@@ -858,13 +867,13 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
       display: block;
       font-size: 22px;
       line-height: 1.1;
-      color: #241a13;
+      color: #0f172a;
       margin-bottom: 8px;
     }
 
     .insight-callout p {
       margin: 0;
-      color: #6d5c4d;
+      color: #475569;
       line-height: 1.6;
     }
 
@@ -877,7 +886,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     }
 
     .insight-list li {
-      color: #6d5c4d;
+      color: #475569;
       line-height: 1.55;
       padding-left: 18px;
       position: relative;
@@ -888,7 +897,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #d26b1c;
+      background: #0e7490;
       position: absolute;
       left: 0;
       top: 8px;
@@ -897,15 +906,15 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     .mini-metric {
       padding: 16px;
       border-radius: 18px;
-      background: #fff8ef;
-      border: 1px solid #efdfcd;
+      background: #f8fafc;
+      border: 1px solid #dbe3ef;
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
 
     .mini-metric span {
-      color: #8d6b4f;
+      color: #64748b;
       font-size: 12px;
       font-weight: 700;
       text-transform: uppercase;
@@ -915,7 +924,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     .mini-metric strong {
       font-size: 22px;
       line-height: 1.1;
-      color: #251b14;
+      color: #0f172a;
     }
 
     .notification-list {
@@ -930,9 +939,9 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     .notification-list li {
       padding: 14px 16px;
       border-radius: 16px;
-      background: #fffaf4;
-      border: 1px solid #efdfcd;
-      color: #7a6653;
+      background: #ffffff;
+      border: 1px solid #dbe3ef;
+      color: #475569;
       font-weight: 700;
     }
 
@@ -954,8 +963,8 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
       gap: 12px;
       padding: 14px 16px;
       border-radius: 18px;
-      background: #fffaf4;
-      border: 1px solid #efdfcd;
+      background: #ffffff;
+      border: 1px solid #dbe3ef;
       cursor: pointer;
       transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
     }
@@ -982,11 +991,11 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     .notification-toggle strong {
       font-size: 15px;
       line-height: 1.2;
-      color: #231912;
+      color: #0f172a;
     }
 
     .notification-toggle span {
-      color: #6d5c4d;
+      color: #475569;
       font-size: 13px;
       line-height: 1.5;
     }
@@ -1021,7 +1030,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
     .empty-copy,
     .error-banner {
       margin: 0;
-      color: #6a5a4c;
+      color: #475569;
       line-height: 1.6;
     }
 
@@ -1057,7 +1066,7 @@ import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-
 
     .loading-card p:last-child {
       margin: 0;
-      color: #6c5b4d;
+      color: #475569;
       line-height: 1.6;
     }
 
@@ -1143,6 +1152,7 @@ export class WorkshopDashboardComponent implements OnInit {
   taller: Taller | null = null;
   estadisticas: WorkshopStats | null = null;
   mostrarPerfil = false;
+  darkMode = localStorage.getItem('theme') === 'dark';
   cargando = true;
   errorCarga = '';
   savingNotifications = false;
@@ -1169,7 +1179,18 @@ export class WorkshopDashboardComponent implements OnInit {
       return;
     }
 
+    this.applyTheme();
     this.cargarDatos();
+  }
+
+  toggleDarkMode(): void {
+    this.darkMode = !this.darkMode;
+    localStorage.setItem('theme', this.darkMode ? 'dark' : 'light');
+    this.applyTheme();
+  }
+
+  private applyTheme(): void {
+    document.body.classList.toggle('dark-mode', this.darkMode);
   }
 
   cargarDatos() {
@@ -1414,6 +1435,10 @@ export class WorkshopDashboardComponent implements OnInit {
     this.router.navigate(['/taller/tecnicos']);
   }
 
+  irAAdministradores() {
+    this.router.navigate(['/taller/administradores']);
+  }
+
   irASolicitudes() {
     this.router.navigate(['/taller/solicitudes']);
   }
@@ -1462,3 +1487,4 @@ export class WorkshopDashboardComponent implements OnInit {
     this.router.navigate(['/login']);
   }
 }
+

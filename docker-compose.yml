@@ -11,6 +11,13 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mechanical-net
 
   backend:
     build:
@@ -20,15 +27,27 @@ services:
     restart: always
     volumes:
       - ./backend:/app
+      - backend_uploads:/app/uploads
     ports:
       - "8000:8000"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - SECRET_KEY=${SECRET_KEY}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL}
+      - ALGORITHM=${ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:4200,http://127.0.0.1:4200}
+      - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-small}
+      - WHISPER_DEVICE=${WHISPER_DEVICE:-cpu}
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
+      - HF_VEHICLE_MODEL=${HF_VEHICLE_MODEL:-}
+      - HF_DAMAGE_MODEL=${HF_DAMAGE_MODEL:-}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    networks:
+      - mechanical-net
 
   frontend:
     build:
@@ -38,11 +57,20 @@ services:
     restart: always
     ports:
       - "4200:4200"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+    # NO bind mount del código fuente: la imagen contiene el build de
+    # producción (`dist/frontend/browser`) y `serve` lo expone directamente.
+    # Si se montara `./frontend:/app` el bind ocultaría el build con el
+    # árbol de fuentes del host y `serve` listaría carpetas en lugar de la
+    # SPA. Para dev con hot-reload usar `ng serve` localmente.
     depends_on:
       - backend
+    networks:
+      - mechanical-net
 
 volumes:
   postgres_data:
+  backend_uploads:
+
+networks:
+  mechanical-net:
+    driver: bridge

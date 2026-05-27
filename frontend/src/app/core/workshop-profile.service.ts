@@ -84,7 +84,7 @@ export interface UpdateTallerPayload {
   providedIn: 'root'
 })
 export class WorkshopProfileService {
-  private apiUrl = 'https://backend-958497253028.europe-west1.run.app/api/v1/talleres';
+  private apiUrl = 'http://localhost:8000/api/v1/talleres';
 
   constructor(private http: HttpClient) {}
 
@@ -113,15 +113,12 @@ export class WorkshopProfileService {
    * Obtener estadísticas del taller del usuario actual
    */
   getWorkshopStats(): Observable<WorkshopStats | null> {
-    /*
-    return this.http.get<WorkshopStats>(`${this.apiUrl}/workshop/stats`).pipe(
-      catchError((error : unknown) => {
+    return this.http.get<WorkshopStats>(`${this.apiUrl}/estadisticas`).pipe(
+      catchError((error: unknown) => {
         console.error('Error loading stats:', error);
         return of(null);
-      })
+      }),
     );
-    */
-    return of(null);
   }
   
 }

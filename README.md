@@ -76,21 +76,33 @@ Esta sección te explica cómo correr el proyecto desde cero utilizando **Docker
 El proyecto maneja sus credenciales de manera segura con un archivo `.env` en la raíz, que utiliza el servicio `docker-compose.yml`. A continuación se explica qué poner en el este archivo (ejemplo de configuración local para desarrollo):
 
 ```ini
-# Configuración de PostgreSQL
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
+# Configuración de PostgreSQL (sustituye los valores por credenciales propias)
+POSTGRES_USER=<usuario_db>
+POSTGRES_PASSWORD=<password_seguro>
 POSTGRES_DB=sistema_mecanico
 POSTGRES_HOST=db
 POSTGRES_PORT=5432
 
 # URL de conexión para la base de datos desde el backend
 # Utiliza "db" como host porque los contenedores dentro de Docker Compose se comunican a través de los nombres de servicio
-DATABASE_URL=postgresql://postgres:postgres@db:5432/sistema_mecanico
+DATABASE_URL=postgresql://<usuario_db>:<password_seguro>@db:5432/sistema_mecanico
 
 # Seguridad para la autenticación y tokens en FastAPI
-SECRET_KEY=your-super-secret-key-12345
+# IMPORTANTE: generar con `python -c "import secrets; print(secrets.token_urlsafe(48))"`
+# Nunca commitear un valor real ni reutilizar la clave de otros entornos.
+SECRET_KEY=<reemplazar_con_clave_aleatoria_48b>
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# CORS (lista separada por comas con los orígenes del frontend que pueden llamar a la API).
+CORS_ALLOWED_ORIGINS=http://localhost:4200,http://127.0.0.1:4200
+
+# IA opcional
+GEMINI_API_KEY=<opcional_clave_google_ai>
+GEMINI_MODEL=gemini-2.0-flash
+WHISPER_MODEL_SIZE=small
+WHISPER_DEVICE=cpu
+WHISPER_COMPUTE_TYPE=int8
 ```
 
 **Nota para desarrollo local:** Al estar orquestados los servicios en `docker-compose`, el backend ubica la base de datos a través de la red de contenedores usando el host `db` (que referencía al contenedor `db`), por eso el `DATABASE_URL` lleva `@db:5432`.

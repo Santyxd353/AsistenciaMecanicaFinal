@@ -108,7 +108,18 @@ async def crear_vehiculo(
     payload = await _read_vehicle_payload(request)
     vehiculo_in = VehiculoCreate.model_validate(payload)
     vehiculo = Vehiculo.model_validate(vehiculo_in)
+    vehiculo.placa = vehiculo.placa.strip().upper()
+    if not vehiculo.placa:
+        raise HTTPException(status_code=400, detail="La placa es obligatoria.")
+    duplicado = session.exec(
+        select(Vehiculo)
+        .where(Vehiculo.tenant_id == current_user.tenant_id)
+        .where(Vehiculo.placa == vehiculo.placa)
+    ).first()
+    if duplicado:
+        raise HTTPException(status_code=400, detail="Ya existe un vehiculo con esa placa en tu tenant.")
     vehiculo.propietario_id = current_user.id
+    vehiculo.tenant_id = current_user.tenant_id
     session.add(vehiculo)
 
     if foto:
@@ -139,6 +150,7 @@ def listar_vehiculos(
     statement = (
         select(Vehiculo)
         .where(Vehiculo.propietario_id == current_user.id)
+        .where(Vehiculo.tenant_id == current_user.tenant_id)
         .offset(skip)
         .limit(limit)
     )
@@ -154,7 +166,11 @@ def obtener_vehiculo(
     current_user: User = Depends(get_current_user),
 ):
     vehiculo = session.get(Vehiculo, vehiculo_id)
-    if not vehiculo or vehiculo.propietario_id != current_user.id:
+    if (
+        not vehiculo
+        or vehiculo.propietario_id != current_user.id
+        or vehiculo.tenant_id != current_user.tenant_id
+    ):
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
     return vehiculo
 
@@ -169,12 +185,29 @@ async def actualizar_vehiculo(
     current_user: User = Depends(get_current_user),
 ):
     vehiculo = session.get(Vehiculo, vehiculo_id)
-    if not vehiculo or vehiculo.propietario_id != current_user.id:
+    if (
+        not vehiculo
+        or vehiculo.propietario_id != current_user.id
+        or vehiculo.tenant_id != current_user.tenant_id
+    ):
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
 
     payload = await _read_vehicle_payload(request)
     vehiculo_in = VehiculoUpdate.model_validate(payload)
     update_data = vehiculo_in.model_dump(exclude_unset=True)
+    if "placa" in update_data and update_data["placa"] is not None:
+        placa = str(update_data["placa"]).strip().upper()
+        if not placa:
+            raise HTTPException(status_code=400, detail="La placa es obligatoria.")
+        duplicado = session.exec(
+            select(Vehiculo)
+            .where(Vehiculo.tenant_id == current_user.tenant_id)
+            .where(Vehiculo.placa == placa)
+            .where(Vehiculo.id != vehiculo.id)
+        ).first()
+        if duplicado:
+            raise HTTPException(status_code=400, detail="Ya existe un vehiculo con esa placa en tu tenant.")
+        update_data["placa"] = placa
     for field, value in update_data.items():
         setattr(vehiculo, field, value)
 

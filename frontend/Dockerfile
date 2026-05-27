@@ -7,6 +7,10 @@ RUN npm ci
 
 COPY . .
 RUN npm run build -- --configuration production
+# Mantiene PWA en app-worker.js y deja ngsw-worker.js como safety worker.
+# Esto limpia caches viejos que estaban sirviendo pantallas anteriores en 127.0.0.1.
+RUN cp /app/dist/frontend/browser/ngsw-worker.js /app/dist/frontend/browser/app-worker.js \
+    && cp /app/dist/frontend/browser/safety-worker.js /app/dist/frontend/browser/ngsw-worker.js
 
 FROM node:22-alpine
 

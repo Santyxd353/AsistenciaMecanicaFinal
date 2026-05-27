@@ -10,3 +10,11 @@ __pycache__/
 # Archivos de logs
 *.log
 
+# Archivos locales de asistentes y temporales
+.claude/
+tmp/
+tmp_pdf_requirements.txt
+
+# Archivos subidos/generados en runtime
+backend/uploads/
+

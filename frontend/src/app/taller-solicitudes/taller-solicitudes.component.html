@@ -222,6 +222,48 @@
           </div>
         </div>
 
+        <div class="taller-solicitudes-detalle-seccion" *ngIf="puedeCotizarSolicitud">
+          <span class="taller-solicitudes-detalle-label">Cotizacion para el cliente</span>
+          <div class="taller-solicitudes-form-grid">
+            <label class="taller-solicitudes-campo">
+              <span>Costo estimado (Bs)</span>
+              <input [(ngModel)]="cotizacionDraft.costo_estimado" type="number" min="1" step="0.01" />
+            </label>
+            <label class="taller-solicitudes-campo">
+              <span>ETA llegada (min)</span>
+              <input [(ngModel)]="cotizacionDraft.eta_llegada_minutos" type="number" min="1" step="1" />
+            </label>
+            <label class="taller-solicitudes-campo">
+              <span>Reparacion (horas)</span>
+              <input [(ngModel)]="cotizacionDraft.tiempo_reparacion_horas" type="number" min="0.5" step="0.5" />
+            </label>
+            <label class="taller-solicitudes-campo">
+              <span>Garantia (dias)</span>
+              <input [(ngModel)]="cotizacionDraft.garantia_dias" type="number" min="0" step="1" />
+            </label>
+          </div>
+          <label class="taller-solicitudes-campo">
+            <span>Detalle</span>
+            <textarea [(ngModel)]="cotizacionDraft.descripcion" rows="3" placeholder="Incluye repuestos, diagnostico y condiciones"></textarea>
+          </label>
+          <label class="taller-solicitudes-checkbox">
+            <input type="checkbox" [(ngModel)]="cotizacionDraft.incluye_repuestos" />
+            <span>Incluye repuestos</span>
+          </label>
+          <div *ngIf="errorCotizacion" class="taller-solicitudes-alerta-error">{{ errorCotizacion }}</div>
+          <div *ngIf="mensajeCotizacion" class="taller-solicitudes-alerta-exito">{{ mensajeCotizacion }}</div>
+          <div class="taller-solicitudes-mapa-acciones">
+            <button
+              type="button"
+              class="taller-solicitudes-boton-primario"
+              [disabled]="guardandoCotizacion"
+              (click)="enviarCotizacion()"
+            >
+              {{ guardandoCotizacion ? 'Enviando...' : 'Enviar cotizacion' }}
+            </button>
+          </div>
+        </div>
+
         <div class="taller-solicitudes-detalle-seccion">
           <span class="taller-solicitudes-detalle-label">Cobro del servicio</span>
           <div class="taller-solicitudes-form-grid">

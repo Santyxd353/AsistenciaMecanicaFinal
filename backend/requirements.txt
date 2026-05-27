@@ -11,3 +11,10 @@ python-dotenv
 firebase-admin
 pytesseract
 Pillow
+# WebSocket sync→async bridge usado por los broadcasts en handlers sync.
+anyio
+# IA: clasificación de marca/modelo y daño con HuggingFace Vision Transformer.
+transformers
+torch
+# IA: transcripción local de audio (CPU, int8) — alternativa MVP a Gemini.
+faster-whisper

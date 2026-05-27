@@ -38,6 +38,7 @@ export class MapaGeolocalizacionComponent implements AfterViewInit, OnChanges, O
   private readonly platformId = inject(PLATFORM_ID);
   private mapa: L.Map | null = null;
   private marcadores: L.CircleMarker[] = [];
+  private ruta: L.Polyline | null = null;
   errorRenderMapa = false;
 
   get puntosValidos(): PuntoMapaGeolocalizacion[] {
@@ -67,6 +68,8 @@ export class MapaGeolocalizacionComponent implements AfterViewInit, OnChanges, O
   }
 
   ngOnDestroy(): void {
+    this.ruta?.remove();
+    this.ruta = null;
     if (this.mapa) {
       this.mapa.remove();
       this.mapa = null;
@@ -117,6 +120,8 @@ export class MapaGeolocalizacionComponent implements AfterViewInit, OnChanges, O
     try {
       this.marcadores.forEach((marcador) => marcador.remove());
       this.marcadores = [];
+      this.ruta?.remove();
+      this.ruta = null;
 
       const bounds = L.latLngBounds([]);
 
@@ -129,6 +134,20 @@ export class MapaGeolocalizacionComponent implements AfterViewInit, OnChanges, O
         this.marcadores.push(marcador);
         bounds.extend(L.latLng(punto.latitud as number, punto.longitud as number));
       });
+
+      const rutaPuntos = this.puntosValidos
+        .filter((punto) => punto.tipo !== 'incidente')
+        .concat(this.puntosValidos.filter((punto) => punto.tipo === 'incidente'))
+        .map((punto) => [punto.latitud as number, punto.longitud as number] as L.LatLngExpression);
+
+      if (rutaPuntos.length >= 2) {
+        this.ruta = L.polyline(rutaPuntos, {
+          color: '#111827',
+          weight: 4,
+          opacity: 0.72,
+          dashArray: '8 8',
+        }).addTo(this.mapa as L.Map);
+      }
 
       if (this.puntosValidos.length === 1) {
         const unico = this.puntosValidos[0];

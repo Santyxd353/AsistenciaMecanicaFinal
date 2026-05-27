@@ -12,6 +12,7 @@ from app.core.security import get_password_hash
 from app.db.session import get_session
 from app.models.domain import Especialidad, Taller, Tecnico, TecnicoRead
 from app.models.user import User, UserRole
+from app.services.subscription_limits import ensure_can_create_mechanic
 
 router = APIRouter()
 
@@ -61,7 +62,9 @@ class TecnicoIn(BaseModel):
 
 def obtener_taller_del_usuario(session: Session, current_user: User) -> Taller | None:
     return session.exec(
-        select(Taller).where(Taller.propietario_id == current_user.id)
+        select(Taller)
+        .where(Taller.propietario_id == current_user.id)
+        .where(Taller.tenant_id == current_user.tenant_id)
     ).first()
 
 
@@ -241,6 +244,10 @@ def crear_tecnico(
 
     if not taller:
         raise HTTPException(status_code=400, detail="Debes tener un taller registrado para crear tecnicos")
+    if current_user.tenant_id is not None and taller.tenant_id != current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="No puedes crear tecnicos en otro tenant")
+    if taller.tenant_id is not None:
+        ensure_can_create_mechanic(session, taller.tenant_id)
 
     ci_value = tecnico_in.ci or f"AUTO{secrets.token_hex(3).upper()}"[:10]
     direccion_value = tecnico_in.direccion or "Pendiente"
@@ -252,6 +259,7 @@ def crear_tecnico(
         full_name=tecnico_in.nombre,
         role=UserRole.TECNICO,
         is_active=tecnico_in.activo,
+        tenant_id=taller.tenant_id,
         hashed_password=get_password_hash(password_temporal),
     )
     session.add(usuario)
@@ -267,6 +275,7 @@ def crear_tecnico(
         longitud=tecnico_in.longitud,
         id_usuario=usuario.id,
         taller_id=taller.id,
+        tenant_id=taller.tenant_id,
     )
     tecnico.especialidades = _resolver_especialidades(session, tecnico_in)
 
@@ -298,12 +307,15 @@ def listar_tecnicos(
     current_user: User = Depends(get_current_user),
 ):
     if current_user.role == UserRole.ADMIN:
-        return session.exec(
+        statement = (
             select(Tecnico)
             .options(selectinload(Tecnico.especialidades))
             .offset(skip)
             .limit(limit)
-        ).all()
+        )
+        if current_user.tenant_id is not None:
+            statement = statement.where(Tecnico.tenant_id == current_user.tenant_id)
+        return session.exec(statement).all()
 
     taller = obtener_taller_del_usuario(session, current_user)
     if not taller:
@@ -313,6 +325,7 @@ def listar_tecnicos(
         select(Tecnico)
         .options(selectinload(Tecnico.especialidades))
         .where(Tecnico.taller_id == taller.id)
+        .where(Tecnico.tenant_id == taller.tenant_id)
         .offset(skip).limit(limit)
     ).all()
     return tecnicos
@@ -330,9 +343,12 @@ def actualizar_disponibilidad(
     if not tecnico:
         raise HTTPException(status_code=404, detail="Tecnico no encontrado")
 
+    if current_user.role == UserRole.ADMIN and current_user.tenant_id is not None and tecnico.tenant_id != current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tienes permisos para modificar este tecnico")
+
     if current_user.role != UserRole.ADMIN:
         taller = obtener_taller_del_usuario(session, current_user)
-        if not taller or tecnico.taller_id != taller.id:
+        if not taller or tecnico.taller_id != taller.id or tecnico.tenant_id != taller.tenant_id:
             raise HTTPException(status_code=403, detail="No tienes permisos para modificar este tecnico")
 
     tecnico.disponible = disponible
@@ -398,10 +414,12 @@ def actualizar_tecnico(
         raise HTTPException(status_code=404, detail="Técnico no encontrado")
 
     taller = session.exec(
-        select(Taller).where(Taller.propietario_id == current_user.id)
+        select(Taller)
+        .where(Taller.propietario_id == current_user.id)
+        .where(Taller.tenant_id == current_user.tenant_id)
     ).first()
 
-    if not taller or tecnico.taller_id != taller.id:
+    if not taller or tecnico.taller_id != taller.id or tecnico.tenant_id != taller.tenant_id:
         raise HTTPException(status_code=403, detail="Sin permisos")
 
     update_data = data.model_dump(exclude_unset=True)
@@ -447,10 +465,12 @@ def convertir_tecnico_a_usuario(
         raise HTTPException(status_code=404, detail="Técnico no encontrado")
 
     taller = session.exec(
-        select(Taller).where(Taller.propietario_id == current_user.id)
+        select(Taller)
+        .where(Taller.propietario_id == current_user.id)
+        .where(Taller.tenant_id == current_user.tenant_id)
     ).first()
 
-    if not taller or tecnico.taller_id != taller.id:
+    if not taller or tecnico.taller_id != taller.id or tecnico.tenant_id != taller.tenant_id:
         raise HTTPException(status_code=403, detail="Sin permisos")
 
     if tecnico.id_usuario is not None:
@@ -465,6 +485,7 @@ def convertir_tecnico_a_usuario(
         full_name=tecnico.nombre,
         role=UserRole.TECNICO,
         is_active=tecnico.activo,
+        tenant_id=taller.tenant_id,
         hashed_password=get_password_hash(data.password),
     )
 
@@ -507,10 +528,12 @@ def eliminar_tecnico(
         raise HTTPException(status_code=404, detail="No encontrado")
 
     taller = session.exec(
-        select(Taller).where(Taller.propietario_id == current_user.id)
+        select(Taller)
+        .where(Taller.propietario_id == current_user.id)
+        .where(Taller.tenant_id == current_user.tenant_id)
     ).first()
 
-    if not taller or tecnico.taller_id != taller.id:
+    if not taller or tecnico.taller_id != taller.id or tecnico.tenant_id != taller.tenant_id:
         raise HTTPException(status_code=403, detail="Sin permisos")
 
     session.delete(tecnico)

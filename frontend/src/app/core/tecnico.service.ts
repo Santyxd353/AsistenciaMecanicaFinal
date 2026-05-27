@@ -40,7 +40,7 @@ export interface TecnicoUsuarioPayload {
   providedIn: 'root'
 })
 export class TecnicoService {
-  private apiUrl = 'https://backend-958497253028.europe-west1.run.app/api/v1/tecnicos';
+  private apiUrl = 'http://localhost:8000/api/v1/tecnicos';
 
   constructor(private http: HttpClient) {}
 

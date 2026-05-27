@@ -1,52 +1,105 @@
 import { Routes } from '@angular/router';
-import { LoginComponent } from './login/login.component';
-import { DashboardComponent } from './dashboard/dashboard.component';
-import { ClientPortalComponent } from './client-portal/client-portal.component';
-import { LogoutComponent } from './logout/logout.component';
-import { ResetPasswordComponent } from './reset-password/reset-password.component';
-import { WorkshopDashboardComponent } from './workshop-dashboard/workshop-dashboard.component';
-import { WorkshopSetupComponent } from './workshop-setup/workshop-setup.component';
+import { AdminGuard } from './core/admin.guard';
 import { ClientGuard } from './core/client.guard';
 import { CreateWorkshopGuard } from './core/create-workshop.guard';
 import { TecnicoGuard } from './core/tecnico.guard';
 import { WorkshopGuard } from './core/workshop.guard';
-import { WorkshopLikeGuard } from './core/workshop-like.guard';
-import { PanelTecnicoComponent } from './tecnicos/panel-tecnico.component';
-import { TallerSolicitudesComponent } from './taller-solicitudes/taller-solicitudes.component';
-
-import { TecnicosComponent } from './workshop-dashboard/tecnicos/tecnicos.component';
 
 export const routes: Routes = [
   { path: '', redirectTo: '/login', pathMatch: 'full' },
-  { path: 'login', component: LoginComponent },
-  { path: 'reset-password', component: ResetPasswordComponent },
-  { path: 'logout', component: LogoutComponent },
-  { path: 'cliente', component: ClientPortalComponent, canActivate: [ClientGuard] },
-  { path: 'tecnico', component: PanelTecnicoComponent, canActivate: [TecnicoGuard] },
-  { path: 'dashboard', component: DashboardComponent, canActivate: [WorkshopLikeGuard] },
+  {
+    path: 'login/admin',
+    loadComponent: () => import('./login-admin/login-admin.component').then((m) => m.LoginAdminComponent),
+  },
+  {
+    path: 'login/usuarios',
+    loadComponent: () => import('./login-users/login-users.component').then((m) => m.LoginUsersComponent),
+  },
+  {
+    path: 'login/trabajadores',
+    loadComponent: () => import('./login-workers/login-workers.component').then((m) => m.LoginWorkersComponent),
+  },
+  {
+    path: 'login',
+    loadComponent: () => import('./login-selector/login-selector.component').then((m) => m.LoginSelectorComponent),
+  },
+  {
+    path: 'login/legacy',
+    loadComponent: () => import('./login/login.component').then((m) => m.LoginComponent),
+  },
+  {
+    path: 'planes',
+    loadComponent: () => import('./plans/plans.component').then((m) => m.PlansComponent),
+  },
+  {
+    path: 'checkout/:plan',
+    loadComponent: () => import('./checkout/checkout.component').then((m) => m.CheckoutComponent),
+  },
+  {
+    path: 'onboarding/taller',
+    loadComponent: () => import('./onboarding-workshop/onboarding-workshop.component').then((m) => m.OnboardingWorkshopComponent),
+  },
+  {
+    path: 'upgrade-plan',
+    loadComponent: () => import('./upgrade-plan/upgrade-plan.component').then((m) => m.UpgradePlanComponent),
+    canActivate: [WorkshopGuard],
+  },
+  {
+    path: 'reset-password',
+    loadComponent: () => import('./reset-password/reset-password.component').then((m) => m.ResetPasswordComponent),
+  },
+  {
+    path: 'logout',
+    loadComponent: () => import('./logout/logout.component').then((m) => m.LogoutComponent),
+  },
+  {
+    path: 'cliente',
+    loadComponent: () => import('./client-portal/client-portal.component').then((m) => m.ClientPortalComponent),
+    canActivate: [ClientGuard],
+  },
+  {
+    path: 'tecnico',
+    loadComponent: () => import('./tecnicos/panel-tecnico.component').then((m) => m.PanelTecnicoComponent),
+    canActivate: [TecnicoGuard],
+  },
+  {
+    path: 'dashboard',
+    loadComponent: () => import('./dashboard/dashboard.component').then((m) => m.DashboardComponent),
+    canActivate: [AdminGuard],
+  },
+  {
+    path: 'superadmin',
+    loadComponent: () => import('./dashboard/dashboard.component').then((m) => m.DashboardComponent),
+    canActivate: [AdminGuard],
+  },
   {
     path: 'taller',
-    component: WorkshopDashboardComponent,
+    loadComponent: () => import('./workshop-dashboard/workshop-dashboard.component').then((m) => m.WorkshopDashboardComponent),
     canActivate: [WorkshopGuard]
   },
   {
     path: 'crear-taller',
-    component: WorkshopSetupComponent,
+    loadComponent: () => import('./workshop-setup/workshop-setup.component').then((m) => m.WorkshopSetupComponent),
     canActivate: [CreateWorkshopGuard]
   },
   {
     path: 'taller/perfil',
-    component: WorkshopSetupComponent,
+    loadComponent: () => import('./workshop-setup/workshop-setup.component').then((m) => m.WorkshopSetupComponent),
     canActivate: [WorkshopGuard]
   },
   {
     path: 'taller/tecnicos',
-    component: TecnicosComponent,
+    loadComponent: () => import('./workshop-dashboard/tecnicos/tecnicos.component').then((m) => m.TecnicosComponent),
+    canActivate: [WorkshopGuard]
+  },
+  {
+    path: 'taller/administradores',
+    loadComponent: () => import('./workshop-dashboard/admins/admins.component').then((m) => m.AdminsComponent),
     canActivate: [WorkshopGuard]
   },
   {
     path: 'taller/solicitudes',
-    component: TallerSolicitudesComponent,
+    loadComponent: () => import('./taller-solicitudes/taller-solicitudes.component').then((m) => m.TallerSolicitudesComponent),
     canActivate: [WorkshopGuard]
   },
   { path: '**', redirectTo: '/login' }

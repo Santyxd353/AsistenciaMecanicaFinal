@@ -28,6 +28,8 @@ def listar_notificaciones(
     statement = select(Notificacion).where(
         Notificacion.destinatario_id == current_user.id
     )
+    if current_user.tenant_id is not None:
+        statement = statement.where(Notificacion.tenant_id == current_user.tenant_id)
 
     if solo_no_leidas:
         statement = statement.where(Notificacion.leida == False)
@@ -54,6 +56,7 @@ def contar_notificaciones_no_leidas(
     total = session.exec(
         select(func.count(Notificacion.id)).where(
             Notificacion.destinatario_id == current_user.id,
+            Notificacion.tenant_id == current_user.tenant_id,
             Notificacion.leida == False,
         )
     ).one()
@@ -70,6 +73,7 @@ def marcar_todas_como_leidas(
     notificaciones = session.exec(
         select(Notificacion).where(
             Notificacion.destinatario_id == current_user.id,
+            Notificacion.tenant_id == current_user.tenant_id,
             Notificacion.leida == False,
         )
     ).all()
@@ -91,7 +95,11 @@ def marcar_notificacion_como_leida(
 ):
     notificacion = session.get(Notificacion, notificacion_id)
 
-    if not notificacion or notificacion.destinatario_id != current_user.id:
+    if (
+        not notificacion
+        or notificacion.destinatario_id != current_user.id
+        or notificacion.tenant_id != current_user.tenant_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Notificacion no encontrada.",

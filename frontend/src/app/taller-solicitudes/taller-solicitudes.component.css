@@ -519,6 +519,20 @@
   border-color: #d37627;
 }
 
+.taller-solicitudes-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  color: #5b4737;
+  font-weight: 800;
+}
+
+.taller-solicitudes-checkbox input {
+  width: 18px;
+  height: 18px;
+}
+
 .taller-solicitudes-alerta-error {
   padding: 12px 14px;
   border-radius: 16px;

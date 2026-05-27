@@ -3,7 +3,8 @@ import unicodedata
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+import anyio
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlmodel import Session, select
@@ -11,10 +12,24 @@ from sqlmodel import Session, select
 from app.api.deps import get_current_user
 from app.db.session import get_session
 from app.models.domain import (
+    AnalisisIA,
+    CalificacionCreate,
+    CalificacionRead,
+    CalificacionServicio,
+    ChatMensaje,
+    ChatMensajeCreate,
+    ChatMensajeRead,
+    EstadoCandidato,
     EstadoSolicitud,
     Evidencia,
+    Pago,
+    PagoRead,
     Solicitud,
+    SolicitudCandidato,
+    SolicitudCandidatoRead,
     SolicitudCreate,
+    SolicitudHistorial,
+    SolicitudHistorialRead,
     SolicitudRead,
     Taller,
     Tecnico,
@@ -24,13 +39,69 @@ from app.models.domain import (
 )
 from app.models.user import User, UserRole
 from app.services.ai import analyze_incident, summarize_audio_file
+from app.services.assignment import generar_candidatos, marcar_candidato, siguiente_candidato
+from app.services.audit import registrar_auditoria, registrar_historial_solicitud
 from app.services.notificaciones import crear_notificacion, crear_notificaciones_para_usuarios
+from app.services.realtime import manager as realtime_manager, solicitud_room, taller_room
 from app.services.storage import save_upload_file, url_to_path
 
 router = APIRouter()
 
 RADIO_TALLERES_CANDIDATOS_KM = 25.0
 MAX_TALLERES_CANDIDATOS = 12
+
+ESTADOS_CERRADOS = {
+    EstadoSolicitud.RESUELTA,
+    EstadoSolicitud.CANCELADA,
+    EstadoSolicitud.FINALIZADO,
+    EstadoSolicitud.CANCELADO,
+}
+
+ESTADOS_PENDIENTES_TALLER = {
+    EstadoSolicitud.PENDIENTE,
+    EstadoSolicitud.BUSCANDO_TALLER,
+}
+
+ESTADO_ALIASES = {
+    "en_progreso": EstadoSolicitud.TECNICO_EN_CAMINO,
+    "llegada": EstadoSolicitud.TECNICO_LLEGO,
+    "resuelta": EstadoSolicitud.FINALIZADO,
+    "cancelada": EstadoSolicitud.CANCELADO,
+}
+
+
+def normalizar_estado_operativo(estado: str | EstadoSolicitud) -> EstadoSolicitud:
+    if isinstance(estado, EstadoSolicitud):
+        return ESTADO_ALIASES.get(estado.value, estado)
+    estado_normalizado = estado.strip()
+    if estado_normalizado in ESTADO_ALIASES:
+        return ESTADO_ALIASES[estado_normalizado]
+    try:
+        return EstadoSolicitud(estado_normalizado)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Estado invalido. Estados validos: {[item.value for item in EstadoSolicitud]}",
+        ) from exc
+
+
+def estado_es_cerrado(estado: EstadoSolicitud) -> bool:
+    return estado in ESTADOS_CERRADOS
+
+
+async def _broadcast_solicitud_update(solicitud_id: int, payload: dict) -> None:
+    await realtime_manager.broadcast_room(
+        solicitud_room(solicitud_id),
+        "solicitud.actualizada",
+        payload,
+    )
+
+
+def emitir_solicitud_update(solicitud_id: int, payload: dict) -> None:
+    try:
+        anyio.from_thread.run(_broadcast_solicitud_update, solicitud_id, payload)
+    except RuntimeError:
+        pass
 
 
 def _obtener_taller_actual(session: Session, current_user: User) -> Taller:
@@ -163,7 +234,10 @@ def obtener_talleres_candidatos_para_notificar(
     session: Session,
     solicitud: Solicitud,
 ) -> list[Taller]:
-    talleres = session.exec(select(Taller)).all()
+    statement = select(Taller)
+    if solicitud.tenant_id is not None:
+        statement = statement.where(Taller.tenant_id == solicitud.tenant_id)
+    talleres = session.exec(statement).all()
     candidatos: list[tuple[float, Taller]] = []
 
     for taller in talleres:
@@ -521,6 +595,7 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
     tecnico_especialidad = None
     tecnico_latitud = None
     tecnico_longitud = None
+    distancia_tecnico_km = None
     vehiculo_placa = None
     vehiculo_descripcion = None
     audio_url = None
@@ -540,6 +615,11 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
             tecnico_nombre = tecnico.nombre
             tecnico_latitud = tecnico.latitud
             tecnico_longitud = tecnico.longitud
+            if tecnico_latitud is not None and tecnico_longitud is not None:
+                distancia_tecnico_km = round(
+                    haversine_km(solicitud.latitud, solicitud.longitud, tecnico_latitud, tecnico_longitud),
+                    2,
+                )
             if tecnico.especialidades:
                 tecnico_especialidad = ", ".join(
                     especialidad.nombre for especialidad in tecnico.especialidades
@@ -581,6 +661,7 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
             "tecnico_especialidad": tecnico_especialidad,
             "tecnico_latitud": tecnico_latitud,
             "tecnico_longitud": tecnico_longitud,
+            "distancia_tecnico_km": distancia_tecnico_km,
             "vehiculo_placa": vehiculo_placa,
             "vehiculo_descripcion": vehiculo_descripcion,
             "audio_url": audio_url,
@@ -618,12 +699,27 @@ def reanalizar_solicitud_con_evidencias(session: Session, solicitud: Solicitud) 
     solicitud.clasificacion_ia = analysis.clasificacion
     solicitud.prioridad_ia = analysis.prioridad
     solicitud.resumen_ia = analysis.resumen
+    solicitud.especialidad_requerida_ia = analysis.especialidad_requerida
+    solicitud.especialidad_requerida_ia = analysis.especialidad_requerida
     if audio_summary:
         solicitud.resumen_ia = f"{solicitud.resumen_ia}\nResumen del audio: {audio_summary}".strip()
     solicitud.precio_cobrado, solicitud.comision_plataforma = estimate_pricing(
         solicitud.clasificacion_ia,
         solicitud.prioridad_ia,
     )
+    session.add(
+        AnalisisIA(
+            solicitud_id=solicitud.id or 0,
+            tenant_id=solicitud.tenant_id,
+            modalidad="multimodal",
+            clasificacion=analysis.clasificacion,
+            prioridad=analysis.prioridad,
+            resumen=analysis.resumen,
+            especialidad_requerida=analysis.especialidad_requerida,
+            proveedor="gemini-o-fallback",
+        )
+    )
+    generar_candidatos(session, solicitud)
     session.add(solicitud)
 
 
@@ -659,6 +755,13 @@ def notificar_reporte_actualizado(
 
 
 def ensure_request_visible_to_user(session: Session, solicitud: Solicitud, current_user: User) -> None:
+    if (
+        current_user.tenant_id is not None
+        and solicitud.tenant_id is not None
+        and current_user.tenant_id != solicitud.tenant_id
+    ):
+        raise HTTPException(status_code=403, detail="Solicitud fuera de tu tenant")
+
     if current_user.role == UserRole.ADMIN:
         return
 
@@ -667,8 +770,8 @@ def ensure_request_visible_to_user(session: Session, solicitud: Solicitud, curre
         solicitud_asignada_al_taller = taller and solicitud.taller_id == taller.id
         solicitud_pendiente_candidata = (
             taller
-            and solicitud.taller_id is None
-            and solicitud.estado == EstadoSolicitud.PENDIENTE
+            and solicitud.taller_id in {None, taller.id}
+            and solicitud.estado in ESTADOS_PENDIENTES_TALLER
             and taller_es_candidato_para_solicitud(session, taller, solicitud)
         )
 
@@ -690,7 +793,10 @@ def ensure_request_visible_to_user(session: Session, solicitud: Solicitud, curre
 
 
 def assign_best_technician(session: Session, solicitud: Solicitud) -> tuple[Optional[Tecnico], Optional[Taller]]:
-    tecnicos = session.exec(select(Tecnico).where(Tecnico.disponible == True)).all()
+    statement = select(Tecnico).where(Tecnico.disponible == True)
+    if solicitud.tenant_id is not None:
+        statement = statement.where(Tecnico.tenant_id == solicitud.tenant_id)
+    tecnicos = session.exec(statement).all()
     if not tecnicos:
         return None, None
 
@@ -715,7 +821,10 @@ def assign_best_technician(session: Session, solicitud: Solicitud) -> tuple[Opti
 
 
 def assign_best_workshop(session: Session, solicitud: Solicitud) -> Optional[Taller]:
-    talleres = session.exec(select(Taller)).all()
+    statement = select(Taller)
+    if solicitud.tenant_id is not None:
+        statement = statement.where(Taller.tenant_id == solicitud.tenant_id)
+    talleres = session.exec(statement).all()
     if not talleres:
         return None
 
@@ -736,7 +845,7 @@ def assign_best_workshop(session: Session, solicitud: Solicitud) -> Optional[Tal
 
 
 def update_service_totals(session: Session, solicitud: Solicitud, was_resolved: bool) -> None:
-    if was_resolved or solicitud.estado != EstadoSolicitud.RESUELTA or not solicitud.taller_id:
+    if was_resolved or solicitud.estado not in {EstadoSolicitud.RESUELTA, EstadoSolicitud.FINALIZADO} or not solicitud.taller_id:
         return
 
     taller = session.get(Taller, solicitud.taller_id)
@@ -750,11 +859,34 @@ def update_service_totals(session: Session, solicitud: Solicitud, was_resolved: 
 @router.post("/", response_model=SolicitudRead)
 def crear_solicitud(
     *,
+    request: Request,
     session: Session = Depends(get_session),
     solicitud_in: SolicitudCreate,
     current_user: User = Depends(get_current_user),
 ):
     solicitud = Solicitud.model_validate(solicitud_in)
+    cliente_sync_id = (
+        solicitud_in.cliente_sync_id
+        or request.headers.get("X-Idempotency-Key")
+        or ""
+    ).strip() or None
+
+    if cliente_sync_id:
+        existing_statement = (
+            select(Solicitud)
+            .where(Solicitud.tenant_id == current_user.tenant_id)
+            .where(Solicitud.cliente_sync_id == cliente_sync_id)
+        )
+        if current_user.role == UserRole.DRIVER:
+            existing_statement = (
+                existing_statement
+                .join(Vehiculo)
+                .where(Vehiculo.propietario_id == current_user.id)
+            )
+        existente = session.exec(existing_statement).first()
+        if existente:
+            return build_solicitud_read(session, existente)
+
     analysis = analyze_incident(descripcion=solicitud.descripcion)
     solicitud.clasificacion_ia = analysis.clasificacion
     solicitud.prioridad_ia = analysis.prioridad
@@ -775,14 +907,52 @@ def crear_solicitud(
     solicitud.estado = EstadoSolicitud.PENDIENTE
     solicitud.taller_id = None
     solicitud.tecnico_id = None
+    solicitud.cliente_sync_id = cliente_sync_id
     solicitud.tiempo_estimado_minutos = None
+    # Multi-tenant: la solicitud hereda el tenant del cliente. Si el cliente
+    # es admin global sin tenant la solicitud se crea sin tenant (no es un
+    # caso esperado en producción).
+    solicitud.tenant_id = current_user.tenant_id
 
     session.add(solicitud)
+    session.flush()
+    session.add(
+        AnalisisIA(
+            solicitud_id=solicitud.id or 0,
+            modalidad="texto",
+            clasificacion=solicitud.clasificacion_ia or "Incidente general",
+            prioridad=solicitud.prioridad_ia or "Baja",
+            resumen=solicitud.resumen_ia or "",
+            especialidad_requerida=solicitud.especialidad_requerida_ia,
+            proveedor="gemini-o-fallback",
+            tenant_id=solicitud.tenant_id,
+        )
+    )
+    registrar_historial_solicitud(
+        session,
+        solicitud_id=solicitud.id or 0,
+        estado_anterior=None,
+        estado_nuevo=EstadoSolicitud.PENDIENTE.value,
+        actor=current_user,
+        comentario="Solicitud creada por el cliente.",
+    )
+    generar_candidatos(session, solicitud)
+    if solicitud.estado == EstadoSolicitud.BUSCANDO_TALLER:
+        registrar_historial_solicitud(
+            session,
+            solicitud_id=solicitud.id or 0,
+            estado_anterior=EstadoSolicitud.PENDIENTE.value,
+            estado_nuevo=EstadoSolicitud.BUSCANDO_TALLER.value,
+            actor=current_user,
+            comentario="Motor de asignacion genero talleres candidatos.",
+        )
     session.commit()
     session.refresh(solicitud)
     notificar_talleres_candidatos(session, solicitud)
     session.commit()
-    return build_solicitud_read(session, solicitud)
+    payload = build_solicitud_read(session, solicitud)
+    emitir_solicitud_update(solicitud.id or 0, payload.model_dump())
+    return payload
 
 
 @router.get("/", response_model=List[SolicitudRead])
@@ -794,6 +964,8 @@ def listar_solicitudes(
     current_user: User = Depends(get_current_user),
 ):
     statement = select(Solicitud).offset(skip).limit(limit)
+    if current_user.tenant_id is not None:
+        statement = statement.where(Solicitud.tenant_id == current_user.tenant_id)
 
     if current_user.role == UserRole.ADMIN:
         solicitudes = session.exec(statement).all()
@@ -804,6 +976,7 @@ def listar_solicitudes(
         solicitudes = session.exec(
             select(Solicitud)
             .where(Solicitud.taller_id == taller.id)
+            .where(Solicitud.tenant_id == taller.tenant_id)
             .offset(skip)
             .limit(limit)
         ).all()
@@ -812,6 +985,7 @@ def listar_solicitudes(
             select(Solicitud)
             .join(Vehiculo)
             .where(Vehiculo.propietario_id == current_user.id)
+            .where(Solicitud.tenant_id == current_user.tenant_id)
             .offset(skip)
             .limit(limit)
         ).all()
@@ -836,8 +1010,9 @@ def listar_solicitudes_pendientes_taller(
 
     solicitudes = session.exec(
         select(Solicitud)
+        .where(Solicitud.tenant_id == taller.tenant_id)
         .where(or_(Solicitud.taller_id.is_(None), Solicitud.taller_id == taller.id))
-        .where(Solicitud.estado == EstadoSolicitud.PENDIENTE)
+        .where(Solicitud.estado.in_(list(ESTADOS_PENDIENTES_TALLER)))
         .order_by(Solicitud.fecha_creacion.desc())
     ).all()
 
@@ -858,7 +1033,10 @@ def listar_mis_solicitudes_taller(    skip: int = 0,
     current_user: User = Depends(get_current_user)
 ):
     if current_user.role == UserRole.ADMIN:
-        solicitudes = session.exec(select(Solicitud).offset(skip).limit(limit)).all()
+        statement = select(Solicitud).offset(skip).limit(limit)
+        if current_user.tenant_id is not None:
+            statement = statement.where(Solicitud.tenant_id == current_user.tenant_id)
+        solicitudes = session.exec(statement).all()
         return [build_solicitud_read(session, solicitud) for solicitud in solicitudes]
 
     taller = obtener_taller_del_usuario(session, current_user)
@@ -866,7 +1044,11 @@ def listar_mis_solicitudes_taller(    skip: int = 0,
         return []
 
     solicitudes = session.exec(
-        select(Solicitud).where(Solicitud.taller_id == taller.id).offset(skip).limit(limit)
+        select(Solicitud)
+        .where(Solicitud.taller_id == taller.id)
+        .where(Solicitud.tenant_id == taller.tenant_id)
+        .offset(skip)
+        .limit(limit)
     ).all()
     return [build_solicitud_read(session, solicitud) for solicitud in solicitudes]
 
@@ -884,6 +1066,7 @@ def listar_reportes_cliente(
         solicitudes = session.exec(
             select(Solicitud)
             .where(Solicitud.taller_id == taller.id)
+            .where(Solicitud.tenant_id == taller.tenant_id)
             .order_by(Solicitud.fecha_creacion.desc())
             .offset(skip)
             .limit(limit)
@@ -900,6 +1083,7 @@ def listar_reportes_cliente(
         select(Solicitud)
         .join(Vehiculo)
         .where(Vehiculo.propietario_id == current_user.id)
+        .where(Solicitud.tenant_id == current_user.tenant_id)
         .order_by(Solicitud.fecha_creacion.desc())
         .offset(skip)
         .limit(limit)
@@ -927,6 +1111,7 @@ def listar_mis_asignaciones(
     solicitudes = session.exec(
         select(Solicitud)
         .where(Solicitud.tecnico_id == tecnico.id)
+        .where(Solicitud.tenant_id == tecnico.tenant_id)
         .order_by(Solicitud.fecha_creacion.desc())
         .offset(skip)
         .limit(limit)
@@ -958,49 +1143,63 @@ def actualizar_mi_asignacion_estado(
             detail="La asignacion no existe o no pertenece a este tecnico.",
         )
 
-    try:
-        nuevo_estado = EstadoSolicitud(estado)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Estado inválido. Estados válidos: {[e.value for e in EstadoSolicitud]}",
-        )
+    nuevo_estado = normalizar_estado_operativo(estado)
 
     if nuevo_estado not in {
-        EstadoSolicitud.EN_PROGRESO,
-        EstadoSolicitud.LLEGADA,
-        EstadoSolicitud.RESUELTA,
-        EstadoSolicitud.CANCELADA,
+        EstadoSolicitud.TECNICO_EN_CAMINO,
+        EstadoSolicitud.TECNICO_LLEGO,
+        EstadoSolicitud.EN_PROCESO,
+        EstadoSolicitud.FINALIZADO,
+        EstadoSolicitud.CANCELADO,
     }:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El mecanico solo puede marcar la asignacion como en progreso, llegada, resuelta o cancelada.",
+            detail="El mecanico solo puede marcar la asignacion como tecnico_en_camino, tecnico_llego, en_proceso, finalizado o cancelado.",
         )
 
+    estado_anterior = solicitud.estado
     solicitud.estado = nuevo_estado
 
-    if nuevo_estado in {EstadoSolicitud.RESUELTA, EstadoSolicitud.CANCELADA}:
+    if nuevo_estado in {EstadoSolicitud.FINALIZADO, EstadoSolicitud.CANCELADO}:
         tecnico.disponible = True
         session.add(tecnico)
 
-    if nuevo_estado == EstadoSolicitud.EN_PROGRESO:
+    if nuevo_estado == EstadoSolicitud.TECNICO_EN_CAMINO:
         tecnico.disponible = False
+        solicitud.tiempo_estimado_minutos = estimate_eta_minutes(solicitud, tecnico, None)
         session.add(tecnico)
         notificar_tecnico_en_camino_conductor(session, solicitud, tecnico)
         notificar_tecnico_en_camino_taller(session, solicitud, tecnico)
-    elif nuevo_estado == EstadoSolicitud.LLEGADA:
+    elif nuevo_estado == EstadoSolicitud.TECNICO_LLEGO:
         tecnico.disponible = False
+        solicitud.tiempo_estimado_minutos = 0
+        solicitud.fecha_tecnico_llego = datetime.utcnow()  # KPI: tiempo de llegada
         session.add(tecnico)
         notificar_llegada_mecanico(session, solicitud, tecnico)
-    elif nuevo_estado == EstadoSolicitud.RESUELTA:
+    elif nuevo_estado == EstadoSolicitud.EN_PROCESO:
+        tecnico.disponible = False
+        solicitud.tiempo_estimado_minutos = 0
+        session.add(tecnico)
+    elif nuevo_estado == EstadoSolicitud.FINALIZADO:
+        solicitud.fecha_finalizado = datetime.utcnow()  # KPI: cumplimiento SLA
         notificar_servicio_terminado(session, solicitud, tecnico)
-    elif nuevo_estado == EstadoSolicitud.CANCELADA:
+    elif nuevo_estado == EstadoSolicitud.CANCELADO:
         notificar_cancelacion_mecanico_a_taller_y_conductor(session, solicitud, tecnico)
 
     session.add(solicitud)
+    registrar_historial_solicitud(
+        session,
+        solicitud_id=solicitud.id or 0,
+        estado_anterior=estado_anterior.value if isinstance(estado_anterior, EstadoSolicitud) else str(estado_anterior),
+        estado_nuevo=nuevo_estado.value,
+        actor=current_user,
+        comentario="Estado actualizado desde el panel del tecnico.",
+    )
     session.commit()
     session.refresh(solicitud)
-    return build_solicitud_read(session, solicitud)
+    payload = build_solicitud_read(session, solicitud)
+    emitir_solicitud_update(solicitud.id or 0, payload.model_dump())
+    return payload
 
 
 @router.patch("/{solicitud_id}/aceptar", response_model=SolicitudRead)
@@ -1021,6 +1220,8 @@ def aceptar_solicitud_taller(
 
     if not solicitud:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    if solicitud.tenant_id != taller.tenant_id:
+        raise HTTPException(status_code=403, detail="Solicitud fuera de tu tenant.")
 
     if solicitud.taller_id is not None and solicitud.taller_id != taller.id:
         raise HTTPException(
@@ -1028,10 +1229,10 @@ def aceptar_solicitud_taller(
             detail="La solicitud ya fue tomada por otro taller.",
         )
 
-    if solicitud.estado != EstadoSolicitud.PENDIENTE:
+    if solicitud.estado not in ESTADOS_PENDIENTES_TALLER:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Solo se pueden aceptar solicitudes pendientes.",
+            detail="Solo se pueden aceptar solicitudes pendientes o en busqueda de taller.",
         )
 
     if not taller_es_candidato_para_solicitud(session, taller, solicitud):
@@ -1041,12 +1242,27 @@ def aceptar_solicitud_taller(
         )
 
     solicitud.taller_id = taller.id
+    solicitud.estado = EstadoSolicitud.ASIGNADA
     solicitud.tiempo_estimado_minutos = estimate_eta_minutes(solicitud, None, taller)
+    # KPI: timestamp del momento exacto en que el taller aceptó. Sirve para
+    # calcular `tiempo_promedio_asignacion` y `sla_cumplimiento` desde DB.
+    solicitud.fecha_taller_asignado = datetime.utcnow()
+    marcar_candidato(session, solicitud, taller.id or 0, EstadoCandidato.ACEPTADO, "Aceptado por el taller.")
+    registrar_historial_solicitud(
+        session,
+        solicitud_id=solicitud.id or 0,
+        estado_anterior=EstadoSolicitud.BUSCANDO_TALLER.value,
+        estado_nuevo=EstadoSolicitud.ASIGNADA.value,
+        actor=current_user,
+        comentario=f"Taller {taller.nombre_comercial} acepto la solicitud.",
+    )
     session.add(solicitud)
     notificar_solicitud_aceptada_conductor(session, solicitud, taller)
     session.commit()
     session.refresh(solicitud)
-    return build_solicitud_read(session, solicitud)
+    payload = build_solicitud_read(session, solicitud)
+    emitir_solicitud_update(solicitud.id or 0, payload.model_dump())
+    return payload
 
 
 @router.patch("/{solicitud_id}/asignar-tecnico", response_model=SolicitudRead)
@@ -1068,6 +1284,8 @@ def asignar_tecnico_solicitud(
 
     if not solicitud:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    if solicitud.tenant_id != taller.tenant_id:
+        raise HTTPException(status_code=403, detail="Solicitud fuera de tu tenant.")
 
     if solicitud.taller_id != taller.id:
         raise HTTPException(
@@ -1076,7 +1294,7 @@ def asignar_tecnico_solicitud(
         )
 
     nuevo_tecnico = session.get(Tecnico, tecnico_id)
-    if not nuevo_tecnico or nuevo_tecnico.taller_id != taller.id:
+    if not nuevo_tecnico or nuevo_tecnico.taller_id != taller.id or nuevo_tecnico.tenant_id != taller.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="El técnico no pertenece a tu taller",
@@ -1089,13 +1307,246 @@ def asignar_tecnico_solicitud(
 
     solicitud.tecnico_id = nuevo_tecnico.id
     solicitud.estado = EstadoSolicitud.ASIGNADA
+    solicitud.tiempo_estimado_minutos = estimate_eta_minutes(solicitud, nuevo_tecnico, taller)
     nuevo_tecnico.disponible = False
     session.add(nuevo_tecnico)
     session.add(solicitud)
+    registrar_historial_solicitud(
+        session,
+        solicitud_id=solicitud.id or 0,
+        estado_anterior=EstadoSolicitud.ASIGNADA.value,
+        estado_nuevo=EstadoSolicitud.ASIGNADA.value,
+        actor=current_user,
+        comentario=f"Tecnico {nuevo_tecnico.nombre} asignado.",
+    )
     notificar_tecnico_asignado(session, solicitud, nuevo_tecnico)
     session.commit()
     session.refresh(solicitud)
-    return build_solicitud_read(session, solicitud)
+    payload = build_solicitud_read(session, solicitud)
+    emitir_solicitud_update(solicitud.id or 0, payload.model_dump())
+    return payload
+
+
+@router.patch("/{solicitud_id}/rechazar", response_model=SolicitudRead)
+def rechazar_solicitud_taller(
+    *,
+    solicitud_id: int,
+    motivo: str = "Rechazada por el taller.",
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRole.WORKSHOP:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los talleres pueden rechazar solicitudes.",
+        )
+
+    taller = _obtener_taller_actual(session, current_user)
+    solicitud = session.get(Solicitud, solicitud_id)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    if solicitud.tenant_id != taller.tenant_id:
+        raise HTTPException(status_code=403, detail="Solicitud fuera de tu tenant.")
+
+    if solicitud.taller_id and solicitud.taller_id != taller.id:
+        raise HTTPException(status_code=403, detail="No puedes rechazar una solicitud de otro taller.")
+
+    marcar_candidato(session, solicitud, taller.id or 0, EstadoCandidato.RECHAZADO, motivo)
+    if solicitud.taller_id == taller.id:
+        solicitud.taller_id = None
+        solicitud.tecnico_id = None
+    solicitud.estado = EstadoSolicitud.BUSCANDO_TALLER
+
+    proximo = siguiente_candidato(session, solicitud)
+    if proximo:
+        proximo.estado = EstadoCandidato.NOTIFICADO
+        solicitud.tiempo_estimado_minutos = proximo.eta_minutos
+        solicitud.distancia_estimada_km = proximo.distancia_km
+        solicitud.asignacion_score = proximo.score
+        session.add(proximo)
+    else:
+        # Si se agotan los candidatos, se regenera el ranking con el estado actual de capacidad.
+        generar_candidatos(session, solicitud)
+
+    registrar_historial_solicitud(
+        session,
+        solicitud_id=solicitud.id or 0,
+        estado_anterior=EstadoSolicitud.ASIGNADA.value,
+        estado_nuevo=EstadoSolicitud.BUSCANDO_TALLER.value,
+        actor=current_user,
+        comentario=motivo,
+    )
+    session.add(solicitud)
+    session.commit()
+    session.refresh(solicitud)
+    payload = build_solicitud_read(session, solicitud)
+    emitir_solicitud_update(solicitud.id or 0, payload.model_dump())
+    return payload
+
+
+@router.get("/{solicitud_id}/candidatos", response_model=list[SolicitudCandidatoRead])
+def listar_candidatos_solicitud(
+    *,
+    solicitud_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    solicitud = session.get(Solicitud, solicitud_id)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    ensure_request_visible_to_user(session, solicitud, current_user)
+    if current_user.role not in {UserRole.ADMIN, UserRole.WORKSHOP}:
+        raise HTTPException(status_code=403, detail="Solo talleres o administradores pueden ver candidatos.")
+
+    if current_user.role == UserRole.WORKSHOP:
+        taller = _obtener_taller_actual(session, current_user)
+        candidatos = session.exec(
+            select(SolicitudCandidato)
+            .where(SolicitudCandidato.solicitud_id == solicitud_id)
+            .where(SolicitudCandidato.taller_id == taller.id)
+            .where(SolicitudCandidato.tenant_id == taller.tenant_id)
+            .order_by(SolicitudCandidato.posicion)
+        ).all()
+    else:
+        statement = (
+            select(SolicitudCandidato)
+            .where(SolicitudCandidato.solicitud_id == solicitud_id)
+            .order_by(SolicitudCandidato.posicion)
+        )
+        if current_user.tenant_id is not None:
+            statement = statement.where(SolicitudCandidato.tenant_id == current_user.tenant_id)
+        candidatos = session.exec(statement).all()
+
+    return [SolicitudCandidatoRead.model_validate(item) for item in candidatos]
+
+
+@router.get("/{solicitud_id}/historial", response_model=list[SolicitudHistorialRead])
+def listar_historial_solicitud(
+    *,
+    solicitud_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    solicitud = session.get(Solicitud, solicitud_id)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    ensure_request_visible_to_user(session, solicitud, current_user)
+    historial = session.exec(
+        select(SolicitudHistorial)
+        .where(SolicitudHistorial.solicitud_id == solicitud_id)
+        .where(SolicitudHistorial.tenant_id == solicitud.tenant_id)
+        .order_by(SolicitudHistorial.fecha_creacion)
+    ).all()
+    return [SolicitudHistorialRead.model_validate(item) for item in historial]
+
+
+@router.get("/{solicitud_id}/chat", response_model=list[ChatMensajeRead])
+def listar_chat_solicitud(
+    *,
+    solicitud_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    solicitud = session.get(Solicitud, solicitud_id)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    ensure_request_visible_to_user(session, solicitud, current_user)
+    mensajes = session.exec(
+        select(ChatMensaje)
+        .where(ChatMensaje.solicitud_id == solicitud_id)
+        .where(ChatMensaje.tenant_id == solicitud.tenant_id)
+        .order_by(ChatMensaje.fecha_creacion)
+    ).all()
+    return [ChatMensajeRead.model_validate(item) for item in mensajes]
+
+
+@router.post("/{solicitud_id}/chat", response_model=ChatMensajeRead)
+def enviar_chat_solicitud(
+    *,
+    solicitud_id: int,
+    payload: ChatMensajeCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    solicitud = session.get(Solicitud, solicitud_id)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    ensure_request_visible_to_user(session, solicitud, current_user)
+    mensaje_texto = payload.mensaje.strip()
+    if not mensaje_texto:
+        raise HTTPException(status_code=400, detail="El mensaje no puede estar vacio.")
+
+    mensaje = ChatMensaje(
+        solicitud_id=solicitud_id,
+        remitente_id=current_user.id or 0,
+        tenant_id=solicitud.tenant_id,
+        mensaje=mensaje_texto,
+    )
+    session.add(mensaje)
+    registrar_auditoria(
+        session,
+        actor=current_user,
+        accion="mensaje_chat",
+        entidad="solicitud",
+        entidad_id=solicitud_id,
+        detalle="Mensaje enviado en chat operativo.",
+    )
+    session.commit()
+    session.refresh(mensaje)
+    data = ChatMensajeRead.model_validate(mensaje)
+    emitir_solicitud_update(solicitud_id, {"chat": data.model_dump()})
+    return data
+
+
+@router.post("/{solicitud_id}/calificacion", response_model=CalificacionRead)
+def calificar_servicio(
+    *,
+    solicitud_id: int,
+    payload: CalificacionCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRole.DRIVER:
+        raise HTTPException(status_code=403, detail="Solo el cliente puede calificar el servicio.")
+    solicitud = session.get(Solicitud, solicitud_id)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    ensure_request_visible_to_user(session, solicitud, current_user)
+    if solicitud.estado not in {EstadoSolicitud.RESUELTA, EstadoSolicitud.FINALIZADO}:
+        raise HTTPException(status_code=400, detail="Solo puedes calificar servicios finalizados.")
+    if payload.puntaje < 1 or payload.puntaje > 5:
+        raise HTTPException(status_code=400, detail="El puntaje debe estar entre 1 y 5.")
+
+    if solicitud.taller_id:
+        taller = session.get(Taller, solicitud.taller_id)
+        if taller:
+            existentes = session.exec(
+                select(CalificacionServicio).where(CalificacionServicio.taller_id == taller.id)
+                .where(CalificacionServicio.tenant_id == taller.tenant_id)
+            ).all()
+            total = sum(item.puntaje for item in existentes) + payload.puntaje
+            taller.calificacion_promedio = round(total / (len(existentes) + 1), 2)
+            session.add(taller)
+    calificacion = CalificacionServicio(
+        solicitud_id=solicitud_id,
+        taller_id=solicitud.taller_id,
+        cliente_id=current_user.id or 0,
+        tenant_id=solicitud.tenant_id,
+        puntaje=payload.puntaje,
+        comentario=payload.comentario,
+    )
+    session.add(calificacion)
+    registrar_auditoria(
+        session,
+        actor=current_user,
+        accion="calificacion_servicio",
+        entidad="solicitud",
+        entidad_id=solicitud_id,
+        detalle=f"Puntaje {payload.puntaje}",
+    )
+    session.commit()
+    session.refresh(calificacion)
+    return CalificacionRead.model_validate(calificacion)
 
 @router.get("/{solicitud_id}", response_model=SolicitudRead)
 def obtener_solicitud(
@@ -1154,7 +1605,9 @@ async def subir_audio_solicitud(
     notificar_reporte_actualizado(session, solicitud, "audio descriptivo y resumen IA")
     session.commit()
     session.refresh(solicitud)
-    return build_solicitud_read(session, solicitud)
+    payload = build_solicitud_read(session, solicitud)
+    emitir_solicitud_update(solicitud.id or 0, payload.model_dump())
+    return payload
 
 
 @router.post("/{solicitud_id}/imagenes", response_model=SolicitudRead)
@@ -1209,13 +1662,7 @@ def actualizar_estado_solicitud(
     if not solicitud:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
 
-    try:
-        nuevo_estado = EstadoSolicitud(estado)
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Estado invalido. Estados validos: {[item.value for item in EstadoSolicitud]}",
-        )
+    nuevo_estado = normalizar_estado_operativo(estado)
 
     taller = obtener_taller_del_usuario(session, current_user)
     if current_user.role != UserRole.ADMIN:
@@ -1225,7 +1672,7 @@ def actualizar_estado_solicitud(
             raise HTTPException(status_code=403, detail="No tienes permisos para modificar esta solicitud")
 
     estado_anterior = solicitud.estado
-    was_resolved = solicitud.estado == EstadoSolicitud.RESUELTA
+    was_resolved = solicitud.estado in {EstadoSolicitud.RESUELTA, EstadoSolicitud.FINALIZADO}
     assigned_tecnico: Optional[Tecnico] = None
 
     if tecnico_id:
@@ -1238,12 +1685,22 @@ def actualizar_estado_solicitud(
 
         solicitud.tecnico_id = tecnico_id
         solicitud.taller_id = assigned_tecnico.taller_id
-        assigned_tecnico.disponible = nuevo_estado in (EstadoSolicitud.RESUELTA, EstadoSolicitud.CANCELADA)
+        assigned_tecnico.disponible = nuevo_estado in {
+            EstadoSolicitud.RESUELTA,
+            EstadoSolicitud.CANCELADA,
+            EstadoSolicitud.FINALIZADO,
+            EstadoSolicitud.CANCELADO,
+        }
         session.add(assigned_tecnico)
     elif solicitud.tecnico_id:
         assigned_tecnico = session.get(Tecnico, solicitud.tecnico_id)
 
-    if nuevo_estado in (EstadoSolicitud.RESUELTA, EstadoSolicitud.CANCELADA) and solicitud.tecnico_id:
+    if nuevo_estado in {
+        EstadoSolicitud.RESUELTA,
+        EstadoSolicitud.CANCELADA,
+        EstadoSolicitud.FINALIZADO,
+        EstadoSolicitud.CANCELADO,
+    } and solicitud.tecnico_id:
         tecnico = session.get(Tecnico, solicitud.tecnico_id)
         if tecnico:
             tecnico.disponible = True
@@ -1252,11 +1709,16 @@ def actualizar_estado_solicitud(
     if nuevo_estado == EstadoSolicitud.ASIGNADA:
         reference_taller = session.get(Taller, solicitud.taller_id) if solicitud.taller_id else taller
         solicitud.tiempo_estimado_minutos = estimate_eta_minutes(solicitud, assigned_tecnico, reference_taller)
-    elif nuevo_estado == EstadoSolicitud.EN_PROGRESO:
+    elif nuevo_estado in {EstadoSolicitud.EN_PROGRESO, EstadoSolicitud.TECNICO_EN_CAMINO}:
         solicitud.tiempo_estimado_minutos = max(5, int((solicitud.tiempo_estimado_minutos or 20) * 0.55))
-    elif nuevo_estado == EstadoSolicitud.LLEGADA:
+    elif nuevo_estado in {EstadoSolicitud.LLEGADA, EstadoSolicitud.TECNICO_LLEGO, EstadoSolicitud.EN_PROCESO}:
         solicitud.tiempo_estimado_minutos = 0
-    elif nuevo_estado in (EstadoSolicitud.RESUELTA, EstadoSolicitud.CANCELADA):
+    elif nuevo_estado in {
+        EstadoSolicitud.RESUELTA,
+        EstadoSolicitud.CANCELADA,
+        EstadoSolicitud.FINALIZADO,
+        EstadoSolicitud.CANCELADO,
+    }:
         solicitud.tiempo_estimado_minutos = 0
 
     if not solicitud.precio_cobrado or not solicitud.comision_plataforma:
@@ -1272,14 +1734,14 @@ def actualizar_estado_solicitud(
             reference_taller = session.get(Taller, solicitud.taller_id) if solicitud.taller_id else taller
             if reference_taller:
                 notificar_solicitud_aceptada_conductor(session, solicitud, reference_taller)
-        elif nuevo_estado == EstadoSolicitud.EN_PROGRESO and assigned_tecnico:
+        elif nuevo_estado in {EstadoSolicitud.EN_PROGRESO, EstadoSolicitud.TECNICO_EN_CAMINO} and assigned_tecnico:
             notificar_tecnico_en_camino_conductor(session, solicitud, assigned_tecnico)
             notificar_tecnico_en_camino_taller(session, solicitud, assigned_tecnico)
-        elif nuevo_estado == EstadoSolicitud.LLEGADA and assigned_tecnico:
+        elif nuevo_estado in {EstadoSolicitud.LLEGADA, EstadoSolicitud.TECNICO_LLEGO} and assigned_tecnico:
             notificar_llegada_mecanico(session, solicitud, assigned_tecnico)
-        elif nuevo_estado == EstadoSolicitud.RESUELTA:
+        elif nuevo_estado in {EstadoSolicitud.RESUELTA, EstadoSolicitud.FINALIZADO}:
             notificar_servicio_terminado(session, solicitud, assigned_tecnico)
-        elif nuevo_estado == EstadoSolicitud.CANCELADA:
+        elif nuevo_estado in {EstadoSolicitud.CANCELADA, EstadoSolicitud.CANCELADO}:
             if current_user.role == UserRole.WORKSHOP and taller:
                 notificar_cancelacion_taller_a_conductor(session, solicitud, taller)
                 notificar_cancelacion_a_mecanico(session, solicitud)
@@ -1288,10 +1750,21 @@ def actualizar_estado_solicitud(
 
     solicitud.estado = nuevo_estado
     session.add(solicitud)
+    if nuevo_estado != estado_anterior:
+        registrar_historial_solicitud(
+            session,
+            solicitud_id=solicitud.id or 0,
+            estado_anterior=estado_anterior.value if isinstance(estado_anterior, EstadoSolicitud) else str(estado_anterior),
+            estado_nuevo=nuevo_estado.value,
+            actor=current_user,
+            comentario="Estado actualizado desde API operativa.",
+        )
     update_service_totals(session, solicitud, was_resolved)
     session.commit()
     session.refresh(solicitud)
-    return build_solicitud_read(session, solicitud)
+    payload = build_solicitud_read(session, solicitud)
+    emitir_solicitud_update(solicitud.id or 0, payload.model_dump())
+    return payload
 
 
 @router.patch("/{solicitud_id}/cancelar", response_model=SolicitudRead)
@@ -1305,7 +1778,7 @@ def cancelar_solicitud(
     if not solicitud:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
 
-    if solicitud.estado in (EstadoSolicitud.RESUELTA, EstadoSolicitud.CANCELADA):
+    if estado_es_cerrado(solicitud.estado):
         raise HTTPException(status_code=400, detail="La solicitud ya esta cerrada")
 
     taller_cancelador: Optional[Taller] = None
@@ -1328,7 +1801,8 @@ def cancelar_solicitud(
             detail="Solo el conductor o el taller asignado pueden cancelar la solicitud.",
         )
 
-    solicitud.estado = EstadoSolicitud.CANCELADA
+    estado_anterior = solicitud.estado
+    solicitud.estado = EstadoSolicitud.CANCELADO
     solicitud.tiempo_estimado_minutos = 0
     if solicitud.tecnico_id:
         tecnico = session.get(Tecnico, solicitud.tecnico_id)
@@ -1337,9 +1811,19 @@ def cancelar_solicitud(
             session.add(tecnico)
 
     session.add(solicitud)
+    registrar_historial_solicitud(
+        session,
+        solicitud_id=solicitud.id or 0,
+        estado_anterior=estado_anterior.value if isinstance(estado_anterior, EstadoSolicitud) else str(estado_anterior),
+        estado_nuevo=EstadoSolicitud.CANCELADO.value,
+        actor=current_user,
+        comentario="Solicitud cancelada.",
+    )
     session.commit()
     session.refresh(solicitud)
-    return build_solicitud_read(session, solicitud)
+    payload = build_solicitud_read(session, solicitud)
+    emitir_solicitud_update(solicitud.id or 0, payload.model_dump())
+    return payload
 
 
 @router.patch("/{solicitud_id}/costo", response_model=SolicitudRead)
@@ -1356,13 +1840,15 @@ def actualizar_costo_solicitud(
 
     if current_user.role not in (UserRole.WORKSHOP, UserRole.ADMIN):
         raise HTTPException(status_code=403, detail="Solo el taller puede definir el monto del servicio")
+    if current_user.tenant_id is not None and solicitud.tenant_id != current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="Solicitud fuera de tu tenant")
 
     if current_user.role == UserRole.WORKSHOP:
         taller = _obtener_taller_actual(session, current_user)
-        if solicitud.taller_id != taller.id:
+        if solicitud.taller_id != taller.id or solicitud.tenant_id != taller.tenant_id:
             raise HTTPException(status_code=403, detail="Solo puedes cobrar servicios asignados a tu taller")
 
-    if solicitud.estado == EstadoSolicitud.CANCELADA:
+    if solicitud.estado in {EstadoSolicitud.CANCELADA, EstadoSolicitud.CANCELADO}:
         raise HTTPException(status_code=400, detail="No se puede cobrar una solicitud cancelada")
     if solicitud.estado_pago == "pagado":
         raise HTTPException(status_code=400, detail="No se puede modificar un servicio ya pagado")
@@ -1376,7 +1862,9 @@ def actualizar_costo_solicitud(
     session.add(solicitud)
     session.commit()
     session.refresh(solicitud)
-    return build_solicitud_read(session, solicitud)
+    payload = build_solicitud_read(session, solicitud)
+    emitir_solicitud_update(solicitud.id or 0, payload.model_dump())
+    return payload
 
 
 @router.post("/{solicitud_id}/pago", response_model=SolicitudRead)
@@ -1395,7 +1883,7 @@ def pagar_solicitud(
     if current_user.role == UserRole.WORKSHOP:
         raise HTTPException(status_code=403, detail="El taller no puede registrar el pago del cliente")
 
-    if solicitud.estado == EstadoSolicitud.CANCELADA:
+    if solicitud.estado in {EstadoSolicitud.CANCELADA, EstadoSolicitud.CANCELADO}:
         raise HTTPException(status_code=400, detail="No puedes pagar una solicitud cancelada")
     if solicitud.estado_pago == "pagado":
         raise HTTPException(status_code=400, detail="La solicitud ya fue pagada")
@@ -1411,9 +1899,32 @@ def pagar_solicitud(
         raise HTTPException(status_code=400, detail="Monto de pago invalido")
 
     solicitud.precio_cobrado = round(monto, 2)
+    solicitud.comision_plataforma = round(solicitud.precio_cobrado * 0.10, 2)
     solicitud.estado_pago = "pagado"
     solicitud.fecha_pago = datetime.utcnow()
+    session.add(
+        Pago(
+            solicitud_id=solicitud.id or 0,
+            usuario_id=current_user.id or 0,
+            tenant_id=solicitud.tenant_id,
+            monto=solicitud.precio_cobrado,
+            comision_plataforma=solicitud.comision_plataforma or 0,
+            metodo=payload.metodo or "simulado",
+            estado="pagado",
+            referencia=f"SIM-{solicitud.id}-{int(solicitud.fecha_pago.timestamp())}",
+        )
+    )
     session.add(solicitud)
+    registrar_auditoria(
+        session,
+        actor=current_user,
+        accion="pago_simulado_registrado",
+        entidad="solicitud",
+        entidad_id=solicitud.id,
+        detalle=f"Monto {solicitud.precio_cobrado}",
+    )
     session.commit()
     session.refresh(solicitud)
-    return build_solicitud_read(session, solicitud)
+    payload_read = build_solicitud_read(session, solicitud)
+    emitir_solicitud_update(solicitud.id or 0, payload_read.model_dump())
+    return payload_read

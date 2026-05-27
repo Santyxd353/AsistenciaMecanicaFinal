@@ -3,6 +3,7 @@ from typing import Iterable, Optional
 from sqlmodel import Session
 
 from app.models.domain import Notificacion, TipoNotificacion
+from app.models.user import User
 from app.services.push_fcm import enviar_push_al_usuario
 
 
@@ -15,8 +16,13 @@ def crear_notificacion(
     mensaje: str,
     solicitud_id: Optional[int] = None,
     accion_url: Optional[str] = None,
+    tenant_id: Optional[int] = None,
     commit: bool = False,
 ) -> Notificacion:
+    destinatario = session.get(User, destinatario_id)
+    effective_tenant_id = tenant_id if tenant_id is not None else (
+        destinatario.tenant_id if destinatario else None
+    )
     notificacion = Notificacion(
         destinatario_id=destinatario_id,
         tipo=tipo,
@@ -24,6 +30,7 @@ def crear_notificacion(
         mensaje=mensaje,
         solicitud_id=solicitud_id,
         accion_url=accion_url,
+        tenant_id=effective_tenant_id,
     )
     session.add(notificacion)
     session.flush()
@@ -54,6 +61,7 @@ def crear_notificaciones_para_usuarios(
     mensaje: str,
     solicitud_id: Optional[int] = None,
     accion_url: Optional[str] = None,
+    tenant_id: Optional[int] = None,
 ) -> list[Notificacion]:
     notificaciones: list[Notificacion] = []
     ids_unicos = list(dict.fromkeys(destinatario_ids))
@@ -68,6 +76,7 @@ def crear_notificaciones_para_usuarios(
                 mensaje=mensaje,
                 solicitud_id=solicitud_id,
                 accion_url=accion_url,
+                tenant_id=tenant_id,
             )
         )
 

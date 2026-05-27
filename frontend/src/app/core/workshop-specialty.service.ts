@@ -8,7 +8,7 @@ import { EspecialidadTaller } from './workshop-profile.service';
   providedIn: 'root'
 })
 export class WorkshopSpecialtyService {
-  private apiUrl = 'https://backend-958497253028.europe-west1.run.app/api/v1/especialidades-taller';
+  private apiUrl = 'http://localhost:8000/api/v1/especialidades-taller';
 
   constructor(private http: HttpClient) {}
 

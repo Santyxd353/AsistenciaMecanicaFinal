@@ -2,11 +2,14 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
-import { finalize, timeout } from 'rxjs';
+import { Subscription, finalize, timeout } from 'rxjs';
 import * as L from 'leaflet';
 
 import { AuthService } from '../core/auth.service';
+import { Cotizacion, CotizacionService } from '../core/cotizacion.service';
 import { Solicitud, SolicitudService } from '../core/incident.service';
+import { OfflineQueueService } from '../core/offline-queue.service';
+import { RealtimeEvent, RealtimeService } from '../core/realtime.service';
 import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.service';
 
 @Component({
@@ -237,6 +240,78 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
 
           <p class="message success" *ngIf="reportMessage">{{ reportMessage }}</p>
           <p class="message error" *ngIf="reportError">{{ reportError }}</p>
+        </section>
+
+        <section class="panel panel-cotizaciones" *ngIf="pendingReports.length">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">Cotizaciones</p>
+              <h2>Elige el taller para tu servicio</h2>
+              <p>Compara costo, tiempo de reparacion y llegada. Selecciona la oferta que prefieras.</p>
+            </div>
+            <button class="btn-secondary" type="button" (click)="reloadCotizaciones()">Actualizar</button>
+          </div>
+
+          <div class="report-list">
+            <article class="report-card" *ngFor="let report of pendingReports">
+              <div class="report-top">
+                <div>
+                  <span class="report-id">Solicitud #{{ report.id }}</span>
+                  <h3>{{ report.descripcion }}</h3>
+                </div>
+                <span class="status-chip" [ngClass]="report.estado">{{ labelForStatus(report.estado) }}</span>
+              </div>
+
+              <p class="message" *ngIf="cotizacionesLoading[report.id]">Cargando cotizaciones...</p>
+              <p class="message" *ngIf="!cotizacionesLoading[report.id] && !cotizacionesPorReporte[report.id]?.length">
+                Aun no hay cotizaciones. Los talleres cercanos estan revisando tu solicitud.
+              </p>
+
+              <div class="cotizacion-list" *ngIf="cotizacionesPorReporte[report.id]?.length">
+                <div class="cotizacion-card" *ngFor="let cot of cotizacionesPorReporte[report.id]">
+                  <div class="report-top">
+                    <strong>{{ cot.taller_nombre || 'Taller' }}</strong>
+                    <span class="status-chip" *ngIf="cot.taller_calificacion != null">
+                      ★ {{ cot.taller_calificacion | number:'1.1-1' }}
+                    </span>
+                  </div>
+                  <div class="report-metrics">
+                    <div class="report-metric">
+                      <span>Costo</span>
+                      <strong>Bs {{ cot.costo_estimado }}</strong>
+                    </div>
+                    <div class="report-metric">
+                      <span>Reparacion</span>
+                      <strong>{{ cot.tiempo_reparacion_horas }} h</strong>
+                    </div>
+                    <div class="report-metric">
+                      <span>Llegada</span>
+                      <strong>{{ cot.eta_llegada_minutos }} min</strong>
+                    </div>
+                    <div class="report-metric">
+                      <span>Garantia</span>
+                      <strong>{{ cot.garantia_dias }} dias</strong>
+                    </div>
+                  </div>
+                  <p *ngIf="cot.descripcion">{{ cot.descripcion }}</p>
+                  <p class="cotizacion-extra">{{ cot.incluye_repuestos ? 'Incluye repuestos' : 'Repuestos aparte' }}</p>
+                  <div class="panel-actions">
+                    <button
+                      class="btn-primary"
+                      type="button"
+                      [disabled]="selectingCotizacionId === cot.id"
+                      (click)="seleccionarCotizacion(cot, report.id)"
+                    >
+                      {{ selectingCotizacionId === cot.id ? 'Seleccionando...' : 'Seleccionar este taller' }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <p class="message success" *ngIf="cotizacionMessage">{{ cotizacionMessage }}</p>
+          <p class="message error" *ngIf="cotizacionError">{{ cotizacionError }}</p>
         </section>
 
         <section class="panel panel-payments" *ngIf="payableReports.length">
@@ -822,6 +897,13 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
       border: 1px solid rgba(127, 92, 58, 0.12);
     }
 
+    .cotizacion-list { display: grid; gap: 12px; margin-top: 14px; }
+    .cotizacion-card {
+      padding: 16px 18px; border-radius: 18px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(127, 92, 58, 0.18);
+    }
+
     .report-top {
       display: flex;
       justify-content: space-between;
@@ -1204,6 +1286,11 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
   reportForm: FormGroup;
   vehicles: Vehicle[] = [];
   reports: Solicitud[] = [];
+  cotizacionesPorReporte: Record<number, Cotizacion[]> = {};
+  cotizacionesLoading: Record<number, boolean> = {};
+  cotizacionMessage = '';
+  cotizacionError = '';
+  selectingCotizacionId: number | null = null;
   selectedReportForPayment: Solicitud | null = null;
   vehiclePhotoFiles: File[] = [];
   vehiclePreview: VehiclePhotoPreview | null = null;
@@ -1211,6 +1298,8 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
   selectedLng: number | null = null;
   mapPickerOpen = false;
   private mapInstance: L.Map | null = null;
+  private reportRealtimeSubs = new Map<number, Subscription>();
+  private flushedSub?: Subscription;
 
   savingProfile = false;
   savingVehicle = false;
@@ -1231,6 +1320,9 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
     private authService: AuthService,
     private vehicleService: VehicleService,
     private solicitudService: SolicitudService,
+    private realtimeService: RealtimeService,
+    private offlineQueue: OfflineQueueService,
+    private cotizacionService: CotizacionService,
     private router: Router
   ) {
     this.profileForm = this.fb.group({
@@ -1261,6 +1353,13 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
     return this.reports.filter((report) => this.canOpenGateway(report));
   }
 
+  /** Reports que aún esperan que el cliente elija taller (vía cotización). */
+  get pendingReports(): Solicitud[] {
+    return this.reports.filter(
+      (report) => report.id > 0 && ['pendiente', 'buscando_taller'].includes(report.estado),
+    );
+  }
+
   get locationSummary(): string {
     if (this.selectedLat == null || this.selectedLng == null) {
       return 'Ubicacion pendiente. Usa tu GPS o mueve el mapa hasta el punto exacto.';
@@ -1281,10 +1380,23 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
 
     this.loadProfile();
     this.loadVehicles();
+
+    // Al reconectar, la cola offline sincroniza en segundo plano. Recargamos
+    // los reports para reemplazar las entradas `pendiente_sync` (id falso) por
+    // las solicitudes reales del backend y enganchar realtime al id correcto.
+    this.flushedSub = this.offlineQueue.flushed$.subscribe((result) => {
+      if (result.synced > 0) {
+        this.reportMessage = `Sincronizadas ${result.synced} emergencia(s) pendientes.`;
+        this.loadReports();
+      }
+    });
   }
 
   ngOnDestroy() {
     this.destroyMapPicker();
+    this.reportRealtimeSubs.forEach((sub) => sub.unsubscribe());
+    this.reportRealtimeSubs.clear();
+    this.flushedSub?.unsubscribe();
   }
 
   loadProfile() {
@@ -1328,10 +1440,59 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
         this.reports = reports
           .filter((report) => !!report.vehiculo_id && ownVehicleIds.has(report.vehiculo_id))
           .sort((left, right) => right.id - left.id);
+        this.connectReportsRealtime();
+        this.reloadCotizaciones();
       },
       error: () => {
         this.reportError = 'No se pudo cargar el estado de cobros.';
       }
+    });
+  }
+
+  /** Carga las cotizaciones de todos los reports que aún esperan elección. */
+  reloadCotizaciones(): void {
+    const activos = new Set(this.pendingReports.map((report) => report.id));
+    // Limpiar cache de reports que ya no están pendientes.
+    Object.keys(this.cotizacionesPorReporte).forEach((key) => {
+      if (!activos.has(Number(key))) {
+        delete this.cotizacionesPorReporte[Number(key)];
+      }
+    });
+    this.pendingReports.forEach((report) => this.loadCotizaciones(report.id));
+  }
+
+  loadCotizaciones(reportId: number): void {
+    this.cotizacionesLoading[reportId] = true;
+    this.cotizacionService.listarPorSolicitud(reportId).pipe(timeout(10000)).subscribe({
+      next: (cotizaciones) => {
+        this.cotizacionesPorReporte[reportId] = cotizaciones.filter(
+          (cot) => cot.estado === 'enviada',
+        );
+        this.cotizacionesLoading[reportId] = false;
+      },
+      error: () => {
+        this.cotizacionesLoading[reportId] = false;
+      },
+    });
+  }
+
+  seleccionarCotizacion(cotizacion: Cotizacion, reportId: number): void {
+    this.cotizacionMessage = '';
+    this.cotizacionError = '';
+    this.selectingCotizacionId = cotizacion.id;
+    this.cotizacionService.seleccionar(cotizacion.id).pipe(timeout(10000)).subscribe({
+      next: () => {
+        this.selectingCotizacionId = null;
+        this.cotizacionMessage = `Taller ${cotizacion.taller_nombre ?? ''} asignado a tu servicio.`.trim();
+        delete this.cotizacionesPorReporte[reportId];
+        this.loadReports();
+      },
+      error: (error) => {
+        this.selectingCotizacionId = null;
+        this.cotizacionError = error?.error?.detail || 'No se pudo seleccionar la cotización.';
+        // Recargar por si la oferta expiró o ya fue tomada.
+        this.loadCotizaciones(reportId);
+      },
     });
   }
 
@@ -1422,13 +1583,18 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
     ).subscribe({
       next: (report) => {
         this.reports = [report, ...this.reports].sort((left, right) => right.id - left.id);
+        if (report.estado === 'pendiente_sync') {
+          this.reportMessage = 'Sin conexion: solicitud guardada y pendiente de sincronizacion.';
+        } else {
+          this.reportMessage = 'Solicitud creada correctamente.';
+        }
+        this.connectReportsRealtime();
         this.reportForm.reset({
           vehiculo_id: this.vehicles[0]?.id ?? null,
           descripcion: ''
         });
         this.selectedLat = null;
         this.selectedLng = null;
-        this.reportMessage = 'Solicitud creada correctamente.';
       },
       error: (error) => {
         this.reportError = error?.error?.detail || 'No se pudo crear la solicitud.';
@@ -1560,7 +1726,7 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
   }
 
   canOpenGateway(report: Solicitud): boolean {
-    return report.estado === 'en_progreso' || report.estado === 'resuelta';
+    return ['en_proceso', 'finalizado', 'en_progreso', 'resuelta'].includes(report.estado);
   }
 
   amountLabel(report: Solicitud): string {
@@ -1589,12 +1755,88 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
   labelForStatus(status: string): string {
     const map: Record<string, string> = {
       pendiente: 'Pendiente',
+      pendiente_sync: 'Pendiente sync',
+      buscando_taller: 'Buscando taller',
       asignada: 'Asignada',
+      tecnico_en_camino: 'Tecnico en camino',
+      tecnico_llego: 'Tecnico llego',
+      en_proceso: 'En proceso',
+      finalizado: 'Finalizado',
+      cancelado: 'Cancelado',
       en_progreso: 'En progreso',
-      resuelta: 'Resuelta',
-      cancelada: 'Cancelada'
+      resuelta: 'Finalizado',
+      cancelada: 'Cancelado'
     };
     return map[status] ?? status;
+  }
+
+  private connectReportsRealtime(): void {
+    const activeReports = this.reports.filter((report) => report.id > 0 && !['finalizado', 'cancelado', 'resuelta', 'cancelada'].includes(report.estado));
+    const activeIds = new Set(activeReports.map((report) => report.id));
+
+    this.reportRealtimeSubs.forEach((sub, id) => {
+      if (!activeIds.has(id)) {
+        sub.unsubscribe();
+        this.reportRealtimeSubs.delete(id);
+      }
+    });
+
+    activeReports.forEach((report) => {
+      if (this.reportRealtimeSubs.has(report.id)) return;
+      const sub = this.realtimeService.subscribe('solicitud', report.id).subscribe((event) => {
+        this.applyRealtimeEvent(event);
+      });
+      this.reportRealtimeSubs.set(report.id, sub);
+    });
+  }
+
+  private applyRealtimeEvent(event: RealtimeEvent): void {
+    if (event.event === 'solicitud.actualizada') {
+      const payload = event.payload as Partial<Solicitud>;
+      if (payload.id) {
+        this.mergeReport(payload.id, payload);
+      }
+      return;
+    }
+
+    if (event.event === 'cotizacion.nueva') {
+      const payload = event.payload as Partial<Cotizacion>;
+      if (payload.solicitud_id) {
+        this.loadCotizaciones(payload.solicitud_id);
+      }
+      return;
+    }
+
+    if (event.event === 'cotizacion.aceptada') {
+      // Una cotización fue aceptada (por este u otro dispositivo): refrescar
+      // reports para reflejar el estado ASIGNADA y limpiar la lista.
+      this.loadReports();
+      return;
+    }
+
+    if (event.event === 'tracking.update') {
+      const payload = event.payload as {
+        solicitud_id?: number;
+        latitud?: number;
+        longitud?: number;
+        eta_minutos?: number;
+        distancia_restante_km?: number;
+      };
+      if (!payload.solicitud_id) return;
+      this.mergeReport(payload.solicitud_id, {
+        tecnico_latitud: payload.latitud,
+        tecnico_longitud: payload.longitud,
+        tiempo_estimado_minutos: payload.eta_minutos,
+        distancia_tecnico_km: payload.distancia_restante_km,
+      });
+    }
+  }
+
+  private mergeReport(reportId: number, patch: Partial<Solicitud>): void {
+    this.reports = this.reports.map((report) => report.id === reportId ? { ...report, ...patch } : report);
+    if (this.selectedReportForPayment?.id === reportId) {
+      this.selectedReportForPayment = { ...this.selectedReportForPayment, ...patch };
+    }
   }
 
   openPaymentPlaceholder(report: Solicitud) {

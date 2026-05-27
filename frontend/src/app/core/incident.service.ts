@@ -1,6 +1,8 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, of, throwError } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
+import { OfflineQueueService } from './offline-queue.service';
 
 export interface Solicitud {
   id: number;
@@ -26,11 +28,13 @@ export interface Solicitud {
   tecnico_especialidad?: string;
   tecnico_latitud?: number;
   tecnico_longitud?: number;
+  distancia_tecnico_km?: number;
   vehiculo_placa?: string;
   vehiculo_descripcion?: string;
   audio_url?: string;
   audio_resumen_ia?: string;
   ruta_recomendada_ia?: string;
+  cliente_sync_id?: string;
   fecha_creacion: string;
 }
 
@@ -38,9 +42,9 @@ export interface Solicitud {
   providedIn: 'root'
 })
 export class SolicitudService {
-  private apiUrl = 'https://backend-958497253028.europe-west1.run.app/api/v1/solicitudes/';
+  private apiUrl = 'http://localhost:8000/api/v1/solicitudes/';
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, private offlineQueue: OfflineQueueService) {}
 
   getSolicitudes(): Observable<Solicitud[]> {
     return this.http.get<Solicitud[]>(this.apiUrl);
@@ -59,7 +63,42 @@ export class SolicitudService {
   }
 
   createSolicitud(solicitud: Partial<Solicitud>): Observable<Solicitud> {
-    return this.http.post<Solicitud>(this.apiUrl, solicitud);
+    if (!navigator.onLine) {
+      return this.queueSolicitud(solicitud);
+    }
+
+    return this.http.post<Solicitud>(this.apiUrl, solicitud).pipe(
+      catchError((err) => {
+        if (err?.status === 0) {
+          return this.queueSolicitud(solicitud);
+        }
+        return throwError(() => err);
+      }),
+    );
+  }
+
+  private queueSolicitud(solicitud: Partial<Solicitud>): Observable<Solicitud> {
+    return this.offlineQueue.enqueue(this.apiUrl, solicitud).pipe(
+      map((localId) => ({
+        id: -Date.now(),
+        descripcion: solicitud.descripcion ?? 'Emergencia pendiente de sincronización',
+        latitud: solicitud.latitud ?? 0,
+        longitud: solicitud.longitud ?? 0,
+        estado: 'pendiente_sync',
+        vehiculo_id: solicitud.vehiculo_id,
+        fecha_creacion: new Date().toISOString(),
+        cliente_sync_id: localId,
+      })),
+      catchError(() => of({
+        id: -Date.now(),
+        descripcion: solicitud.descripcion ?? 'Emergencia pendiente de sincronización',
+        latitud: solicitud.latitud ?? 0,
+        longitud: solicitud.longitud ?? 0,
+        estado: 'pendiente_sync',
+        vehiculo_id: solicitud.vehiculo_id,
+        fecha_creacion: new Date().toISOString(),
+      })),
+    );
   }
 
   aceptarSolicitud(solicitudId: number): Observable<Solicitud> {

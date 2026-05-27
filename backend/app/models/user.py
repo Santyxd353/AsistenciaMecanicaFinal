@@ -14,6 +14,9 @@ class UserBase(SQLModel):
     full_name: Optional[str] = None
     role: UserRole = UserRole.DRIVER
     is_active: bool = True
+    # Multi-tenant SaaS: cada usuario operativo pertenece a un Tenant.
+    # ADMIN puede tener tenant_id NULL (admin global de la plataforma).
+    tenant_id: Optional[int] = Field(default=None, foreign_key="tenant.id", index=True)
 
 class User(UserBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -35,6 +38,11 @@ class UserRegister(SQLModel):
     email: str
     full_name: Optional[str] = None
     password: str
+    # Multi-tenant: slug del tenant al que se desea pertenecer. Si se omite:
+    # * cliente (DRIVER): se asigna al tenant `default`
+    # * taller (WORKSHOP): se crea un tenant nuevo a su nombre
+    tenant_slug: Optional[str] = None
+    tenant_nombre: Optional[str] = None
 
 
 class UserUpdate(SQLModel):
@@ -49,9 +57,14 @@ class UserRead(UserBase):
 
 class AuthResponse(SQLModel):
     access_token: str
+    refresh_token: Optional[str] = None
     token_type: str = "bearer"
     role: UserRole
     user: UserRead
+
+
+class RefreshTokenRequest(SQLModel):
+    refresh_token: str
 
 
 class PasswordResetRequest(SQLModel):

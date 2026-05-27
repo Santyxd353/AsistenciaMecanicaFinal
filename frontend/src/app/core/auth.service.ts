@@ -12,10 +12,12 @@ export interface AuthUser {
   full_name?: string | null;
   role: UserRole;
   is_active: boolean;
+  tenant_id?: number | null;
 }
 
 export interface AuthResponse {
   access_token: string;
+  refresh_token?: string | null;
   token_type: string;
   role: UserRole;
   user: AuthUser;
@@ -47,7 +49,7 @@ export interface PasswordResetConfirmPayload {
   providedIn: 'root'
 })
 export class AuthService {
-  private apiUrl = 'https://backend-958497253028.europe-west1.run.app/api/v1/auth';
+  private apiUrl = 'http://localhost:8000/api/v1/auth';
   private currentUserSubject = new BehaviorSubject<AuthUser | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
 
@@ -71,6 +73,28 @@ export class AuthService {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
       }
+    }).pipe(
+      tap((response) => this.persistSession(response))
+    );
+  }
+
+  loginAdmin(username: string, password: string): Observable<AuthResponse> {
+    return this.http.post<AuthResponse>(`${this.apiUrl}/login/admin`, { username, password }).pipe(
+      tap((response) => this.persistSession(response))
+    );
+  }
+
+  loginClient(username: string, password: string): Observable<AuthResponse> {
+    return this.http.post<AuthResponse>(`${this.apiUrl}/login/client`, { username, password }).pipe(
+      tap((response) => this.persistSession(response))
+    );
+  }
+
+  loginWorker(tallerId: number, username: string, password: string): Observable<AuthResponse> {
+    return this.http.post<AuthResponse>(`${this.apiUrl}/login/worker`, {
+      taller_id: tallerId,
+      username,
+      password,
     }).pipe(
       tap((response) => this.persistSession(response))
     );
@@ -110,6 +134,7 @@ export class AuthService {
 
   logout() {
     localStorage.removeItem('token');
+    localStorage.removeItem('refresh_token');
     localStorage.removeItem('role');
     localStorage.removeItem('currentUser');
     this.currentUserSubject.next(null);
@@ -159,9 +184,16 @@ export class AuthService {
 
   private persistSession(response: AuthResponse) {
     localStorage.setItem('token', response.access_token);
+    if (response.refresh_token) {
+      localStorage.setItem('refresh_token', response.refresh_token);
+    }
     localStorage.setItem('role', response.role);
     localStorage.setItem('currentUser', JSON.stringify(response.user));
     this.currentUserSubject.next(response.user);
+  }
+
+  persistExternalSession(response: AuthResponse) {
+    this.persistSession(response);
   }
 
   private persistUser(user: AuthUser) {

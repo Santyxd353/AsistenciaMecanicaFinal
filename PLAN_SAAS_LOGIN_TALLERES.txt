@@ -1,0 +1,1058 @@
+PLAN TECNICO PARA REDISENO SAAS: PLANES, REGISTRO DE TALLER, LOGIN ADMINISTRATIVO Y LOGIN TRABAJADORES
+Proyecto: Plataforma Inteligente de Atencion de Emergencias Vehiculares
+Stack actual: FastAPI + PostgreSQL + Angular + Docker + WebSockets
+Ruta del proyecto: C:\Users\ASUS\Desktop\examen1\asistencia-mecanica
+
+================================================================================
+1. OBJETIVO FUNCIONAL
+================================================================================
+
+Convertir el flujo actual de registro/login en un flujo SaaS real por taller/tenant.
+
+Flujo esperado:
+
+1. Una persona entra a la pagina publica.
+2. Ve planes disponibles con beneficios.
+3. Selecciona un plan.
+4. Simula pago del plan.
+5. Pasa a crear su taller con el formulario existente.
+6. Al crear el taller, queda como administrador de ese taller.
+7. Desde el panel del taller puede crear mecanicos y usar el sistema normal.
+8. El login se separa en:
+   - Login Trabajadores:
+     - Buscar taller.
+     - Seleccionar taller.
+     - Ingresar usuario y contrasena.
+     - Entrar como mecanico/trabajador del taller seleccionado.
+   - Login Administrador:
+     - Solo usuario y contrasena.
+     - No pide taller.
+     - Entra como administrador de taller o superadmin segun su cuenta.
+9. Los planes limitan cantidad de administradores y mecanicos por taller.
+10. Si un taller con plan gratis intenta crear mas administradores, se redirige a una pagina de upgrade.
+
+================================================================================
+2. ESTADO ACTUAL DETECTADO
+================================================================================
+
+Backend:
+
+- Hay modelo Tenant en:
+  backend/app/models/domain.py
+
+- Hay User con roles:
+  backend/app/models/user.py
+  Roles actuales:
+  - driver
+  - tecnico
+  - workshop
+  - admin
+
+- Hay Taller con tenant_id y propietario_id:
+  backend/app/models/domain.py
+
+- Hay Tecnico con taller_id, id_usuario y tenant_id:
+  backend/app/models/domain.py
+
+- Registro actual de taller:
+  backend/app/api/auth.py
+  Endpoint:
+  POST /api/v1/auth/register/workshop
+
+  Problema actual:
+  - Crea usuario WORKSHOP y tenant directamente.
+  - No hay seleccion de plan.
+  - No hay pago mock de suscripcion.
+  - No hay proceso separado: plan -> pago -> crear taller.
+
+- Login actual:
+  backend/app/api/auth.py
+  Endpoint:
+  POST /api/v1/auth/login
+
+  Problema actual:
+  - Es un solo login para todos.
+  - No diferencia login trabajador vs login administrador.
+  - No obliga a tecnicos/trabajadores a seleccionar taller.
+  - Username es unico global, lo cual limita un SaaS porque dos talleres no podrian tener trabajador con mismo usuario.
+
+- Creacion actual de tecnicos:
+  backend/app/api/tecnicos.py
+  Endpoint:
+  POST /api/v1/tecnicos/
+
+  Problema actual:
+  - Crea usuario TECNICO automaticamente.
+  - No valida limites del plan.
+  - No hay limite por plan para mecanicos.
+
+- Creacion de administradores de taller:
+  Actualmente no existe endpoint formal para crear administradores adicionales del mismo taller.
+  El sistema solo maneja propietario WORKSHOP del taller y superadmin ADMIN global.
+
+Frontend:
+
+- Login actual:
+  frontend/src/app/login/login.component.ts
+  frontend/src/app/login/login.component.html
+  frontend/src/app/login/login.component.css
+
+  Problema actual:
+  - Tiene login y registro juntos.
+  - Registro permite cliente/taller.
+  - No hay landing de planes.
+  - No hay pago mock de plan.
+  - No hay login trabajadores con busqueda de taller.
+  - No hay login administrador separado.
+
+- Rutas actuales:
+  frontend/src/app/app.routes.ts
+
+  Rutas relevantes actuales:
+  - /login
+  - /dashboard
+  - /superadmin
+  - /taller
+  - /crear-taller
+  - /taller/tecnicos
+
+================================================================================
+3. DECISIONES DE ARQUITECTURA
+================================================================================
+
+3.1 Tenant y taller
+
+Mantener la idea:
+- Tenant = organizacion SaaS.
+- Taller = unidad operativa dentro del tenant.
+
+Para este proyecto, como el usuario pide "taller" como unidad SaaS, se usara:
+- Un tenant por taller registrado desde la pagina de planes.
+- El primer administrador creado sera el propietario del taller.
+
+3.2 Roles
+
+Mantener roles existentes para no romper:
+- admin: superadmin global si tenant_id es NULL.
+- workshop: administrador de taller si tenant_id tiene valor.
+- tecnico: trabajador/mecanico.
+- driver: cliente.
+
+No crear nuevos roles salvo que sea estrictamente necesario.
+
+Interpretacion:
+- Login Administrador acepta:
+  - admin global.
+  - workshop/admin de taller.
+- Login Trabajadores acepta:
+  - tecnico.
+  - opcionalmente otros roles operativos futuros.
+
+3.3 Planes
+
+Agregar planes SaaS como modelo y logica centralizada.
+
+Planes:
+
+PLAN GRATIS
+- 1 administrador por taller.
+- 5 mecanicos.
+- 30 solicitudes/mes.
+- Dashboard basico.
+- Tracking en tiempo real.
+- Soporte comunitario.
+
+PLAN INTERMEDIO
+- 3 administradores por taller.
+- 10 mecanicos.
+- 200 solicitudes/mes.
+- KPIs operativos.
+- Cotizaciones.
+- Historial avanzado.
+- Soporte por correo.
+
+PLAN PREMIUM
+- 10 administradores por taller.
+- 20 mecanicos.
+- Solicitudes mensuales altas.
+- Dashboard avanzado.
+- Auditoria.
+- Reportes exportables.
+- SLA configurable.
+- Soporte prioritario.
+
+PLAN PRO
+- Administradores ilimitados.
+- Mecanicos ilimitados.
+- Solicitudes ilimitadas.
+- Multi-sucursal preparado.
+- Analitica avanzada.
+- Auditoria completa.
+- Integraciones futuras.
+- Soporte premium.
+
+3.4 Pago
+
+No usar pasarela real.
+Implementar pago mock:
+- Estado pendiente.
+- Estado pagado.
+- Referencia simulada.
+- Fecha de pago.
+
+3.5 Login trabajadores con taller
+
+Necesario porque en SaaS puede existir mismo username en distintos talleres.
+
+Implementacion recomendada:
+- Mantener User.username unico global por ahora para compatibilidad.
+- Agregar campo username_scoped opcional en futuro si se quiere permitir duplicados.
+- Para MVP inmediato:
+  - Trabajador busca taller.
+  - Selecciona taller.
+  - Login valida username/password y que user.tenant_id corresponda al tenant del taller seleccionado.
+
+Esto no rompe la BD actual y cumple el flujo.
+
+3.6 Administradores adicionales
+
+Agregar endpoint para crear administradores del taller.
+Debe validar:
+- Usuario actual debe ser workshop del mismo tenant o admin global.
+- Limite del plan.
+- Si excede limite:
+  - Backend devuelve HTTP 402 o 403 con codigo "PLAN_LIMIT_ADMIN".
+  - Frontend redirige a /upgrade-plan.
+
+================================================================================
+4. CAMBIOS EN BASE DE DATOS
+================================================================================
+
+Archivo principal:
+backend/app/models/domain.py
+
+Agregar enums/modelos:
+
+1. PlanCode enum:
+   - gratis
+   - intermedio
+   - premium
+   - pro
+
+2. SubscriptionStatus enum:
+   - pendiente_pago
+   - activa
+   - vencida
+   - cancelada
+
+3. SaaSPlan table:
+   Campos:
+   - id
+   - codigo
+   - nombre
+   - descripcion
+   - precio_mensual
+   - max_administradores
+   - max_mecanicos
+   - max_solicitudes_mes
+   - beneficios_json o beneficios_texto
+   - activo
+   - fecha_creacion
+
+4. TenantSubscription table:
+   Campos:
+   - id
+   - tenant_id
+   - plan_id
+   - estado
+   - fecha_inicio
+   - fecha_fin
+   - pago_mock_id opcional
+   - fecha_creacion
+   - fecha_actualizacion
+
+5. SubscriptionPaymentMock table:
+   Campos:
+   - id
+   - tenant_id
+   - plan_id
+   - monto
+   - moneda
+   - estado
+   - referencia
+   - metodo
+   - fecha_creacion
+   - fecha_pago
+
+6. TallerAdmin table opcional, si se quiere separar usuarios administradores del propietario:
+   Opcion recomendada MVP:
+   - No crear TallerAdmin aun.
+   - Usar User role WORKSHOP con tenant_id.
+   - El Taller sigue teniendo propietario_id para el primer admin.
+   - Los administradores adicionales son usuarios WORKSHOP del mismo tenant.
+
+Agregar columnas:
+
+En Tenant:
+- plan_actual_id opcional o resolver por TenantSubscription activa.
+
+En Taller:
+- no requiere cambio obligatorio.
+
+En User:
+- no requiere cambio obligatorio.
+- considerar en futuro: login_scope o username_por_tenant si se permite repetir usernames.
+
+Migraciones:
+
+Archivo:
+backend/app/db/session.py
+
+Agregar ALTERs idempotentes:
+- Crear tablas nuevas con SQLModel.metadata.create_all.
+- Agregar columnas si se decide agregar plan_actual_id.
+- Seed de planes SaaS:
+  - gratis
+  - intermedio
+  - premium
+  - pro
+
+Seed/backfill:
+- Todo tenant existente sin suscripcion activa queda en plan gratis.
+- Crear TenantSubscription activa para tenant default.
+
+================================================================================
+5. BACKEND: ENDPOINTS NUEVOS
+================================================================================
+
+5.1 Planes publicos
+
+Nuevo archivo:
+backend/app/api/plans.py
+
+Endpoints:
+
+GET /api/v1/plans
+- Publico.
+- Devuelve lista de planes activos.
+- Usado por pagina publica de planes.
+
+GET /api/v1/plans/{codigo}
+- Publico.
+- Devuelve detalle de un plan.
+
+5.2 Checkout/pago mock
+
+Nuevo archivo:
+backend/app/api/subscriptions.py
+
+Endpoints:
+
+POST /api/v1/subscriptions/checkout
+Body:
+{
+  "plan_codigo": "gratis|intermedio|premium|pro",
+  "email": "...",
+  "nombre_contacto": "..."
+}
+
+Respuesta:
+{
+  "checkout_id": "...",
+  "plan": {...},
+  "monto": 0,
+  "estado": "pendiente_pago"
+}
+
+POST /api/v1/subscriptions/checkout/{checkout_id}/pay
+- Simula pago.
+- Si plan gratis, tambien marca como pagado automaticamente.
+- Devuelve token temporal de onboarding.
+
+Respuesta:
+{
+  "onboarding_token": "...",
+  "plan_codigo": "...",
+  "estado": "pagado"
+}
+
+Importante:
+- El onboarding_token permite crear taller sin estar logueado aun.
+- Debe expirar o al menos guardarse como usado.
+
+5.3 Onboarding de taller
+
+Nuevo endpoint recomendado:
+backend/app/api/onboarding.py
+
+POST /api/v1/onboarding/workshop
+Body:
+{
+  "onboarding_token": "...",
+  "admin": {
+    "username": "...",
+    "email": "...",
+    "full_name": "...",
+    "password": "..."
+  },
+  "taller": {
+    "nombre_comercial": "...",
+    "direccion": "...",
+    "telefono": "...",
+    "email_contacto": "...",
+    "horario_atencion": "...",
+    "especialidad_ids": [...],
+    "descripcion": "...",
+    "latitud": ...,
+    "longitud": ...
+  }
+}
+
+Logica:
+1. Validar onboarding_token.
+2. Validar que el pago mock este pagado.
+3. Crear Tenant con nombre del taller.
+4. Crear TenantSubscription activa con plan seleccionado.
+5. Crear User role WORKSHOP como primer administrador del tenant.
+6. Crear Taller vinculado al User y al Tenant.
+7. Marcar checkout/onboarding como usado.
+8. Devolver AuthResponse para entrar directo al panel taller.
+
+No usar el endpoint viejo /auth/register/workshop para el nuevo flujo.
+Dejarlo por compatibilidad o convertirlo internamente al flujo gratis.
+
+5.4 Login administrador
+
+Archivo:
+backend/app/api/auth.py
+
+Agregar endpoint:
+POST /api/v1/auth/login/admin
+
+Body tipo form o JSON:
+{
+  "username": "...",
+  "password": "..."
+}
+
+Reglas:
+- Acepta role admin con tenant_id NULL: superadmin global.
+- Acepta role workshop con tenant_id: admin de taller.
+- Acepta role admin con tenant_id: admin de tenant si existe.
+- Rechaza role tecnico.
+- Rechaza role driver.
+
+Respuesta:
+- AuthResponse actual.
+
+5.5 Login trabajadores
+
+Archivo:
+backend/app/api/auth.py
+
+Agregar endpoint:
+POST /api/v1/auth/login/worker
+
+Body:
+{
+  "taller_id": 123,
+  "username": "...",
+  "password": "..."
+}
+
+Reglas:
+1. Buscar taller.
+2. Validar taller activo.
+3. Buscar usuario por username.
+4. Validar password.
+5. Validar role == tecnico.
+6. Validar user.tenant_id == taller.tenant_id.
+7. Validar existe Tecnico con id_usuario == user.id y taller_id == taller.id.
+8. Si todo ok, devolver AuthResponse.
+
+5.6 Busqueda publica de talleres para login trabajadores
+
+Archivo:
+backend/app/api/talleres.py o nuevo backend/app/api/public.py
+
+Endpoint:
+GET /api/v1/public/workshops/search?q=texto
+
+Reglas:
+- Publico, sin JWT.
+- Devuelve solo talleres activos.
+- Campos:
+  - id
+  - nombre_comercial
+  - direccion
+  - tenant_id
+  - tenant_nombre opcional
+
+Debe limitar resultados:
+- min q 2 caracteres.
+- max 10 o 20 resultados.
+
+5.7 Administradores de taller
+
+Nuevo archivo:
+backend/app/api/workshop_admins.py
+
+Endpoints:
+
+GET /api/v1/workshop-admins
+- Lista administradores del tenant/taller actual.
+- Para superadmin puede filtrar tenant_id.
+
+POST /api/v1/workshop-admins
+Body:
+{
+  "username": "...",
+  "email": "...",
+  "full_name": "...",
+  "password": "..."
+}
+
+Reglas:
+1. Usuario actual debe ser WORKSHOP del mismo tenant o ADMIN global.
+2. Obtener plan activo del tenant.
+3. Contar usuarios administradores del tenant:
+   - role WORKSHOP
+   - is_active true
+4. Validar limite max_administradores.
+5. Si limite excedido:
+   - HTTP 402 Payment Required o HTTP 403.
+   - detail: "Tu plan actual solo permite X administradores."
+   - code: "PLAN_LIMIT_ADMIN"
+   - upgrade_url: "/upgrade-plan"
+6. Crear usuario WORKSHOP con tenant_id.
+
+DELETE /api/v1/workshop-admins/{user_id}
+- Desactiva administrador.
+- No permitir borrar al propietario principal si es el ultimo admin.
+
+5.8 Validar limites para mecanicos
+
+Archivo:
+backend/app/api/tecnicos.py
+
+Modificar:
+POST /api/v1/tecnicos/
+
+Antes de crear:
+1. Obtener plan activo del tenant.
+2. Contar tecnicos activos del taller o tenant.
+3. Comparar con max_mecanicos.
+4. Si excede:
+   - HTTP 402 o 403.
+   - code: "PLAN_LIMIT_TECHNICIAN"
+   - upgrade_url: "/upgrade-plan"
+
+Para Plan Pro:
+- max_mecanicos NULL o -1 = ilimitado.
+
+================================================================================
+6. BACKEND: SERVICIO CENTRAL DE PLANES
+================================================================================
+
+Nuevo archivo:
+backend/app/services/subscription_limits.py
+
+Funciones:
+
+get_active_subscription(session, tenant_id)
+- Devuelve TenantSubscription activa.
+- Si no existe, crea/retorna gratis.
+
+get_plan_limits(session, tenant_id)
+- Devuelve limites del plan.
+
+count_tenant_admins(session, tenant_id)
+- Cuenta User role WORKSHOP activos del tenant.
+
+count_tenant_mechanics(session, tenant_id)
+- Cuenta Tecnico activos del tenant.
+
+ensure_can_create_admin(session, tenant_id)
+- Lanza HTTPException si excede.
+
+ensure_can_create_mechanic(session, tenant_id)
+- Lanza HTTPException si excede.
+
+Motivo:
+- Evitar duplicar validacion en routers.
+- Facilitar pruebas.
+- Hacer que taller, admin y onboarding usen una misma logica.
+
+================================================================================
+7. FRONTEND: RUTAS NUEVAS
+================================================================================
+
+Archivo:
+frontend/src/app/app.routes.ts
+
+Agregar:
+
+/planes
+- Pagina publica de planes.
+- Nuevo componente:
+  frontend/src/app/plans/plans.component.ts
+
+/checkout/:plan
+- Pago mock de plan.
+- Nuevo componente:
+  frontend/src/app/checkout/checkout.component.ts
+
+/onboarding/taller
+- Crear taller despues del pago.
+- Puede reutilizar o adaptar workshop-setup.
+- Nuevo componente recomendado:
+  frontend/src/app/onboarding-workshop/onboarding-workshop.component.ts
+
+/login/admin
+- Login Administrador.
+- Nuevo componente:
+  frontend/src/app/login-admin/login-admin.component.ts
+
+/login/trabajadores
+- Login Trabajadores.
+- Nuevo componente:
+  frontend/src/app/login-workers/login-workers.component.ts
+
+/upgrade-plan
+- Pagina para subir de plan cuando excede limites.
+- Nuevo componente:
+  frontend/src/app/upgrade-plan/upgrade-plan.component.ts
+
+Mantener:
+- /login como pantalla selector inicial o redirigir a /login/admin.
+- /taller
+- /dashboard
+- /superadmin
+- /taller/tecnicos
+
+================================================================================
+8. FRONTEND: PAGINA PUBLICA DE PLANES
+================================================================================
+
+Nuevo componente:
+frontend/src/app/plans/plans.component.ts
+
+Contenido:
+- Header con nombre de plataforma.
+- Cards de planes:
+  - Gratis
+  - Intermedio
+  - Premium
+  - Pro
+- Cada card muestra:
+  - precio
+  - administradores permitidos
+  - mecanicos permitidos
+  - beneficios inventados
+  - boton "Elegir plan"
+
+Boton:
+- Gratis: va a checkout con monto 0.
+- Otros: va a checkout mock.
+
+Servicio:
+frontend/src/app/core/plans.service.ts
+
+Metodos:
+- getPlans()
+- getPlan(codigo)
+
+================================================================================
+9. FRONTEND: CHECKOUT MOCK
+================================================================================
+
+Nuevo componente:
+frontend/src/app/checkout/checkout.component.ts
+
+Flujo:
+1. Lee plan desde URL.
+2. Muestra resumen de plan.
+3. Formulario:
+   - nombre contacto
+   - email
+   - metodo mock: tarjeta simulada / QR simulado / transferencia simulada.
+4. Boton "Pagar y continuar".
+5. Llama:
+   - POST /api/v1/subscriptions/checkout
+   - POST /api/v1/subscriptions/checkout/{id}/pay
+6. Guarda onboarding_token temporal en sessionStorage.
+7. Navega a /onboarding/taller.
+
+================================================================================
+10. FRONTEND: ONBOARDING TALLER
+================================================================================
+
+Nuevo componente:
+frontend/src/app/onboarding-workshop/onboarding-workshop.component.ts
+
+Puede reutilizar partes visuales de:
+frontend/src/app/workshop-setup/workshop-setup.component.ts
+
+No mezclar directamente si el componente actual asume usuario logueado.
+
+Formulario:
+- Datos administrador:
+  - nombre completo
+  - usuario
+  - email
+  - contrasena
+- Datos taller:
+  - nombre comercial
+  - direccion
+  - telefono
+  - email contacto
+  - horario atencion
+  - especialidades
+  - descripcion
+  - mapa/lat/lng si ya existe
+
+Al enviar:
+- POST /api/v1/onboarding/workshop
+- Guardar AuthResponse en AuthService.
+- Redirigir a /taller.
+
+================================================================================
+11. FRONTEND: LOGIN ADMINISTRADOR
+================================================================================
+
+Nuevo componente:
+frontend/src/app/login-admin/login-admin.component.ts
+
+UI:
+- Titulo "Login Administrador"
+- Usuario
+- Contrasena
+- Boton entrar
+- Link a "Crear taller" -> /planes
+- Link a "Login trabajadores" -> /login/trabajadores
+
+Servicio:
+frontend/src/app/core/auth.service.ts
+
+Agregar:
+- loginAdmin(username, password)
+  POST /api/v1/auth/login/admin
+
+Al autenticar:
+- Si role admin y tenant_id null -> /dashboard o /superadmin.
+- Si role workshop -> /taller.
+- Si role admin tenant -> /taller o dashboard tenant si existe.
+
+================================================================================
+12. FRONTEND: LOGIN TRABAJADORES
+================================================================================
+
+Nuevo componente:
+frontend/src/app/login-workers/login-workers.component.ts
+
+UI:
+- Titulo "Login Trabajadores"
+- Barra de busqueda de taller.
+- Resultados de talleres:
+  - nombre comercial
+  - direccion
+- Al seleccionar taller:
+  - muestra taller seleccionado.
+  - habilita usuario y contrasena.
+- Boton "Entrar a trabajar".
+- Link a "Login Administrador".
+
+Servicio:
+frontend/src/app/core/public-workshops.service.ts
+
+Metodos:
+- searchWorkshops(query)
+
+AuthService:
+- loginWorker(tallerId, username, password)
+  POST /api/v1/auth/login/worker
+
+Validaciones UX:
+- No permitir login sin taller seleccionado.
+- Si backend devuelve error, mostrar:
+  - "Usuario no pertenece a este taller"
+  - "Credenciales invalidas"
+  - "Taller inactivo"
+
+================================================================================
+13. FRONTEND: UPGRADE PLAN
+================================================================================
+
+Nuevo componente:
+frontend/src/app/upgrade-plan/upgrade-plan.component.ts
+
+Uso:
+- Cuando backend responda code PLAN_LIMIT_ADMIN o PLAN_LIMIT_TECHNICIAN.
+- Mostrar:
+  - plan actual
+  - limite alcanzado
+  - planes superiores
+  - boton para subir de plan
+
+Desde:
+- Gestion de administradores.
+- Creacion de mecanicos.
+
+Servicio:
+- PlansService / SubscriptionsService
+
+Endpoint futuro:
+- POST /api/v1/subscriptions/change-plan
+
+================================================================================
+14. FRONTEND: GESTION DE ADMINISTRADORES DE TALLER
+================================================================================
+
+Nuevo componente o seccion:
+frontend/src/app/workshop-dashboard/admins/admins.component.ts
+
+Ruta:
+/taller/administradores
+
+Funciones:
+- Listar administradores del taller.
+- Crear administrador.
+- Desactivar administrador.
+- Mostrar limite actual:
+  "Plan Gratis: 1/1 administradores usados"
+
+Si se intenta crear y backend devuelve limite:
+- Redirigir a /upgrade-plan con query params:
+  /upgrade-plan?reason=admins
+
+Actualizar sidebar/menu del taller:
+- Agregar link "Administradores"
+
+================================================================================
+15. FRONTEND: LIMITES EN CREACION DE MECANICOS
+================================================================================
+
+Archivo actual:
+frontend/src/app/workshop-dashboard/tecnicos/tecnicos.component.ts
+
+Modificar:
+- Al crear tecnico, capturar error PLAN_LIMIT_TECHNICIAN.
+- Redirigir a /upgrade-plan?reason=mechanics.
+- Mostrar contador de mecanicos usados vs limite.
+
+Agregar endpoint o usar subscription status:
+GET /api/v1/subscriptions/current
+
+Respuesta:
+{
+  "plan": {...},
+  "uso": {
+    "administradores": 1,
+    "mecanicos": 3
+  },
+  "limites": {
+    "administradores": 1,
+    "mecanicos": 5
+  }
+}
+
+================================================================================
+16. CAMBIOS EN AuthService FRONTEND
+================================================================================
+
+Archivo:
+frontend/src/app/core/auth.service.ts
+
+Agregar metodos:
+
+loginAdmin(username: string, password: string)
+- POST /api/v1/auth/login/admin
+- persistSession(response)
+
+loginWorker(tallerId: number, username: string, password: string)
+- POST /api/v1/auth/login/worker
+- persistSession(response)
+
+registerWorkshop debe dejar de ser principal para nuevo flujo.
+Puede mantenerse por compatibilidad.
+
+getDefaultRouteForRole debe revisar:
+- admin con tenant_id null -> /dashboard
+- workshop -> /taller
+- tecnico -> /tecnico
+- driver -> /cliente
+
+Para esto AuthUser debe incluir tenant_id.
+Actualmente AuthUser no lo tipa en frontend.
+Modificar interface AuthUser:
+- tenant_id?: number | null
+
+================================================================================
+17. CAMBIOS EN GUARDS
+================================================================================
+
+Archivos:
+frontend/src/app/core/admin.guard.ts
+frontend/src/app/core/workshop.guard.ts
+frontend/src/app/core/tecnico.guard.ts
+
+AdminGuard:
+- Permitir solo role admin.
+- Si admin tenant o superadmin, OK para /dashboard si se decide.
+- Si role workshop, redirigir /taller.
+
+WorkshopGuard:
+- Permitir role workshop.
+- Opcional: permitir role admin con tenant_id no null si se usa admin tenant.
+
+TecnicoGuard:
+- Sin cambio grande.
+- Asegurar que trabajador logueado tiene role tecnico.
+
+================================================================================
+18. COMPATIBILIDAD CON SISTEMA ACTUAL
+================================================================================
+
+No romper:
+- /api/v1/auth/login debe seguir existiendo por compatibilidad.
+- /api/v1/auth/register/client debe seguir existiendo.
+- /api/v1/auth/register/workshop puede mantenerse pero no debe ser usado por UI principal.
+- /taller y /taller/tecnicos deben seguir funcionando.
+- El superadmin admin/admin123 debe seguir funcionando.
+- Tenants existentes deben quedar con plan gratis por backfill.
+
+================================================================================
+19. ORDEN DE IMPLEMENTACION RECOMENDADO
+================================================================================
+
+FASE 1 - Backend modelos y seed
+1. Agregar SaaSPlan, TenantSubscription, SubscriptionPaymentMock.
+2. Agregar schemas de lectura/creacion.
+3. Agregar seed de planes en session.py.
+4. Backfill de tenants existentes a plan gratis.
+5. Compilar backend.
+
+FASE 2 - Backend servicios
+1. Crear subscription_limits.py.
+2. Implementar get_active_subscription.
+3. Implementar ensure_can_create_admin.
+4. Implementar ensure_can_create_mechanic.
+
+FASE 3 - Backend endpoints
+1. Crear plans.py.
+2. Crear subscriptions.py.
+3. Crear onboarding.py.
+4. Agregar auth login/admin.
+5. Agregar auth login/worker.
+6. Agregar public workshops search.
+7. Crear workshop_admins.py.
+8. Registrar routers en backend/app/main.py.
+
+FASE 4 - Aplicar limites
+1. Modificar tecnicos.py POST para validar max_mecanicos.
+2. Modificar endpoint de administradores para validar max_administradores.
+3. Agregar respuesta estructurada con code y upgrade_url.
+
+FASE 5 - Frontend servicios
+1. Crear plans.service.ts.
+2. Crear subscriptions.service.ts.
+3. Crear public-workshops.service.ts.
+4. Extender auth.service.ts con loginAdmin/loginWorker.
+
+FASE 6 - Frontend pantallas
+1. Crear /planes.
+2. Crear /checkout/:plan.
+3. Crear /onboarding/taller.
+4. Crear /login/admin.
+5. Crear /login/trabajadores.
+6. Crear /upgrade-plan.
+7. Crear /taller/administradores.
+
+FASE 7 - Rutas y UX
+1. Ajustar app.routes.ts.
+2. Hacer /login una pantalla selector:
+   - Login Administrador
+   - Login Trabajadores
+   - Crear taller
+3. Actualizar botones y redirecciones.
+
+FASE 8 - Pruebas
+1. Crear plan gratis -> pago mock -> crear taller -> entra /taller.
+2. Crear hasta 5 mecanicos en gratis -> OK.
+3. Intentar crear sexto mecanico -> redirige upgrade.
+4. Intentar crear segundo admin en gratis -> redirige upgrade.
+5. Login trabajador:
+   - busca taller.
+   - selecciona.
+   - entra tecnico.
+6. Login trabajador con taller incorrecto -> error.
+7. Login admin:
+   - admin/admin123 -> /dashboard.
+   - admin de taller -> /taller.
+8. Verificar backend compile.
+9. Verificar frontend build.
+10. Rebuild Docker.
+
+================================================================================
+20. CRITERIOS DE ACEPTACION
+================================================================================
+
+Se considera terminado cuando:
+
+1. Existe pagina publica de planes.
+2. Cada plan muestra limites y beneficios.
+3. Se puede seleccionar plan y hacer pago mock.
+4. Despues del pago se puede crear taller.
+5. El usuario creador queda como administrador del taller.
+6. Login Administrador existe y no pide taller.
+7. Login Trabajadores existe y pide buscar/seleccionar taller.
+8. Trabajador solo puede entrar si pertenece al taller seleccionado.
+9. Plan gratis limita a:
+   - 1 administrador.
+   - 5 mecanicos.
+10. Plan intermedio limita a:
+   - 3 administradores.
+   - 10 mecanicos.
+11. Plan premium limita a:
+   - 10 administradores.
+   - 20 mecanicos.
+12. Plan pro no limita administradores ni mecanicos.
+13. Si se supera limite, se redirige a upgrade plan.
+14. Todo lo anterior funciona en Docker en:
+   - Frontend: http://127.0.0.1:4200
+   - Backend: http://127.0.0.1:8000
+
+================================================================================
+21. NOTAS IMPORTANTES PARA CLAUDE CODE
+================================================================================
+
+- No crear proyecto nuevo.
+- Trabajar sobre:
+  C:\Users\ASUS\Desktop\examen1\asistencia-mecanica
+
+- No tocar Flutter.
+- Mantener FastAPI, PostgreSQL, Angular, Docker.
+- No eliminar endpoints existentes.
+- No romper superadmin actual:
+  usuario: admin
+  password: admin123
+
+- Evitar reescribir todo el login antiguo si no hace falta.
+  Mejor crear pantallas nuevas y dejar /login como selector.
+
+- Usar modelos y routers existentes:
+  backend/app/models/domain.py
+  backend/app/models/user.py
+  backend/app/api/auth.py
+  backend/app/api/talleres.py
+  backend/app/api/tecnicos.py
+  backend/app/main.py
+
+- Si aparece error de encoding en textos existentes, corregir los textos visibles de nuevas pantallas con ASCII o UTF-8 correcto.
+
+- Despues de implementar:
+  1. npx tsc --noEmit -p tsconfig.app.json
+  2. npm run build
+  3. docker compose up -d --build
+  4. probar login/admin, login/trabajadores, planes, onboarding.
+
