@@ -6,6 +6,7 @@ class AppUser {
     this.fullName,
     required this.role,
     required this.isActive,
+    this.tenantId,
   });
 
   final int id;
@@ -14,9 +15,12 @@ class AppUser {
   final String? fullName;
   final String role;
   final bool isActive;
+  final int? tenantId;
 
   bool get isDriver => role == 'driver';
-  bool get isWorkshopLike => role == 'workshop' || role == 'admin';
+  bool get isGlobalAdmin => role == 'admin' && tenantId == null;
+  bool get isWorkshopLike =>
+      role == 'workshop' || (role == 'admin' && tenantId != null);
   String get displayName =>
       (fullName?.trim().isNotEmpty ?? false) ? fullName!.trim() : username;
 
@@ -28,6 +32,7 @@ class AppUser {
       'full_name': fullName,
       'role': role,
       'is_active': isActive,
+      'tenant_id': tenantId,
     };
   }
 
@@ -39,6 +44,153 @@ class AppUser {
       fullName: json['full_name'] as String?,
       role: json['role'] as String? ?? 'driver',
       isActive: json['is_active'] as bool? ?? true,
+      tenantId: json['tenant_id'] as int?,
+    );
+  }
+}
+
+class PublicWorkshop {
+  const PublicWorkshop({
+    required this.id,
+    required this.nombreComercial,
+    required this.direccion,
+    this.tenantId,
+    this.tenantNombre,
+  });
+
+  final int id;
+  final String nombreComercial;
+  final String direccion;
+  final int? tenantId;
+  final String? tenantNombre;
+
+  String get label => direccion.trim().isEmpty
+      ? nombreComercial
+      : '$nombreComercial - $direccion';
+
+  factory PublicWorkshop.fromApi(Map<String, dynamic> json) {
+    return PublicWorkshop(
+      id: json['id'] as int,
+      nombreComercial: json['nombre_comercial'] as String? ?? 'Taller',
+      direccion: json['direccion'] as String? ?? '',
+      tenantId: json['tenant_id'] as int?,
+      tenantNombre: json['tenant_nombre'] as String?,
+    );
+  }
+}
+
+class SaaSPlan {
+  const SaaSPlan({
+    required this.codigo,
+    required this.nombre,
+    required this.descripcion,
+    required this.precioMensual,
+    this.maxAdministradores,
+    this.maxMecanicos,
+    this.maxSolicitudesMes,
+    required this.beneficios,
+  });
+
+  final String codigo;
+  final String nombre;
+  final String descripcion;
+  final double precioMensual;
+  final int? maxAdministradores;
+  final int? maxMecanicos;
+  final int? maxSolicitudesMes;
+  final List<String> beneficios;
+
+  String get priceLabel => precioMensual <= 0
+      ? 'Gratis'
+      : 'Bs ${precioMensual.toStringAsFixed(0)}/mes';
+
+  String get limitLabel {
+    final admins = maxAdministradores == null
+        ? 'admins ilimitados'
+        : '$maxAdministradores admin';
+    final mechanics = maxMecanicos == null
+        ? 'mecanicos ilimitados'
+        : '$maxMecanicos mecanicos';
+    return '$admins, $mechanics';
+  }
+
+  factory SaaSPlan.fromApi(Map<String, dynamic> json) {
+    double readDouble(dynamic value) {
+      if (value is int) return value.toDouble();
+      if (value is double) return value;
+      return double.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    return SaaSPlan(
+      codigo: json['codigo'] as String? ?? '',
+      nombre: json['nombre'] as String? ?? 'Plan',
+      descripcion: json['descripcion'] as String? ?? '',
+      precioMensual: readDouble(json['precio_mensual']),
+      maxAdministradores: json['max_administradores'] as int?,
+      maxMecanicos: json['max_mecanicos'] as int?,
+      maxSolicitudesMes: json['max_solicitudes_mes'] as int?,
+      beneficios: (json['beneficios'] as List<dynamic>? ?? [])
+          .map((item) => item.toString())
+          .where((item) => item.trim().isNotEmpty)
+          .toList(),
+    );
+  }
+}
+
+class PlanCheckout {
+  const PlanCheckout({
+    required this.checkoutId,
+    required this.referencia,
+    required this.estado,
+    required this.monto,
+    required this.moneda,
+    required this.plan,
+  });
+
+  final int checkoutId;
+  final String referencia;
+  final String estado;
+  final double monto;
+  final String moneda;
+  final SaaSPlan plan;
+
+  factory PlanCheckout.fromApi(Map<String, dynamic> json) {
+    double readDouble(dynamic value) {
+      if (value is int) return value.toDouble();
+      if (value is double) return value;
+      return double.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    return PlanCheckout(
+      checkoutId: json['checkout_id'] as int,
+      referencia: json['referencia'] as String? ?? '',
+      estado: json['estado'] as String? ?? '',
+      monto: readDouble(json['monto']),
+      moneda: json['moneda'] as String? ?? 'BOB',
+      plan: SaaSPlan.fromApi(json['plan'] as Map<String, dynamic>),
+    );
+  }
+}
+
+class PlanPayment {
+  const PlanPayment({
+    required this.checkoutId,
+    required this.estado,
+    required this.onboardingToken,
+    required this.planCodigo,
+  });
+
+  final int checkoutId;
+  final String estado;
+  final String onboardingToken;
+  final String planCodigo;
+
+  factory PlanPayment.fromApi(Map<String, dynamic> json) {
+    return PlanPayment(
+      checkoutId: json['checkout_id'] as int,
+      estado: json['estado'] as String? ?? '',
+      onboardingToken: json['onboarding_token'] as String? ?? '',
+      planCodigo: json['plan_codigo'] as String? ?? '',
     );
   }
 }
@@ -464,16 +616,31 @@ class EmergencyRequest {
   final String? audioResumenIa;
   final String? rutaRecomendadaIa;
 
-  bool get isClosed => estado == 'resuelta' || estado == 'cancelada';
+  bool get isClosed =>
+      estado == 'finalizado' ||
+      estado == 'resuelta' ||
+      estado == 'cancelado' ||
+      estado == 'cancelada';
   bool get canBeCancelled => !isClosed;
   bool get canBePaid =>
       !isClosed &&
       precioCobrado != null &&
       (estadoPago ?? 'pendiente') != 'pagado';
   bool get paymentReady =>
-      estado == 'en_progreso' || estado == 'llegada' || estado == 'resuelta';
+      estado == 'tecnico_en_camino' ||
+      estado == 'tecnico_llego' ||
+      estado == 'en_proceso' ||
+      estado == 'finalizado' ||
+      estado == 'en_progreso' ||
+      estado == 'llegada' ||
+      estado == 'resuelta';
   bool get serviceInProgress =>
-      estado == 'asignada' || estado == 'en_progreso' || estado == 'llegada';
+      estado == 'asignada' ||
+      estado == 'tecnico_en_camino' ||
+      estado == 'tecnico_llego' ||
+      estado == 'en_proceso' ||
+      estado == 'en_progreso' ||
+      estado == 'llegada';
 
   String get statusLabel {
     switch (estado) {
@@ -481,6 +648,16 @@ class EmergencyRequest {
         return 'Pendiente';
       case 'asignada':
         return 'Asignada';
+      case 'tecnico_en_camino':
+        return 'Mecanico en camino';
+      case 'tecnico_llego':
+        return 'Mecanico en sitio';
+      case 'en_proceso':
+        return 'En atencion';
+      case 'finalizado':
+        return 'Atendida';
+      case 'cancelado':
+        return 'Cancelada';
       case 'en_progreso':
         return 'En progreso';
       case 'llegada':
@@ -549,6 +726,68 @@ class EmergencyRequest {
       audioUrl: json['audio_url'] as String?,
       audioResumenIa: json['audio_resumen_ia'] as String?,
       rutaRecomendadaIa: json['ruta_recomendada_ia'] as String?,
+    );
+  }
+}
+
+class Cotizacion {
+  const Cotizacion({
+    required this.id,
+    required this.solicitudId,
+    required this.tallerId,
+    required this.costoEstimado,
+    required this.tiempoReparacionHoras,
+    required this.etaLlegadaMinutos,
+    required this.estado,
+    required this.fechaCreacion,
+    this.descripcion,
+    this.incluyeRepuestos = false,
+    this.garantiaDias = 0,
+    this.tallerNombre,
+    this.tallerCalificacion,
+  });
+
+  final int id;
+  final int solicitudId;
+  final int tallerId;
+  final double costoEstimado;
+  final double tiempoReparacionHoras;
+  final int etaLlegadaMinutos;
+  final String estado;
+  final DateTime fechaCreacion;
+  final String? descripcion;
+  final bool incluyeRepuestos;
+  final int garantiaDias;
+  final String? tallerNombre;
+  final double? tallerCalificacion;
+
+  bool get disponible => estado == 'enviada';
+
+  factory Cotizacion.fromApi(Map<String, dynamic> json) {
+    double readDouble(dynamic value) {
+      if (value is int) return value.toDouble();
+      if (value is double) return value;
+      return double.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    return Cotizacion(
+      id: json['id'] as int,
+      solicitudId: json['solicitud_id'] as int? ?? 0,
+      tallerId: json['taller_id'] as int? ?? 0,
+      costoEstimado: readDouble(json['costo_estimado']),
+      tiempoReparacionHoras: readDouble(json['tiempo_reparacion_horas']),
+      etaLlegadaMinutos: json['eta_llegada_minutos'] as int? ?? 0,
+      estado: json['estado'] as String? ?? 'enviada',
+      fechaCreacion:
+          DateTime.tryParse(json['fecha_creacion']?.toString() ?? '') ??
+          DateTime.now(),
+      descripcion: json['descripcion'] as String?,
+      incluyeRepuestos: json['incluye_repuestos'] as bool? ?? false,
+      garantiaDias: json['garantia_dias'] as int? ?? 0,
+      tallerNombre: json['taller_nombre'] as String?,
+      tallerCalificacion: json['taller_calificacion'] == null
+          ? null
+          : readDouble(json['taller_calificacion']),
     );
   }
 }

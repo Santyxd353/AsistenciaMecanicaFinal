@@ -10,6 +10,9 @@ export interface AuthUser {
   username: string;
   email: string;
   full_name?: string | null;
+  telefono?: string | null;
+  foto_url?: string | null;
+  contacto_emergencia?: string | null;
   role: UserRole;
   is_active: boolean;
   tenant_id?: number | null;
@@ -34,6 +37,9 @@ export interface UpdateProfilePayload {
   username?: string;
   email?: string;
   full_name?: string;
+  telefono?: string;
+  foto_url?: string;
+  contacto_emergencia?: string;
 }
 
 export interface MessageResponse {
@@ -78,14 +84,14 @@ export class AuthService {
     );
   }
 
-  loginAdmin(username: string, password: string): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${this.apiUrl}/login/admin`, { username, password }).pipe(
+  loginAdmin(email: string, password: string): Observable<AuthResponse> {
+    return this.http.post<AuthResponse>(`${this.apiUrl}/login/admin`, { email, password }).pipe(
       tap((response) => this.persistSession(response))
     );
   }
 
-  loginClient(username: string, password: string): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${this.apiUrl}/login/client`, { username, password }).pipe(
+  loginClient(email: string, password: string): Observable<AuthResponse> {
+    return this.http.post<AuthResponse>(`${this.apiUrl}/login/client`, { email, password }).pipe(
       tap((response) => this.persistSession(response))
     );
   }

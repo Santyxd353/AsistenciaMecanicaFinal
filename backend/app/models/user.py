@@ -12,6 +12,9 @@ class UserBase(SQLModel):
     username: str = Field(index=True, unique=True)
     email: str = Field(index=True, unique=True)
     full_name: Optional[str] = None
+    telefono: Optional[str] = None
+    foto_url: Optional[str] = None
+    contacto_emergencia: Optional[str] = None
     role: UserRole = UserRole.DRIVER
     is_active: bool = True
     # Multi-tenant SaaS: cada usuario operativo pertenece a un Tenant.
@@ -49,6 +52,9 @@ class UserUpdate(SQLModel):
     username: Optional[str] = None
     email: Optional[str] = None
     full_name: Optional[str] = None
+    telefono: Optional[str] = None
+    foto_url: Optional[str] = None
+    contacto_emergencia: Optional[str] = None
 
 
 class UserRead(UserBase):

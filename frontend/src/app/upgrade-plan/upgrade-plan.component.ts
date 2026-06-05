@@ -13,9 +13,9 @@ import { CurrentSubscription, SubscriptionsService } from '../core/subscriptions
     <main class="upgrade">
       <header>
         <a routerLink="/taller">Volver al taller</a>
-        <p class="kicker">Limite de plan</p>
+        <p class="kicker">Límite de plan</p>
         <h1>Sube de plan para continuar</h1>
-        <p *ngIf="current">Plan actual: <strong>{{ current.plan.nombre }}</strong> Â· {{ current.uso.administradores }} admins Â· {{ current.uso.mecanicos }} mecanicos</p>
+        <p *ngIf="current">Plan actual: <strong>{{ current.plan.nombre }}</strong> · {{ current.uso.administradores }} admins · {{ current.uso.mecanicos }} mecánicos</p>
       </header>
       <section class="grid">
         <article class="plan" *ngFor="let plan of plans">

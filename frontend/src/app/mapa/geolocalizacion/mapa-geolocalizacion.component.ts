@@ -53,7 +53,7 @@ export class MapaGeolocalizacionComponent implements AfterViewInit, OnChanges, O
     return {
       incidente: 'Incidente',
       taller: 'Taller',
-      tecnico: 'Tecnico'
+      tecnico: 'Técnico'
     };
   }
 

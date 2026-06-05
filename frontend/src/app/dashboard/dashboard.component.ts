@@ -30,7 +30,7 @@ type AdminTab = 'overview' | 'tenants' | 'talleres' | 'solicitudes' | 'tecnicos'
           <div class="brand-mark">SM</div>
           <div>
             <strong>Super Admin</strong>
-            <span>SaaS vehicular</span>
+            <span>RutaSOS</span>
           </div>
         </div>
 
@@ -436,5 +436,4 @@ export class DashboardComponent implements OnInit {
     this.authService.logout();
   }
 }
-
 

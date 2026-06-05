@@ -52,6 +52,9 @@ def ensure_legacy_schema():
         "ALTER TABLE taller ALTER COLUMN especialidades DROP NOT NULL",
         # Multi-tenant SaaS.
         'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS tenant_id INTEGER NULL',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS telefono VARCHAR NULL',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS foto_url VARCHAR NULL',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS contacto_emergencia VARCHAR NULL',
         "ALTER TABLE taller ADD COLUMN IF NOT EXISTS tenant_id INTEGER NULL",
         "ALTER TABLE tecnico ADD COLUMN IF NOT EXISTS tenant_id INTEGER NULL",
         "ALTER TABLE vehiculo ADD COLUMN IF NOT EXISTS tenant_id INTEGER NULL",

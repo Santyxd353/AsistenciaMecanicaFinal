@@ -58,6 +58,21 @@ export const routes: Routes = [
     canActivate: [ClientGuard],
   },
   {
+    path: 'cliente/perfil',
+    loadComponent: () => import('./client-portal/cliente-perfil.component').then((m) => m.ClientePerfilComponent),
+    canActivate: [ClientGuard],
+  },
+  {
+    path: 'cliente/vehiculos',
+    loadComponent: () => import('./client-portal/cliente-vehiculos.component').then((m) => m.ClienteVehiculosComponent),
+    canActivate: [ClientGuard],
+  },
+  {
+    path: 'cliente/solicitudes',
+    loadComponent: () => import('./client-portal/cliente-solicitudes.component').then((m) => m.ClienteSolicitudesComponent),
+    canActivate: [ClientGuard],
+  },
+  {
     path: 'tecnico',
     loadComponent: () => import('./tecnicos/panel-tecnico.component').then((m) => m.PanelTecnicoComponent),
     canActivate: [TecnicoGuard],

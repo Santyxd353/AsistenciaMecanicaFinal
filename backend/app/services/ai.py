@@ -11,9 +11,9 @@ from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-import pytesseract
 from PIL import Image, ImageEnhance, ImageOps, ImageStat
 
+from app.services.groq_client import groq_vision_json
 from app.services.storage import guess_mime_type
 
 
@@ -114,6 +114,17 @@ def analyze_incident(
 
 
 def analyze_vehicle_photos(*, image_paths: list[str], file_names: Optional[list[str]] = None) -> VehiclePhotoAnalysis:
+    """Identifica marca/modelo/color/año/placa a partir de fotos.
+
+    Cadena de proveedores (todo solo HTTP, sin ML local):
+      1. Groq vision (Llama 4 multimodal) si GROQ_API_KEY esta seteada.
+      2. Gemini vision como fallback si GEMINI_API_KEY esta seteada.
+      3. Resultado vacio "safe-fallback" si nada respondio.
+
+    Campos que el modelo no reconozca con confianza vienen como string vacio
+    ("" para placa/marca/modelo/color) o None (anio). El cliente muestra
+    "no identificado" para esos campos sin bloquear el registro manual.
+    """
     if not image_paths:
         return VehiclePhotoAnalysis(
             placa="",
@@ -124,43 +135,104 @@ def analyze_vehicle_photos(*, image_paths: list[str], file_names: Optional[list[
             resumen="No se enviaron fotos para analizar.",
             source="fallback",
         )
-    if not _gemini_api_key():
-        return _analyze_vehicle_locally(image_paths=image_paths, file_names=file_names or [])
 
-    try:
-        result = _analyze_vehicle_with_gemini(image_paths=image_paths, file_names=file_names or [])
-        if not any([result.placa, result.marca, result.modelo, result.color, result.anio]):
-            fallback = _analyze_vehicle_with_best_fallback(image_paths=image_paths, file_names=file_names or [])
-            if any([fallback.placa, fallback.marca, fallback.modelo, fallback.color, fallback.anio]):
-                return VehiclePhotoAnalysis(
-                    placa=fallback.placa,
-                    marca=fallback.marca,
-                    modelo=fallback.modelo,
-                    anio=fallback.anio,
-                    color=fallback.color,
-                    resumen=f"{result.resumen} Se completo con analisis local de respaldo.",
-                    source="gemini+local",
-                )
-        return result
-    except Exception as exc:
-        print(f"Gemini vehiculo fallo: {exc}")
+    # 1) Groq vision
+    groq_result = _analyze_vehicle_with_groq(image_paths=image_paths)
+    if groq_result is not None and _has_useful_fields(groq_result):
+        return groq_result
+
+    # 2) Gemini fallback
+    if _gemini_api_key():
         try:
-            local = _analyze_vehicle_locally(image_paths=image_paths, file_names=file_names or [])
-            local.resumen = (
-                "Gemini no respondio correctamente. "
-                f"Se uso analisis local editable: {local.resumen}"
-            )
-            return local
-        except Exception:
-            return VehiclePhotoAnalysis(
-                placa="",
-                marca="",
-                modelo="",
-                anio=None,
-                color="",
-                resumen="La IA no pudo identificar datos suficientes. Completa o corrige los campos manualmente.",
-                source="safe-fallback",
-            )
+            gemini_result = _analyze_vehicle_with_gemini(image_paths=image_paths, file_names=file_names or [])
+            if _has_useful_fields(gemini_result):
+                # Si Groq habia detectado algo parcial, conservamos lo de Gemini
+                # (mas confiable por tener prompt afinado). El resumen explica.
+                return gemini_result
+            # Gemini tampoco saco nada util. Devolvemos lo que tenga, marcado.
+            return gemini_result
+        except Exception as exc:  # noqa: BLE001
+            print(f"[ai.analyze_vehicle_photos] Gemini fallo: {exc}")
+
+    # Si Groq devolvio respuesta pero sin campos utiles, devolvemos eso.
+    if groq_result is not None:
+        return groq_result
+
+    # 3) Sin nada configurado o todo fallo.
+    return VehiclePhotoAnalysis(
+        placa="",
+        marca="",
+        modelo="",
+        anio=None,
+        color="",
+        resumen=(
+            "La IA no esta configurada (faltan GROQ_API_KEY o GEMINI_API_KEY) o no "
+            "pudo identificar el vehiculo. Completa los campos manualmente."
+        ),
+        source="safe-fallback",
+    )
+
+
+def _has_useful_fields(result: VehiclePhotoAnalysis) -> bool:
+    return bool(result.placa or result.marca or result.modelo or result.color or result.anio)
+
+
+def _analyze_vehicle_with_groq(*, image_paths: list[str]) -> Optional[VehiclePhotoAnalysis]:
+    """Pide a Groq vision un JSON estructurado con los 5 campos."""
+    prompt = (
+        "Eres un perito automotriz. Mira las fotos del vehiculo y devuelve SOLO un "
+        "JSON con estas claves EXACTAS y nada mas:\n"
+        '{"placa": "...", "marca": "...", "modelo": "...", "anio": 0, "color": "...", "resumen": "..."}\n\n'
+        "Reglas:\n"
+        "- placa: el texto exacto de la matricula si es legible (mayusculas, sin "
+        "espacios). Si no se ve, no se lee claro, o es ambigua, devuelve \"\".\n"
+        "- marca: la marca del vehiculo (Toyota, Nissan, etc). Si no la sabes, \"\".\n"
+        "- modelo: el modelo (Corolla, Hilux, Sentra, etc). Si no estas seguro, \"\".\n"
+        "- anio: numero entero del año si lo puedes inferir; si no, 0.\n"
+        "- color: color predominante en español (Blanco, Rojo, Gris, Negro, etc). "
+        "Si no es claro, \"\".\n"
+        "- resumen: una frase breve en español describiendo lo que ves.\n"
+        "No inventes valores. Mejor \"\" o 0 que adivinar."
+    )
+
+    data = groq_vision_json(image_paths=image_paths, prompt=prompt, max_tokens=400)
+    if data is None:
+        return None
+
+    placa = _sanitize_plate(data.get("placa"))
+    marca = _sanitize_text(str(data.get("marca") or ""), "")
+    modelo = _sanitize_text(str(data.get("modelo") or ""), "")
+    color = _sanitize_text(str(data.get("color") or ""), "")
+    anio = _coerce_anio(data.get("anio"))
+    resumen = _sanitize_text(
+        str(data.get("resumen") or ""),
+        "Datos sugeridos por Groq vision. Revisa antes de guardar.",
+    )
+
+    return VehiclePhotoAnalysis(
+        placa=placa,
+        marca=marca,
+        modelo=modelo,
+        anio=anio,
+        color=color,
+        resumen=resumen,
+        source="groq",
+    )
+
+
+def _coerce_anio(value: object) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        try:
+            n = int(float(str(value)))
+        except (TypeError, ValueError):
+            return None
+    if 1950 <= n <= 2100:
+        return n
+    return None
 
 
 def summarize_audio_file(*, audio_path: str, descripcion: str = "") -> str:
@@ -190,12 +262,12 @@ def summarize_audio_file(*, audio_path: str, descripcion: str = "") -> str:
 
 
 def warm_vehicle_ai() -> None:
-    if _gemini_api_key():
-        return
-    try:
-        _load_hf_vehicle_bundle()
-    except Exception:
-        return
+    """No-op: la IA de vehiculos se hace 100% via HTTP (Groq/Gemini).
+
+    Antes precargaba un modelo HF local (transformers/torch) para no pagar el
+    coste de la primera request. Ya no aplica: no hay modelo local que cargar.
+    """
+    return None
 
 
 def _analyze_with_gemini(
@@ -651,19 +723,9 @@ def _parse_vehicle_label(label: str) -> tuple[str, str, Optional[int]]:
 
 
 def _extract_candidate_text(image: Image.Image) -> list[str]:
-    variants = [_prepare_variant(variant) for variant in _generate_image_regions(image)]
-
-    texts: list[str] = []
-    for variant in variants:
-        for config in ("--psm 6", "--psm 11"):
-            try:
-                text = pytesseract.image_to_string(variant, config=config)
-            except Exception:
-                continue
-            cleaned = " ".join(text.split())
-            if cleaned:
-                texts.append(cleaned)
-    return texts
+    """Stub: OCR local con tesseract retirado. La deteccion ahora es LLM."""
+    _ = image
+    return []
 
 
 def _find_plate(text: str) -> str:
@@ -813,20 +875,10 @@ def _prepare_variant(image: Image.Image) -> Image.Image:
 
 
 def _extract_plate_candidate_text(image: Image.Image) -> list[str]:
-    texts: list[str] = []
-    for region in _generate_image_regions(image)[1:3]:
-        grayscale = _prepare_variant(region)
-        for threshold in (145,):
-            binary = grayscale.point(lambda pixel, t=threshold: 255 if pixel > t else 0)
-            for config in ("--psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-",):
-                try:
-                    text = pytesseract.image_to_string(binary, config=config)
-                except Exception:
-                    continue
-                cleaned = " ".join(text.split())
-                if cleaned:
-                    texts.append(cleaned)
-    return texts
+    """Stub: el OCR local con tesseract fue retirado para reducir el tamano de
+    la imagen Docker. La deteccion de placa ahora la hace el LLM via Groq/Gemini.
+    """
+    return []
 
 
 def _score_plate_candidate(candidate: str) -> int:

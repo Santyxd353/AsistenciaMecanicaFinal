@@ -7,15 +7,57 @@ import '../app_controller.dart';
 import '../models.dart';
 import '../repositories.dart';
 
-class WorkshopRequestDetailScreen extends StatelessWidget {
+class WorkshopRequestDetailScreen extends StatefulWidget {
   const WorkshopRequestDetailScreen({super.key, required this.requestId});
 
   final int requestId;
 
   @override
+  State<WorkshopRequestDetailScreen> createState() =>
+      _WorkshopRequestDetailScreenState();
+}
+
+class _WorkshopRequestDetailScreenState
+    extends State<WorkshopRequestDetailScreen> {
+  int get requestId => widget.requestId;
+
+  @override
+  void dispose() {
+    // Si el técnico cierra esta pantalla, paramos el timer de tracking para
+    // no consumir batería ni datos en segundo plano. La pantalla del detalle
+    // es el único punto del cual emitimos la ubicación; cuando el mecánico
+    // vuelve aquí, el `initState` del próximo render relanza el timer.
+    final controller = context.read<AppController>();
+    if (controller.trackingRequestId == requestId) {
+      controller.stopMechanicTracking();
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final controller = context.watch<AppController>();
     final request = _findRequest(controller.requests, requestId);
+
+    // Auto-start tracking si quien mira es el mecánico asignado y el estado
+    // está en alguno de los activos. Lo hacemos en build (post-frame) para
+    // poder reaccionar también a cambios de estado vía realtime.
+    if (request != null && controller.currentUser?.role == 'tecnico') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        const activos = {
+          'asignada',
+          'tecnico_en_camino',
+          'tecnico_llego',
+          'en_proceso',
+        };
+        if (activos.contains(request.estado)) {
+          controller.startMechanicTracking(request);
+        } else if (controller.trackingRequestId == request.id) {
+          controller.stopMechanicTracking();
+        }
+      });
+    }
 
     if (request == null) {
       return Scaffold(
@@ -363,8 +405,29 @@ class _ActionPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (controller.currentUser?.role == 'tecnico' &&
+              request.serviceInProgress) ...[
+            FilledButton.icon(
+              onPressed: controller.loading
+                  ? null
+                  : () => _sendLocation(context, controller),
+              icon: const Icon(Icons.my_location_outlined),
+              label: const Text('Compartir ubicacion actual'),
+            ),
+            const SizedBox(height: 10),
+          ],
           if (request.tallerId == null &&
               controller.canWorkshopTakeRequest(request))
+            FilledButton.icon(
+              onPressed: controller.loading
+                  ? null
+                  : () => _showQuoteEditor(context, controller),
+              icon: const Icon(Icons.request_quote_outlined),
+              label: const Text('Enviar cotizacion al cliente'),
+            ),
+          if (request.tallerId == null &&
+              controller.canWorkshopTakeRequest(request)) ...[
+            const SizedBox(height: 10),
             FilledButton.icon(
               onPressed: controller.loading
                   ? null
@@ -372,6 +435,7 @@ class _ActionPanel extends StatelessWidget {
               icon: const Icon(Icons.engineering_outlined),
               label: const Text('Tomar servicio y asignar tecnico'),
             ),
+          ],
           if (request.estado == 'asignada' &&
               controller.canWorkshopManageRequest(request))
             FilledButton.icon(
@@ -379,31 +443,43 @@ class _ActionPanel extends StatelessWidget {
                   ? null
                   : () => controller.advanceRequestStatus(
                       request: request,
-                      estado: 'en_progreso',
+                      estado: 'tecnico_en_camino',
                     ),
               icon: const Icon(Icons.route_outlined),
               label: const Text('Marcar tecnico en camino'),
             ),
-          if (request.estado == 'en_progreso' &&
+          if (request.estado == 'tecnico_en_camino' &&
               controller.canWorkshopManageRequest(request))
             FilledButton.icon(
               onPressed: controller.loading
                   ? null
                   : () => controller.advanceRequestStatus(
                       request: request,
-                      estado: 'llegada',
+                      estado: 'tecnico_llego',
                     ),
               icon: const Icon(Icons.location_on_outlined),
               label: const Text('Marcar llegada al incidente'),
             ),
-          if (request.estado == 'llegada' &&
+          if (request.estado == 'tecnico_llego' &&
               controller.canWorkshopManageRequest(request))
             FilledButton.icon(
               onPressed: controller.loading
                   ? null
                   : () => controller.advanceRequestStatus(
                       request: request,
-                      estado: 'resuelta',
+                      estado: 'en_proceso',
+                    ),
+              icon: const Icon(Icons.build_circle_outlined),
+              label: const Text('Iniciar atencion'),
+            ),
+          if (request.estado == 'en_proceso' &&
+              controller.canWorkshopManageRequest(request))
+            FilledButton.icon(
+              onPressed: controller.loading
+                  ? null
+                  : () => controller.advanceRequestStatus(
+                      request: request,
+                      estado: 'finalizado',
                     ),
               icon: const Icon(Icons.task_alt_outlined),
               label: const Text('Marcar servicio finalizado'),
@@ -429,6 +505,169 @@ class _ActionPanel extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _showQuoteEditor(
+    BuildContext context,
+    AppController controller,
+  ) async {
+    final amountController = TextEditingController();
+    final etaController = TextEditingController(text: '20');
+    final hoursController = TextEditingController(text: '1');
+    final warrantyController = TextEditingController(text: '7');
+    final descriptionController = TextEditingController();
+    bool includesParts = false;
+    String? errorText;
+
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text('Cotizar solicitud #${request.id}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: amountController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Costo estimado (Bs)',
+                    errorText: errorText,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: etaController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Llegada estimada (min)',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: hoursController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Tiempo de reparacion (horas)',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: warrantyController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Garantia (dias)',
+                  ),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: includesParts,
+                  title: const Text('Incluye repuestos'),
+                  onChanged: (value) => setState(() => includesParts = value),
+                ),
+                TextField(
+                  controller: descriptionController,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Mensaje al cliente',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final amount = double.tryParse(
+                  amountController.text.replaceAll(',', '.'),
+                );
+                final eta = int.tryParse(etaController.text);
+                final hours = double.tryParse(
+                  hoursController.text.replaceAll(',', '.'),
+                );
+                final warranty = int.tryParse(warrantyController.text) ?? 0;
+                if (amount == null ||
+                    amount <= 0 ||
+                    eta == null ||
+                    eta <= 0 ||
+                    hours == null ||
+                    hours <= 0) {
+                  setState(() => errorText = 'Completa costo, ETA y horas.');
+                  return;
+                }
+                try {
+                  await controller.createCotizacion(
+                    request: request,
+                    costoEstimado: amount,
+                    tiempoReparacionHoras: hours,
+                    etaLlegadaMinutos: eta,
+                    descripcion: descriptionController.text,
+                    incluyeRepuestos: includesParts,
+                    garantiaDias: warranty,
+                  );
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop(true);
+                  }
+                } catch (error) {
+                  setState(() {
+                    errorText = error.toString().replaceFirst(
+                      'Exception: ',
+                      '',
+                    );
+                  });
+                }
+              },
+              child: const Text('Enviar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    amountController.dispose();
+    etaController.dispose();
+    hoursController.dispose();
+    warrantyController.dispose();
+    descriptionController.dispose();
+
+    if (submitted == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cotizacion enviada al cliente.')),
+      );
+    }
+  }
+
+  Future<void> _sendLocation(
+    BuildContext context,
+    AppController controller,
+  ) async {
+    try {
+      await controller.sendCurrentMechanicLocation(request);
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ubicacion enviada al cliente.')),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
   }
 
   Future<void> _confirmCancelRequest(

@@ -15,7 +15,8 @@ class LocalRepository {
   static const _vehiclesKey = 'vehicles';
   static const _requestMetasKey = 'request_metas';
   static const _notificationsKey = 'notifications';
-  static const defaultBaseUrl =
+  static const defaultBaseUrl = 'http://10.0.2.2:8000';
+  static const _legacyCloudBaseUrl =
       'https://backend-958497253028.europe-west1.run.app';
 
   final SharedPreferences _prefs;
@@ -52,7 +53,11 @@ class LocalRepository {
               .toList();
 
     final storedBaseUrl = _prefs.getString(_baseUrlKey);
-    final normalizedBaseUrl = normalizeBaseUrl(storedBaseUrl ?? defaultBaseUrl);
+    final normalizedBaseUrl = normalizeBaseUrl(
+      storedBaseUrl == _legacyCloudBaseUrl
+          ? defaultBaseUrl
+          : storedBaseUrl ?? defaultBaseUrl,
+    );
 
     if (storedBaseUrl != null && normalizedBaseUrl != storedBaseUrl) {
       _prefs.setString(_baseUrlKey, normalizedBaseUrl);
@@ -120,6 +125,9 @@ class ApiClient {
   final String? token;
 
   Uri _uri(String path) => Uri.parse('$_baseUrl$path');
+  Uri buildUri(String path) => _uri(path);
+  Map<String, String> authHeaders({bool json = false}) => _headers(json: json);
+  String get baseUrl => _baseUrl;
   String? resolveAssetUrl(String? relativeUrl) {
     if (relativeUrl == null || relativeUrl.trim().isEmpty) {
       return null;
@@ -171,6 +179,153 @@ class ApiClient {
               'username=${Uri.encodeQueryComponent(username)}&password=${Uri.encodeQueryComponent(password)}',
         )
         .timeout(const Duration(seconds: 12));
+    return AuthPayload.fromJson(_decodeObject(response));
+  }
+
+  Future<AuthPayload> loginClient({
+    required String email,
+    required String password,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/v1/auth/login/client'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'email': email.trim().toLowerCase(),
+            'password': password,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    return AuthPayload.fromJson(_decodeObject(response));
+  }
+
+  Future<AuthPayload> loginAdmin({
+    required String email,
+    required String password,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/v1/auth/login/admin'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'email': email.trim().toLowerCase(),
+            'password': password,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    return AuthPayload.fromJson(_decodeObject(response));
+  }
+
+  Future<AuthPayload> loginWorker({
+    required int tallerId,
+    required String username,
+    required String password,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/v1/auth/login/worker'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'taller_id': tallerId,
+            'username': username.trim(),
+            'password': password,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    return AuthPayload.fromJson(_decodeObject(response));
+  }
+
+  Future<List<PublicWorkshop>> searchPublicWorkshops(String query) async {
+    final response = await http
+        .get(
+          _uri(
+            '/api/v1/talleres/public/search?q=${Uri.encodeQueryComponent(query.trim())}',
+          ),
+        )
+        .timeout(const Duration(seconds: 30));
+    return _decodeList(response).map(PublicWorkshop.fromApi).toList();
+  }
+
+  Future<List<SaaSPlan>> fetchPlans() async {
+    final response = await http
+        .get(_uri('/api/v1/plans/'))
+        .timeout(const Duration(seconds: 45));
+    return _decodeList(response).map(SaaSPlan.fromApi).toList();
+  }
+
+  Future<PlanCheckout> createPlanCheckout({
+    required String planCodigo,
+    required String email,
+    required String nombreContacto,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/v1/subscriptions/checkout'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'plan_codigo': planCodigo,
+            'email': email.trim().toLowerCase(),
+            'nombre_contacto': nombreContacto.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 45));
+    return PlanCheckout.fromApi(_decodeObject(response));
+  }
+
+  Future<PlanPayment> payPlanCheckout(int checkoutId) async {
+    final response = await http
+        .post(
+          _uri('/api/v1/subscriptions/checkout/$checkoutId/pay'),
+          headers: _headers(json: true),
+        )
+        .timeout(const Duration(seconds: 12));
+    return PlanPayment.fromApi(_decodeObject(response));
+  }
+
+  Future<AuthPayload> onboardWorkshop({
+    required String onboardingToken,
+    required String adminUsername,
+    required String adminEmail,
+    required String adminFullName,
+    required String adminPassword,
+    required String nombreComercial,
+    required String direccion,
+    required String telefono,
+    required String emailContacto,
+    required String horarioAtencion,
+    required List<int> especialidadIds,
+    String? descripcion,
+    String? sitioWeb,
+    double? latitud,
+    double? longitud,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/v1/onboarding/workshop'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'onboarding_token': onboardingToken,
+            'admin': {
+              'username': adminUsername.trim(),
+              'email': adminEmail.trim().toLowerCase(),
+              'full_name': adminFullName.trim(),
+              'password': adminPassword,
+            },
+            'taller': {
+              'nombre_comercial': nombreComercial.trim(),
+              'direccion': direccion.trim(),
+              'telefono': telefono.trim(),
+              'email_contacto': emailContacto.trim(),
+              'horario_atencion': horarioAtencion.trim(),
+              'especialidad_ids': especialidadIds,
+              'descripcion': descripcion?.trim(),
+              'sitio_web': sitioWeb?.trim(),
+              'latitud': latitud,
+              'longitud': longitud,
+            },
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
     return AuthPayload.fromJson(_decodeObject(response));
   }
 
@@ -473,6 +628,7 @@ class ApiClient {
     String? extraNotes,
     List<String> imagePaths = const [],
     String? audioPath,
+    String? clienteSyncId,
   }) async {
     final response = await http
         .post(
@@ -484,7 +640,23 @@ class ApiClient {
             'longitud': longitud,
             'estado': 'pendiente',
             if (vehiculoId != null) 'vehiculo_id': vehiculoId,
+            if (clienteSyncId != null) 'cliente_sync_id': clienteSyncId,
           }),
+        )
+        .timeout(const Duration(seconds: 30));
+    return EmergencyRequest.fromApi(_decodeObject(response));
+  }
+
+  /// Variante para la cola offline: manda el payload completo (con
+  /// `cliente_sync_id`) tal cual al backend. Backend dedupea por ese id.
+  Future<EmergencyRequest> createRequestRaw(
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await http
+        .post(
+          _uri('/api/v1/solicitudes/'),
+          headers: _headers(json: true),
+          body: jsonEncode({...payload, 'estado': 'pendiente'}),
         )
         .timeout(const Duration(seconds: 30));
     return EmergencyRequest.fromApi(_decodeObject(response));
@@ -596,6 +768,74 @@ class ApiClient {
     return EmergencyRequest.fromApi(_decodeObject(response));
   }
 
+  Future<List<Cotizacion>> fetchCotizaciones(int requestId) async {
+    final response = await http
+        .get(
+          _uri('/api/v1/cotizaciones/solicitudes/$requestId'),
+          headers: _headers(),
+        )
+        .timeout(const Duration(seconds: 12));
+    return _decodeList(response).map(Cotizacion.fromApi).toList();
+  }
+
+  Future<Cotizacion> createCotizacion({
+    required int requestId,
+    required double costoEstimado,
+    required double tiempoReparacionHoras,
+    required int etaLlegadaMinutos,
+    required String descripcion,
+    required bool incluyeRepuestos,
+    required int garantiaDias,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/v1/cotizaciones/solicitudes/$requestId'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'costo_estimado': costoEstimado,
+            'tiempo_reparacion_horas': tiempoReparacionHoras,
+            'eta_llegada_minutos': etaLlegadaMinutos,
+            'descripcion': descripcion.trim(),
+            'incluye_repuestos': incluyeRepuestos,
+            'garantia_dias': garantiaDias,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    return Cotizacion.fromApi(_decodeObject(response));
+  }
+
+  Future<Cotizacion> selectCotizacion(int cotizacionId) async {
+    final response = await http
+        .post(
+          _uri('/api/v1/cotizaciones/$cotizacionId/seleccionar'),
+          headers: _headers(json: true),
+        )
+        .timeout(const Duration(seconds: 12));
+    return Cotizacion.fromApi(_decodeObject(response));
+  }
+
+  Future<void> sendTrackingPing({
+    required int requestId,
+    required double latitud,
+    required double longitud,
+    double? velocidadKmh,
+    double? rumboGrados,
+  }) async {
+    final response = await http
+        .post(
+          _uri('/api/v1/tracking/solicitudes/$requestId/ping'),
+          headers: _headers(json: true),
+          body: jsonEncode({
+            'latitud': latitud,
+            'longitud': longitud,
+            if (velocidadKmh != null) 'velocidad_kmh': velocidadKmh,
+            if (rumboGrados != null) 'rumbo_grados': rumboGrados,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    _decodeObject(response);
+  }
+
   Map<String, dynamic> _decodeObject(http.Response response) {
     final body = utf8.decode(response.bodyBytes);
     final json = _decodeJson(body);
@@ -672,8 +912,7 @@ String normalizeBaseUrl(String value) {
       : trimmed;
 
   if (normalized == 'http://localhost:8000' ||
-      normalized == 'http://127.0.0.1:8000' ||
-      normalized == 'http://10.0.2.2:8000') {
+      normalized == 'http://127.0.0.1:8000') {
     return LocalRepository.defaultBaseUrl;
   }
 

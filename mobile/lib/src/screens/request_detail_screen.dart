@@ -1,14 +1,84 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../app_controller.dart';
 import '../models.dart';
+import '../services/realtime_service.dart';
 
-class RequestDetailScreen extends StatelessWidget {
+class RequestDetailScreen extends StatefulWidget {
   const RequestDetailScreen({super.key, required this.requestId});
 
   final int requestId;
+
+  @override
+  State<RequestDetailScreen> createState() => _RequestDetailScreenState();
+}
+
+class _RequestDetailScreenState extends State<RequestDetailScreen> {
+  StreamSubscription<RealtimeEvent>? _wsSub;
+  String? _lastEvent;
+  double? _trackingLat;
+  double? _trackingLng;
+
+  int get requestId => widget.requestId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hookRealtime();
+      context.read<AppController>().loadCotizaciones(widget.requestId);
+    });
+  }
+
+  void _hookRealtime() {
+    if (!mounted) return;
+    final ctrl = context.read<AppController>();
+    if (!ctrl.isAuthenticated) return;
+    _wsSub = ctrl.realtime.subscribe('solicitud', widget.requestId).listen((
+      ev,
+    ) {
+      if (!mounted) return;
+      setState(() => _lastEvent = ev.event);
+      if (ev.event == 'tracking.update' && ev.payload is Map) {
+        final payload = ev.payload as Map;
+        final lat = _readDouble(payload['latitud']);
+        final lng = _readDouble(payload['longitud']);
+        if (lat != null && lng != null) {
+          setState(() {
+            _trackingLat = lat;
+            _trackingLng = lng;
+          });
+        }
+      }
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 2),
+          content: Text('Actualización en vivo: ${ev.event}'),
+        ),
+      );
+      if (ev.event == 'solicitud.actualizada' ||
+          ev.event == 'cotizacion.aceptada' ||
+          ev.event == 'cotizacion.nueva' ||
+          ev.event == 'tracking.update') {
+        ctrl.refreshData();
+        ctrl.loadCotizaciones(widget.requestId);
+      }
+      // ignore: unused_field
+      _lastEvent;
+    });
+  }
+
+  @override
+  void dispose() {
+    _wsSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +96,7 @@ class RequestDetailScreen extends StatelessWidget {
     final vehicleLabel = controller.vehicleLabelFor(request);
     final technicianLabel = controller.technicianLabelFor(request);
     final workshopLabel = controller.workshopLabelFor(request);
+    final cotizaciones = controller.cotizacionesFor(request.id);
     final formatter = DateFormat('dd/MM/yyyy - HH:mm');
 
     return Scaffold(
@@ -76,6 +147,45 @@ class RequestDetailScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 14),
+            _SectionCard(
+              title: 'Seguimiento en mapa',
+              child: _LiveMap(
+                incidentLat: request.latitud,
+                incidentLng: request.longitud,
+                mechanicLat: _trackingLat,
+                mechanicLng: _trackingLng,
+              ),
+            ),
+            const SizedBox(height: 14),
+            if (request.estado == 'pendiente' ||
+                request.estado == 'buscando_taller' ||
+                cotizaciones.isNotEmpty) ...[
+              _SectionCard(
+                title: 'Cotizaciones de talleres',
+                child: cotizaciones.isEmpty
+                    ? const Text(
+                        'Aun no llegaron cotizaciones. Te avisaremos cuando un taller responda.',
+                        style: TextStyle(color: Color(0xFF6F655B)),
+                      )
+                    : Column(
+                        children: cotizaciones
+                            .map(
+                              (cotizacion) => _CotizacionTile(
+                                cotizacion: cotizacion,
+                                onSelect: cotizacion.disponible
+                                    ? () => _selectCotizacion(
+                                        context,
+                                        controller,
+                                        cotizacion,
+                                      )
+                                    : null,
+                              ),
+                            )
+                            .toList(),
+                      ),
+              ),
+              const SizedBox(height: 14),
+            ],
             _SectionCard(
               title: 'Descripcion del incidente',
               child: Column(
@@ -232,6 +342,12 @@ class RequestDetailScreen extends StatelessWidget {
 
   String _fileName(String path) => path.split(RegExp(r'[\\/]')).last;
 
+  double? _readDouble(dynamic value) {
+    if (value is int) return value.toDouble();
+    if (value is double) return value;
+    return double.tryParse(value?.toString() ?? '');
+  }
+
   EmergencyRequest? _findRequest(
     List<EmergencyRequest> requests,
     int requestId,
@@ -350,6 +466,206 @@ class RequestDetailScreen extends StatelessWidget {
         ),
       );
     }
+  }
+
+  Future<void> _selectCotizacion(
+    BuildContext context,
+    AppController controller,
+    Cotizacion cotizacion,
+  ) async {
+    try {
+      await controller.selectCotizacion(cotizacion);
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Cotizacion de ${cotizacion.tallerNombre ?? "taller"} seleccionada.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
+  }
+}
+
+class _CotizacionTile extends StatelessWidget {
+  const _CotizacionTile({required this.cotizacion, required this.onSelect});
+
+  final Cotizacion cotizacion;
+  final VoidCallback? onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFF0E5D7)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  cotizacion.tallerNombre ?? 'Taller #${cotizacion.tallerId}',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              Text(
+                'Bs ${cotizacion.costoEstimado.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  color: Color(0xFF8D5524),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Chip(label: Text('Llega en ${cotizacion.etaLlegadaMinutos} min')),
+              Chip(
+                label: Text(
+                  '${cotizacion.tiempoReparacionHoras.toStringAsFixed(1)} h reparacion',
+                ),
+              ),
+              if (cotizacion.garantiaDias > 0)
+                Chip(label: Text('${cotizacion.garantiaDias} dias garantia')),
+            ],
+          ),
+          if ((cotizacion.descripcion ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              cotizacion.descripcion!.trim(),
+              style: const TextStyle(color: Color(0xFF6F655B), height: 1.35),
+            ),
+          ],
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: onSelect,
+              icon: const Icon(Icons.check_circle_outline),
+              label: Text(
+                cotizacion.disponible ? 'Elegir este taller' : 'No disponible',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LiveMap extends StatelessWidget {
+  const _LiveMap({
+    required this.incidentLat,
+    required this.incidentLng,
+    this.mechanicLat,
+    this.mechanicLng,
+  });
+
+  final double incidentLat;
+  final double incidentLng;
+  final double? mechanicLat;
+  final double? mechanicLng;
+
+  @override
+  Widget build(BuildContext context) {
+    final incident = LatLng(incidentLat, incidentLng);
+    final mechanic = mechanicLat == null || mechanicLng == null
+        ? null
+        : LatLng(mechanicLat!, mechanicLng!);
+    final center = mechanic ?? incident;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        height: 260,
+        child: FlutterMap(
+          options: MapOptions(
+            initialCenter: center,
+            initialZoom: mechanic == null ? 14 : 12,
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.rutasos.mobile',
+            ),
+            if (mechanic != null)
+              PolylineLayer(
+                polylines: [
+                  Polyline(
+                    points: [mechanic, incident],
+                    strokeWidth: 4,
+                    color: const Color(0xFF8D5524),
+                  ),
+                ],
+              ),
+            MarkerLayer(
+              markers: [
+                Marker(
+                  point: incident,
+                  width: 42,
+                  height: 42,
+                  child: const Icon(
+                    Icons.sos_outlined,
+                    color: Color(0xFFB3261E),
+                    size: 34,
+                  ),
+                ),
+                if (mechanic != null)
+                  Marker(
+                    point: mechanic,
+                    width: 42,
+                    height: 42,
+                    child: const Icon(
+                      Icons.engineering,
+                      color: Color(0xFF2E7D32),
+                      size: 34,
+                    ),
+                  ),
+              ],
+            ),
+            if (mechanic == null)
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 12,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.all(10),
+                    child: Text(
+                      'Cuando el mecanico comparta su ubicacion, aparecera aqui en tiempo real.',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

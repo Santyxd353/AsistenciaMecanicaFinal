@@ -90,8 +90,8 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
       pendiente: 'Pendiente',
       buscando_taller: 'Buscando taller',
       asignada: 'Asignada',
-      tecnico_en_camino: 'Tecnico en camino',
-      tecnico_llego: 'Tecnico llego',
+      tecnico_en_camino: 'Técnico en camino',
+      tecnico_llego: 'Técnico llegó',
       en_proceso: 'En proceso',
       finalizado: 'Finalizado',
       cancelado: 'Cancelado',
@@ -110,19 +110,19 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
     }
 
     if (!solicitud.tecnico_id) {
-      return 'Tu taller ya la acepto. Falta asignar un mecanico.';
+      return 'Tu taller ya la aceptó. Falta asignar un mecánico.';
     }
 
     const map: Record<string, string> = {
       pendiente: 'Aceptada por el taller y esperando asignacion operativa.',
       buscando_taller: 'Buscando el taller con mejor disponibilidad.',
-      asignada: 'Mecanico asignado. Lista para iniciar atencion.',
-      tecnico_en_camino: 'El mecanico esta en camino.',
-      tecnico_llego: 'El mecanico llego al incidente.',
-      en_proceso: 'El mecanico ya se encuentra trabajando en el servicio.',
+      asignada: 'Mecánico asignado. Lista para iniciar atención.',
+      tecnico_en_camino: 'El mecánico está en camino.',
+      tecnico_llego: 'El mecánico llegó al incidente.',
+      en_proceso: 'El mecánico ya se encuentra trabajando en el servicio.',
       finalizado: 'Servicio finalizado correctamente.',
       cancelado: 'El servicio fue cancelado.',
-      en_progreso: 'El mecanico ya se encuentra trabajando en el servicio.',
+      en_progreso: 'El mecánico ya se encuentra trabajando en el servicio.',
       resuelta: 'Servicio finalizado correctamente.',
       cancelada: 'El servicio fue cancelado.'
     };
@@ -136,13 +136,13 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
     }
 
     if (!solicitud.tecnico_id) {
-      return 'Pendiente de mecanico';
+      return 'Pendiente de mecánico';
     }
 
     const map: Record<string, string> = {
-      pendiente: 'Pendiente de mecanico',
+      pendiente: 'Pendiente de mecánico',
       buscando_taller: 'Buscando taller',
-      asignada: 'Mecanico asignado',
+      asignada: 'Mecánico asignado',
       tecnico_en_camino: 'En camino',
       tecnico_llego: 'En sitio',
       en_proceso: 'En servicio',
@@ -221,7 +221,7 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
         puntos.push({
           latitud: solicitud.tecnico_latitud ?? tecnico.latitud ?? null,
           longitud: solicitud.tecnico_longitud ?? tecnico.longitud ?? null,
-          etiqueta: tecnico.nombre || 'Mecanico asignado',
+          etiqueta: tecnico.nombre || 'Mecánico asignado',
           tipo: 'tecnico'
         });
       }
@@ -374,7 +374,7 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
       },
       error: (error) => {
         this.guardandoCotizacion = false;
-        this.errorCotizacion = error?.error?.detail || 'No se pudo enviar la cotizacion.';
+        this.errorCotizacion = error?.error?.detail || 'No se pudo enviar la cotización.';
       }
     });
   }
@@ -442,7 +442,7 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
         this.cargarTecnicos();
       },
       error: (error) => {
-        this.errorAsignarTecnico = error?.error?.detail || 'No se pudo asignar el mecanico.';
+        this.errorAsignarTecnico = error?.error?.detail || 'No se pudo asignar el mecánico.';
         this.asignandoTecnico = false;
       }
     });

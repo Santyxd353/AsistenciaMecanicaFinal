@@ -8,13 +8,13 @@
       </div>
 
       <div>
-        <p class="panel-tecnico-kicker">Modulo tecnico</p>
-        <h1>Panel del tecnico</h1>
+        <p class="panel-tecnico-kicker">Módulo técnico</p>
+        <h1>Panel del técnico</h1>
       </div>
     </div>
 
     <button class="boton-cerrar-sesion" type="button" (click)="cerrarSesion()">
-      Cerrar sesion
+      Cerrar sesión
     </button>
   </header>
 
@@ -23,14 +23,14 @@
       <p class="panel-tecnico-kicker">Bienvenida</p>
       <h2>Bienvenido, {{ nombreTecnico }}</h2>
       <p>
-        Este espacio sera el punto de trabajo del tecnico dentro del sistema.
+        Este espacio será el punto de trabajo del técnico dentro del sistema.
       </p>
     </section>
 
     <section *ngIf="cargandoPerfil" class="panel-tecnico-zona-vacia">
-      <p class="panel-tecnico-kicker">Perfil tecnico</p>
+      <p class="panel-tecnico-kicker">Perfil técnico</p>
       <h3>Cargando informacion</h3>
-      <p>Estamos obteniendo tus datos de tecnico dentro del sistema.</p>
+      <p>Estamos obteniendo tus datos de técnico dentro del sistema.</p>
     </section>
 
     <section *ngIf="errorPerfil" class="panel-tecnico-alerta">
@@ -42,11 +42,11 @@
         <span class="panel-tecnico-etiqueta">Perfil</span>
         <strong>{{ perfilTecnico.nombre }}</strong>
         <p>CI: {{ perfilTecnico.ci }}</p>
-        <p>Direccion: {{ perfilTecnico.direccion }}</p>
+        <p>Dirección: {{ perfilTecnico.direccion }}</p>
       </article>
 
       <article class="panel-tecnico-tarjeta">
-        <span class="panel-tecnico-etiqueta">Operacion</span>
+        <span class="panel-tecnico-etiqueta">Operación</span>
         <strong>{{ estadoDisponibilidad }} y {{ estadoRegistro }}</strong>
         <p>Especialidades: {{ especialidadesTexto }}</p>
         <div class="panel-tecnico-acciones" *ngIf="perfilTecnico.activo">
@@ -70,7 +70,7 @@
       <div class="panel-tecnico-bloque-encabezado">
         <div>
           <p class="panel-tecnico-kicker">Mis asignaciones</p>
-          <h3>Atenciones vinculadas a este tecnico</h3>
+          <h3>Atenciones vinculadas a este técnico</h3>
         </div>
       </div>
 
@@ -113,7 +113,7 @@
               *ngIf="asignacion.estado === 'asignada'"
               (click)="actualizarEstadoAsignacion(asignacion.id, 'en_progreso')"
             >
-              {{ actualizandoSolicitudId === asignacion.id ? 'Actualizando...' : 'Iniciar atencion' }}
+              {{ actualizandoSolicitudId === asignacion.id ? 'Actualizando...' : 'Iniciar atención' }}
             </button>
 
             <button
@@ -142,7 +142,7 @@
               [disabled]="actualizandoSolicitudId === asignacion.id"
               (click)="actualizarEstadoAsignacion(asignacion.id, 'cancelada')"
             >
-              {{ actualizandoSolicitudId === asignacion.id ? 'Actualizando...' : 'Cancelar atencion' }}
+              {{ actualizandoSolicitudId === asignacion.id ? 'Actualizando...' : 'Cancelar atención' }}
             </button>
           </div>
         </article>
@@ -157,7 +157,7 @@
       </article>
 
       <article class="panel-tecnico-tarjeta">
-        <span class="panel-tecnico-etiqueta">Proximo paso</span>
+        <span class="panel-tecnico-etiqueta">Próximo paso</span>
         <strong>Funciones operativas en construccion</strong>
         <p>Aqui incorporaremos asignaciones, ubicacion, cobros y seguimiento de incidentes.</p>
       </article>
@@ -167,7 +167,7 @@
       <p class="panel-tecnico-kicker">Espacio de trabajo</p>
       <h3>Modulo en preparacion</h3>
       <p>
-        Dejamos esta vista lista para crecer con las herramientas que necesitara el tecnico en campo.
+        Dejamos esta vista lista para crecer con las herramientas que necesitará el técnico en campo.
       </p>
     </section>
   </main>

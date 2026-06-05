@@ -37,12 +37,11 @@ services:
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GROQ_VISION_MODEL=${GROQ_VISION_MODEL:-meta-llama/llama-4-scout-17b-16e-instruct}
+      - GROQ_AUDIO_MODEL=${GROQ_AUDIO_MODEL:-whisper-large-v3}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:4200,http://127.0.0.1:4200}
-      - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-small}
-      - WHISPER_DEVICE=${WHISPER_DEVICE:-cpu}
-      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
-      - HF_VEHICLE_MODEL=${HF_VEHICLE_MODEL:-}
-      - HF_DAMAGE_MODEL=${HF_DAMAGE_MODEL:-}
+      - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-es}
     depends_on:
       db:
         condition: service_healthy

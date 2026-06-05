@@ -6,10 +6,10 @@
         Nueva solicitud manual
       </button>
     </div>
-    <p class="taller-solicitudes-kicker">Operacion del taller</p>
+    <p class="taller-solicitudes-kicker">Operación del taller</p>
     <h1>Solicitudes del taller</h1>
     <p>
-      Gestiona las solicitudes disponibles, las que ya fueron tomadas por tu taller y prepara la asignacion de mecanicos.
+      Gestiona las solicitudes disponibles, las que ya fueron tomadas por tu taller y prepara la asignación de mecánicos.
     </p>
   </div>
 
@@ -148,12 +148,12 @@
 
           <div class="taller-solicitudes-detalle-card">
             <span class="taller-solicitudes-detalle-label">Taller</span>
-            <strong>{{ solicitudSeleccionada.taller_id ? ('Asignada al taller #' + solicitudSeleccionada.taller_id) : 'Aun sin taller' }}</strong>
+            <strong>{{ solicitudSeleccionada.taller_id ? ('Asignada al taller #' + solicitudSeleccionada.taller_id) : 'Aún sin taller' }}</strong>
           </div>
 
           <div class="taller-solicitudes-detalle-card">
             <span class="taller-solicitudes-detalle-label">Mecanico</span>
-            <strong>{{ solicitudSeleccionada.tecnico_nombre || (solicitudSeleccionada.tecnico_id ? ('Mecanico #' + solicitudSeleccionada.tecnico_id) : 'Aun sin mecanico') }}</strong>
+            <strong>{{ solicitudSeleccionada.tecnico_nombre || (solicitudSeleccionada.tecnico_id ? ('Mecánico #' + solicitudSeleccionada.tecnico_id) : 'Aún sin mecánico') }}</strong>
           </div>
         </div>
 
@@ -175,7 +175,7 @@
 
           <div class="taller-solicitudes-detalle-card">
             <span class="taller-solicitudes-detalle-label">Vehiculo</span>
-            <strong>{{ solicitudSeleccionada.vehiculo_id ? ('Vehiculo #' + solicitudSeleccionada.vehiculo_id) : 'No asociado' }}</strong>
+            <strong>{{ solicitudSeleccionada.vehiculo_id ? ('Vehículo #' + solicitudSeleccionada.vehiculo_id) : 'No asociado' }}</strong>
           </div>
         </div>
 
@@ -244,7 +244,7 @@
           </div>
           <label class="taller-solicitudes-campo">
             <span>Detalle</span>
-            <textarea [(ngModel)]="cotizacionDraft.descripcion" rows="3" placeholder="Incluye repuestos, diagnostico y condiciones"></textarea>
+            <textarea [(ngModel)]="cotizacionDraft.descripcion" rows="3" placeholder="Incluye repuestos, diagnóstico y condiciones"></textarea>
           </label>
           <label class="taller-solicitudes-checkbox">
             <input type="checkbox" [(ngModel)]="cotizacionDraft.incluye_repuestos" />
@@ -259,7 +259,7 @@
               [disabled]="guardandoCotizacion"
               (click)="enviarCotizacion()"
             >
-              {{ guardandoCotizacion ? 'Enviando...' : 'Enviar cotizacion' }}
+              {{ guardandoCotizacion ? 'Enviando...' : 'Enviar cotización' }}
             </button>
           </div>
         </div>
@@ -278,7 +278,7 @@
               />
             </label>
             <div class="taller-solicitudes-detalle-card">
-              <span class="taller-solicitudes-detalle-label">Comision plataforma</span>
+              <span class="taller-solicitudes-detalle-label">Comisión plataforma</span>
               <strong>{{ comisionCobroLabel }}</strong>
             </div>
           </div>
@@ -312,13 +312,13 @@
         </div>
 
         <div *ngIf="puedeAsignarTecnico" class="taller-solicitudes-detalle-seccion">
-          <span class="taller-solicitudes-detalle-label">Asignar mecanico</span>
+          <span class="taller-solicitudes-detalle-label">Asignar mecánico</span>
 
           <div class="taller-solicitudes-form-grid">
             <label class="taller-solicitudes-campo">
               <span>Mecanico disponible</span>
               <select [(ngModel)]="tecnicoSeleccionadoId">
-                <option [ngValue]="null">Selecciona un mecanico</option>
+                <option [ngValue]="null">Selecciona un mecánico</option>
                 <option *ngFor="let tecnico of tecnicosAsignables" [ngValue]="tecnico.id">
                   {{ tecnico.nombre }}{{ tecnico.ci ? ' - CI ' + tecnico.ci : '' }}
                 </option>
@@ -327,7 +327,7 @@
           </div>
 
           <p class="taller-solicitudes-subtexto" *ngIf="tecnicosAsignables.length === 0">
-            No hay mecanicos activos y disponibles en este momento.
+            No hay mecánicos activos y disponibles en este momento.
           </p>
 
           <div *ngIf="errorAsignarTecnico" class="taller-solicitudes-alerta-error">
@@ -337,7 +337,7 @@
 
         <div *ngIf="solicitudSeleccionada.tecnico_id" class="taller-solicitudes-detalle-seccion">
           <span class="taller-solicitudes-detalle-label">Asignacion actual</span>
-          <p>La solicitud ya tiene un mecanico asignado y ahora el seguimiento continua desde el panel del mecanico.</p>
+          <p>La solicitud ya tiene un mecánico asignado y ahora el seguimiento continúa desde el panel del mecánico.</p>
         </div>
       </div>
 
@@ -358,7 +358,7 @@
           [disabled]="asignandoTecnico || tecnicosAsignables.length === 0"
           (click)="asignarTecnicoSeleccionado()"
         >
-          {{ asignandoTecnico ? 'Asignando...' : 'Asignar mecanico' }}
+          {{ asignandoTecnico ? 'Asignando...' : 'Asignar mecánico' }}
         </button>
         <button
           *ngIf="puedeAceptarSolicitud"
@@ -392,7 +392,7 @@
 
       <div class="taller-solicitudes-modal-body">
         <p class="taller-solicitudes-subtexto">
-          Registra una solicitud operativa para asignarla al taller y validar la atencion.
+          Registra una solicitud operativa para asignarla al taller y validar la atención.
         </p>
 
         <label class="taller-solicitudes-campo">
@@ -400,7 +400,7 @@
           <textarea
             [(ngModel)]="nuevaSolicitud.descripcion"
             rows="4"
-            placeholder="Ej. El vehiculo no enciende cerca del centro"
+            placeholder="Ej. El vehículo no enciende cerca del centro"
           ></textarea>
         </label>
 

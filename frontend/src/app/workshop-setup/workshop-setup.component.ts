@@ -1502,7 +1502,7 @@ export class WorkshopSetupComponent implements OnInit {
 
   private validateSchedule(): boolean {
     if (!this.generalDays.length) {
-      this.scheduleError = 'Selecciona al menos un dia de atencion.';
+      this.scheduleError = 'Selecciona al menos un día de atención.';
       return false;
     }
     if (!this.generalOpen || !this.generalClose) {

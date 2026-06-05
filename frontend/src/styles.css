@@ -17,6 +17,35 @@ body.dark-mode {
   background: #3f2a1d;
 }
 
+::view-transition-old(root) {
+  animation: rutasos-page-out 220ms ease both;
+}
+
+::view-transition-new(root) {
+  animation: rutasos-page-in 360ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+@keyframes rutasos-page-out {
+  from { opacity: 1; transform: scale(1); filter: blur(0); }
+  to { opacity: 0; transform: scale(.985); filter: blur(2px); }
+}
+
+@keyframes rutasos-page-in {
+  from { opacity: 0; transform: translateY(18px) scale(.99); filter: blur(3px); }
+  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
+}
+
 .dashboard-shell.dark-mode {
   background:
     radial-gradient(circle at top left, rgba(180, 83, 9, 0.18), transparent 26%),

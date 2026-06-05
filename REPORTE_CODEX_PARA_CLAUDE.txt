@@ -1,0 +1,667 @@
+============================================================
+REPORTE CODEX PARA CLAUDE - HANDOFF HONESTO
+Proyecto: asistencia-mecanica / RutaSOS
+Fecha: 2026-06-03
+Ubicacion: C:\Users\ASUS\Desktop\examen1\asistencia-mecanica
+============================================================
+
+OBJETIVO ORIGINAL DEL USUARIO
+-----------------------------
+El sistema debe ser una plataforma tipo Uber/Yango para asistencia vehicular:
+
+- Web Angular para superadmin, talleres, clientes y operadores.
+- Backend FastAPI + PostgreSQL.
+- App mobile Flutter para clientes, administradores de taller, mecanicos y
+  trabajadores.
+- SaaS multi-tenant.
+- Planes por taller.
+- Login separado por tipo de usuario.
+- Tracking realtime del mecanico.
+- Registro de vehiculos.
+- Reporte de emergencias.
+- IA para diagnostico: audio, imagen, clasificacion, resumen.
+- UX minimalista cafe, basada en pantallas de Stitch.
+
+ESTADO GENERAL
+--------------
+El proyecto tiene muchos cambios mezclados entre Claude y Codex.
+Hay funcionalidades parciales, pantallas redisenadas, servicios nuevos y varios
+bugs abiertos.
+
+IMPORTANTE:
+Codex NO completo correctamente la IA ni el flujo mobile completo.
+El usuario esta molesto con razon porque se mezclaron pantallas tecnicas como
+"KPIs" en la app de usuario comun, y algunas pantallas no respetan del todo
+Stitch.
+
+
+============================================================
+1) CAMBIOS HECHOS EN BACKEND
+============================================================
+
+1.1 Auth / login
+----------------
+Archivos tocados:
+- backend/app/api/auth.py
+- backend/app/models/user.py
+
+Cambios:
+- Se ajusto el login para aceptar email como identificador en varios flujos.
+- Se mantuvo compatibilidad parcial con username para mecanicos/trabajadores.
+- Se agregaron campos al modelo User segun cambios previos:
+  - telefono
+  - foto_url
+  - contacto_emergencia
+
+Estado:
+- Funciona parcialmente.
+- Hay que revisar bien todos los logins:
+  - Login Usuarios: deberia usar correo + contrasena.
+  - Login Administrador: deberia usar correo + contrasena.
+  - Login Trabajadores/Mecanicos: deberia buscar taller y luego usar usuario
+    asignado + contrasena.
+
+Pendiente:
+- Validar mensajes rapidos de credenciales invalidas.
+- Asegurar que el frontend no quede en "Entrando..." si backend responde error.
+- Revisar refresh token / expiracion.
+
+
+1.2 Talleres publicos para mobile
+---------------------------------
+Archivo:
+- backend/app/api/talleres.py
+
+Cambio:
+- Se agrego/ajusto endpoint publico para listar/buscar talleres desde el login
+  de trabajadores.
+- Debe permitir cargar talleres aunque el campo de busqueda este vacio.
+
+Estado:
+- Se intento corregir porque en mobile no cargaban talleres.
+- Revisar endpoint exacto y respuesta esperada por Flutter.
+
+Pendiente:
+- Confirmar desde emulador Android usando 10.0.2.2:8000.
+- Confirmar que devuelva talleres creados desde web.
+- Si no aparecen, revisar tenant_id, activo=true y formato de JSON.
+
+
+1.3 Base de datos
+-----------------
+Archivo:
+- backend/app/db/session.py
+
+Cambios:
+- Se agregaron ALTER TABLE simples para nuevos campos de usuario.
+- Claude previamente hizo cambios mas grandes relacionados a IA/Groq y modelo.
+
+Estado:
+- No hay migraciones formales Alembic.
+- La BD se esta evolucionando con ALTERs idempotentes en session.py.
+
+Riesgo:
+- Esto sirve para MVP local, pero no es ideal para produccion.
+- Si se sube a nube, conviene ordenar migraciones.
+
+
+1.4 IA backend
+--------------
+Archivos relacionados:
+- backend/app/services/ai.py
+- backend/app/services/whisper.py
+- backend/app/services/groq_client.py
+- backend/requirements.txt
+- backend/Dockerfile
+- docker-compose.yml
+
+Estado real:
+- Estos cambios son principalmente de Claude, no de Codex.
+- Se migro parte de IA a Groq:
+  - Vision con Groq.
+  - Whisper/Groq audio.
+  - Se redujo la imagen Docker quitando torch/transformers/faster-whisper.
+
+Problema:
+- Codex NO implemento ni verifico un flujo completo de IA end-to-end.
+- No se comprobo bien:
+  - foto -> analisis -> categoria
+  - audio -> texto
+  - texto/foto/audio -> resumen/prioridad/recomendacion
+  - consumo desde mobile y web
+
+Pendiente P0:
+- Revisar contratos reales de endpoints de IA.
+- Probar con imagen y audio reales.
+- Conectar resultado IA al reporte de emergencia en mobile.
+- Mostrar diagnostico amigable al usuario, no texto tecnico.
+
+
+============================================================
+2) CAMBIOS HECHOS EN FRONTEND ANGULAR WEB
+============================================================
+
+2.1 Login inicial / selector
+----------------------------
+Archivos:
+- frontend/src/app/login-selector/login-selector.component.ts
+- frontend/src/app/login-users/login-users.component.ts
+- frontend/src/app/login-admin/login-admin.component.ts
+- frontend/src/app/login-workers/login-workers.component.ts
+- frontend/src/app/login/login.component.html
+- frontend/src/app/app.routes.ts
+- frontend/src/styles.css
+
+Cambios:
+- Se redisenaron pantallas con paleta cafe/minimalista.
+- Se separaron accesos:
+  - Usuarios
+  - Administrativos
+  - Trabajadores
+  - Crear taller / planes
+- Se eliminaron textos tecnicos en la pagina inicial.
+- Se agregaron animaciones y transiciones basicas.
+- Se cambio el boton de inicio hacia registro.
+
+Estado:
+- Visualmente mejoro algo, pero todavia no esta 100% como Stitch.
+- Hay que revisar errores de login cuando credenciales son invalidas.
+- El usuario pidio que todos menos mecanicos usen correo + contrasena.
+
+Pendiente:
+- Validar cada login:
+  - usuario inexistente
+  - contrasena incorrecta
+  - backend apagado
+  - token vencido
+- No debe quedarse en "Entrando..." nunca.
+
+
+2.2 SaaS / planes / compra simulada
+-----------------------------------
+Archivos:
+- frontend/src/app/plans/plans.component.ts
+- frontend/src/app/onboarding-workshop/onboarding-workshop.component.ts
+- frontend/src/app/upgrade-plan/upgrade-plan.component.ts
+- frontend/src/app/workshop-setup/workshop-setup.component.ts
+
+Cambios:
+- Se agrego flujo visual de planes:
+  - Gratis
+  - Intermedio
+  - Premium
+  - Pro
+- Se hizo compra simulada antes de Stripe.
+- Se conecto parcialmente con registro de taller.
+
+Reglas de negocio esperadas:
+- Gratis: 1 administrador, 5 mecanicos.
+- Intermedio: 3 administradores, 10 mecanicos.
+- Premium: 10 administradores, 20 mecanicos.
+- Pro: usuarios ilimitados.
+- Si un taller gratis intenta crear mas administradores, debe ir a upgrade.
+
+Estado:
+- Parcial.
+- Hay reportes de bug en compra simulada en mobile.
+- Falta revisar si backend realmente guarda plan y limites.
+
+Pendiente P0:
+- Verificar que el plan seleccionado se persista.
+- Verificar que los limites se apliquen en backend, no solo UI.
+- Agregar endpoint claro de "plan actual del tenant/taller".
+
+
+2.3 Superadmin dashboard web
+----------------------------
+Archivos:
+- frontend/src/app/dashboard/dashboard.component.ts
+- frontend/src/styles.css
+
+Cambios:
+- Se hizo dashboard superadmin con sidebar:
+  - Resumen
+  - Tenants
+  - Talleres
+  - Reportes
+  - Tecnicos
+  - Pagos
+  - Auditoria
+- Se agrego mapa operativo Leaflet y tarjetas con datos.
+- Se corrigieron varios mojibake visibles.
+
+Estado:
+- Se ve mejor que antes.
+- Puede tener datos mock/derivados; revisar que todo venga de DB real.
+- Hay texto "SaaS vehicular" que el usuario pidio cambiar a nombre original.
+  Se uso "RutaSOS" en varias pantallas.
+
+Pendiente:
+- Validar que cada seccion tenga datos reales.
+- Confirmar que superadmin sea solo web/PC, no mobile.
+- Revisar tenant isolation real.
+
+
+2.4 Portal cliente web
+----------------------
+Archivos:
+- frontend/src/app/client-portal/client-portal.component.ts
+- frontend/src/app/client-portal/cliente-navbar.component.ts
+- frontend/src/app/client-portal/cliente-perfil.component.ts
+- frontend/src/app/client-portal/cliente-vehiculos.component.ts
+- frontend/src/app/client-portal/cliente-solicitudes.component.ts
+
+Cambios:
+- Claude creo split en rutas del cliente.
+- Codex hizo ajustes visuales menores.
+
+Estado:
+- Parcial.
+- Revisar que registro de vehiculos web funcione y no tenga mojibake.
+
+
+============================================================
+3) CAMBIOS HECHOS EN MOBILE FLUTTER
+============================================================
+
+3.1 Dependencias mobile
+-----------------------
+Archivos:
+- mobile/pubspec.yaml
+- mobile/pubspec.lock
+- mobile/windows/flutter/generated_plugin_registrant.cc
+- mobile/windows/flutter/generated_plugins.cmake
+- mobile/macos/Flutter/GeneratedPluginRegistrant.swift
+
+Cambios:
+- Se agregaron servicios nuevos:
+  - conectividad
+  - offline/local DB
+  - realtime WS
+  - KPI service
+
+Estado:
+- Hay riesgo de que algunas dependencias se hayan agregado sin integrar bien.
+- flutter analyze quedo limpio en una revision anterior.
+
+
+3.2 Login mobile basado en Stitch
+---------------------------------
+Archivos:
+- mobile/lib/src/screens/auth_screen.dart
+- mobile/lib/src/repositories.dart
+- mobile/lib/src/app_controller.dart
+
+Cambios:
+- Se intento copiar estilo Stitch:
+  - Home mobile RutaSOS.
+  - Seleccion de usuario.
+  - Planes.
+  - Login usuarios.
+  - Login administrador.
+  - Login trabajadores.
+- Se eliminaron botones de Google/Apple visualmente.
+- Se agrego flujo de "Registrarme":
+  - elegir Usuario o Taller.
+- Taller debe registrarse y luego ir a planes.
+- Trabajadores deben buscar/seleccionar taller.
+
+Estado:
+- El usuario indico que el diseno sigue mal en varias pantallas.
+- Hay pantallas del prototype Stitch que no se replicaron perfectamente.
+- Hay que rehacer con el codigo exportado de Stitch que el usuario paso en ZIPs.
+
+Pendiente P0:
+- Revisar ZIPs Stitch:
+  - rutasos.zip
+  - stitch_minimalist_mobile_interface.zip
+  - stitch_minimalist_mobile_interface (1).zip
+  - LoginUsuario.zip
+  - loginADM.zip
+  - LoginTrabajadores.zip
+- Replicar medidas reales, espaciado, tipografia y navegacion.
+- No alargar pantallas que no deberian hacer scroll.
+- Hacer que el carrusel de planes cargue instantaneamente.
+- Login trabajadores debe mostrar talleres creados.
+
+
+3.3 Menu mobile / app shell
+---------------------------
+Archivo:
+- mobile/lib/src/app_shell.dart
+
+Cambios:
+- Para usuario comun se cambio el menu.
+- Antes estaba:
+  - Inicio
+  - Reportar
+  - KPIs
+  - Config
+- Codex lo cambio a:
+  - Inicio
+  - Reportar
+  - Vehiculos
+  - Perfil
+
+Motivo:
+- El usuario comun no debe ver KPIs.
+- El boton "Registrar vehiculo" estaba apuntando al indice 2, que antes era
+  KPIs. Por eso abria una pantalla tecnica en vez de registro de vehiculos.
+
+Estado:
+- Cambio correcto de navegacion.
+- Falta validar en emulador con hot restart.
+
+
+3.4 Pantalla nueva de vehiculos mobile
+--------------------------------------
+Archivo creado:
+- mobile/lib/src/screens/vehicle_registration_screen.dart
+
+Cambios:
+- Se creo pantalla "Mis vehiculos".
+- Permite registrar:
+  - placa
+  - marca
+  - modelo
+  - ano
+  - color
+- Usa AppController.addVehicle().
+- Lista vehiculos registrados.
+- Estilo cafe/minimalista.
+
+Estado:
+- flutter analyze paso sin errores.
+- Falta probar contra backend real desde emulador.
+- Puede necesitar ajustes visuales segun Stitch.
+
+Pendiente:
+- Agregar edicion/eliminacion si el documento lo pide.
+- Agregar foto del vehiculo si se mantiene ese requisito.
+- Confirmar que el endpoint backend de vehiculos acepte el payload enviado.
+
+
+3.5 KPIs mobile
+---------------
+Archivos:
+- mobile/lib/src/screens/kpi_screen.dart
+- mobile/lib/src/services/kpi_service.dart
+
+Estado:
+- Esto fue un error de producto para usuario comun.
+- El usuario no quiere ver KPIs en app de cliente.
+- Ademas existe bug:
+  "type '_Map<String, dynamic>' is not a subtype of type 'num?' in type cast"
+
+Accion tomada:
+- Se quito KPIs del menu de usuario comun.
+
+Pendiente:
+- Si KPIs se quedan para taller/admin mobile, corregir parser.
+- Si no se usan en mobile, borrar/ocultar para evitar ruido.
+
+
+3.6 Reporte de emergencia / tracking
+-------------------------------------
+Archivos relacionados:
+- mobile/lib/src/screens/report_screen.dart
+- mobile/lib/src/screens/request_detail_screen.dart
+- mobile/lib/src/screens/workshop_request_detail_screen.dart
+- mobile/lib/src/services/realtime_service.dart
+- mobile/lib/src/app_controller.dart
+
+Estado:
+- Hay pantallas de reporte y detalle.
+- Hay intentos de WS/realtime.
+- NO esta confirmado que exista tracking real tipo Uber/Yango para ver al
+  mecanico moverse en tiempo real en mobile.
+
+Pendiente P0:
+- Implementar tracking real:
+  - tecnico envia ubicacion cada X segundos.
+  - backend guarda/propaga ubicacion por WebSocket.
+  - cliente ve tecnico moviendose en mapa.
+  - taller ve tecnico/solicitud.
+  - reconexion y heartbeat.
+- Si se decide usar Google Maps:
+  - reemplazar/encapsular mapa actual.
+  - calcular ruta/ETA.
+  - preparar API key y costos.
+
+
+3.7 Offline/PWA/mobile offline
+------------------------------
+Archivos:
+- mobile/lib/src/services/connectivity_service.dart
+- mobile/lib/src/services/local_db.dart
+- mobile/lib/src/services/offline_queue_service.dart
+- mobile/lib/src/widgets/
+
+Estado:
+- Hay servicios nuevos pero no se verifico flujo completo.
+
+Pendiente:
+- Crear incidente offline.
+- Guardarlo localmente.
+- Reintentar cuando vuelva internet.
+- Evitar duplicados.
+- Mostrar estado "pendiente de sincronizacion".
+
+
+============================================================
+4) BUGS CONOCIDOS QUE CLAUDE DEBE ATACAR
+============================================================
+
+P0 - IA no completada
+---------------------
+- No hay verificacion end-to-end de audio/foto/texto.
+- No esta claro si mobile manda imagen/audio al backend correctamente.
+- No se muestra diagnostico amigable al usuario.
+
+P0 - Tracking realtime no terminado
+-----------------------------------
+- Falta confirmar o implementar que el cliente vea ubicacion del mecanico en
+  vivo.
+- Requiere WS + mapa + envio de ubicacion desde tecnico.
+
+P0 - Login puede quedarse cargando
+----------------------------------
+- En varios logins el usuario reporto que queda en "Entrando..." cuando correo
+  o contrasena son malos.
+- Revisar catch/finally/loading=false en todos:
+  - login usuario
+  - login admin
+  - login trabajadores
+
+P0 - Talleres no aparecen en login trabajadores mobile
+------------------------------------------------------
+- Revisar endpoint backend.
+- Revisar baseUrl Android: debe ser http://10.0.2.2:8000
+- Revisar que no se este llamando a cloud/localhost incorrecto.
+- Revisar tenant/activo.
+
+P0 - Compra simulada falla en mobile
+------------------------------------
+- Usuario mostro TimeoutException 12s.
+- Revisar si intenta llamar backend incorrecto o si pantalla espera Future que
+  nunca termina.
+- Debe simular compra localmente si backend no esta listo, y luego pasar a
+  registro/onboarding.
+
+P0 - Diseno mobile no respeta Stitch
+------------------------------------
+- El usuario entrego ZIPs con codigo Stitch.
+- Hay que copiar fielmente:
+  - Home
+  - Seleccion de usuario
+  - Planes
+  - Login Usuario
+  - Login Admin
+  - Login Trabajadores
+- Evitar scroll donde el diseno debe entrar completo.
+- No poner botones compactados o recortados.
+
+P0 - Registro de vehiculos
+--------------------------
+- Ya se creo pantalla mobile, pero falta probar.
+- Verificar que usuario pueda:
+  1. registrarse/loguearse
+  2. ir a Vehiculos
+  3. registrar vehiculo
+  4. volver a Reportar
+  5. seleccionar vehiculo
+  6. crear solicitud
+
+P1 - Mojibake / textos con caracteres rotos
+-------------------------------------------
+- Todavia pueden quedar textos tipo:
+  - tÃ©cnicos
+  - auditorÃ­a
+  - sesiÃ³n
+- Buscar en frontend/mobile:
+  rg "Ã|Â|â|�"
+
+P1 - Superadmin mobile
+----------------------
+- Debe estar bloqueado en mobile.
+- Superadmin dashboard solo PC/web.
+
+P1 - SaaS real
+--------------
+- No basta con UI de planes.
+- Backend debe guardar tenant/plan/limites.
+- Crear admin/mecanico debe validar limites del plan.
+
+
+============================================================
+5) ARCHIVOS IMPORTANTES TOCADOS POR CODEX
+============================================================
+
+Mobile:
+- mobile/lib/src/app_shell.dart
+- mobile/lib/src/screens/vehicle_registration_screen.dart
+- mobile/lib/src/screens/auth_screen.dart
+- mobile/lib/src/app_controller.dart
+- mobile/lib/src/repositories.dart
+- mobile/lib/src/models.dart
+- mobile/lib/src/screens/overview_screen.dart
+- mobile/lib/src/screens/request_detail_screen.dart
+- mobile/lib/src/screens/workshop_request_detail_screen.dart
+
+Web:
+- frontend/src/app/login-selector/login-selector.component.ts
+- frontend/src/app/login-users/login-users.component.ts
+- frontend/src/app/login-admin/login-admin.component.ts
+- frontend/src/app/login-workers/login-workers.component.ts
+- frontend/src/app/plans/plans.component.ts
+- frontend/src/app/dashboard/dashboard.component.ts
+- frontend/src/app/client-portal/client-portal.component.ts
+- frontend/src/styles.css
+
+Backend:
+- backend/app/api/auth.py
+- backend/app/api/talleres.py
+- backend/app/models/user.py
+- backend/app/db/session.py
+
+
+============================================================
+6) COMANDOS DE VERIFICACION USADOS
+============================================================
+
+Mobile:
+- flutter analyze
+  Resultado anterior: sin errores despues de agregar pantalla Vehiculos.
+
+Backend:
+- health y endpoints se probaron en sesiones previas, pero no hay verificacion
+  final completa despues de todos los cambios.
+
+Recomendado para Claude:
+1. Levantar stack:
+   docker compose up -d --build
+
+2. Ver backend:
+   http://localhost:8000/health
+
+3. Flutter:
+   cd mobile
+   flutter clean
+   flutter pub get
+   flutter analyze
+   flutter run
+
+4. Desde emulador Android:
+   usar backend http://10.0.2.2:8000
+
+
+============================================================
+7) RECOMENDACION DE ORDEN PARA CLAUDE
+============================================================
+
+Orden sugerido:
+
+1. Congelar alcance mobile:
+   - Solo cliente, admin taller, mecanico.
+   - Superadmin fuera de mobile.
+
+2. Rehacer UI mobile desde ZIP Stitch:
+   - No improvisar diseno.
+   - Copiar estructura/espaciado/colores del codigo exportado.
+
+3. Arreglar login:
+   - Usuario/admin: correo + contrasena.
+   - Mecanico/trabajador: seleccionar taller + usuario asignado + contrasena.
+   - Nunca dejar boton cargando indefinidamente.
+
+4. Arreglar registro:
+   - Inicio -> Registrarme -> Usuario o Taller.
+   - Usuario: formulario registro usuario.
+   - Taller: formulario registro taller -> planes -> compra simulada -> panel.
+
+5. Arreglar vehiculos:
+   - Pantalla visible para cliente.
+   - Registro probado contra backend.
+   - Reporte no debe avanzar sin vehiculo.
+
+6. Arreglar reporte:
+   - Ubicacion.
+   - Vehiculo.
+   - Descripcion.
+   - Foto/audio opcional.
+   - IA si esta disponible.
+
+7. Implementar IA real end-to-end:
+   - Audio a texto.
+   - Imagen a diagnostico.
+   - Clasificacion incidente.
+   - Resumen/prioridad/recomendacion.
+   - Mostrarlo de forma entendible.
+
+8. Tracking realtime:
+   - Tecnico envia ubicacion.
+   - Cliente ve mapa en vivo.
+   - Estados claros.
+
+9. SaaS/planes:
+   - Persistir plan.
+   - Limites backend.
+   - Upgrade cuando pase limite.
+
+
+============================================================
+8) NOTA FINAL
+============================================================
+
+Este handoff no intenta maquillar el estado: Codex hizo cambios parciales y
+algunos fueron utiles, pero el flujo completo que el usuario pidio NO quedo
+terminado.
+
+Lo mas importante para arreglar:
+- IA completa.
+- Tracking real.
+- Mobile fiel a Stitch.
+- Login/registro sin estados colgados.
+- Registro de vehiculos probado.
+- Planes SaaS aplicados de verdad en backend.
+

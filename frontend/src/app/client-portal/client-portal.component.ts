@@ -11,231 +11,137 @@ import { Solicitud, SolicitudService } from '../core/incident.service';
 import { OfflineQueueService } from '../core/offline-queue.service';
 import { RealtimeEvent, RealtimeService } from '../core/realtime.service';
 import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.service';
+import { ClienteNavbarComponent } from './cliente-navbar.component';
 
 @Component({
   selector: 'app-client-portal',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, ClienteNavbarComponent],
   template: `
     <div class="portal-shell">
-      <header class="topbar">
-        <div class="brand-copy">
-          <p class="eyebrow">Portal cliente</p>
-          <h1>Control de perfil, vehiculos y solicitudes.</h1>
-          <p class="lede">
-            Manten tu cuenta lista, registra vehiculos con ayuda de IA y reporta emergencias marcando el punto exacto
-            en el mapa.
-          </p>
-        </div>
+      <app-cliente-navbar></app-cliente-navbar>
 
-        <div class="topbar-actions">
-          <div class="identity-chip">
-            <span>Cuenta activa</span>
-            <strong>{{ displayName }}</strong>
-          </div>
-          <button class="btn-ghost" (click)="logout()">Cerrar sesion</button>
-        </div>
-      </header>
-
-      <section class="hero-grid">
-        <article class="hero-card hero-main">
-          <div>
-            <p class="eyebrow eyebrow-light">Resumen rapido</p>
-            <h2>{{ displayName }}</h2>
-            <p>
-              Desde aqui puedes mantener tu cuenta lista, registrar vehiculos y revisar los servicios que ya entran a
-              fase de cobro.
-            </p>
-          </div>
-
-          <div class="metric-grid">
-            <div class="metric-card">
-              <span>Vehiculos</span>
-              <strong>{{ vehicles.length }}</strong>
-            </div>
-            <div class="metric-card">
-              <span>Solicitudes</span>
-              <strong>{{ reports.length }}</strong>
-            </div>
-            <div class="metric-card">
-              <span>Cobro listo</span>
-              <strong>{{ payableReports.length }}</strong>
-            </div>
-          </div>
-        </article>
-
-        <article class="hero-card hero-note">
-          <p class="eyebrow">Seguimiento</p>
-          <h3>Servicio en ruta</h3>
-          <p>
-            Cuando el taller asigne un tecnico, aqui se reflejara el estado, el taller, el tecnico y el tiempo estimado
-            de llegada calculado desde la ubicacion registrada.
-          </p>
-        </article>
+      <section class="page-heading">
+        <h1>Control de perfil, vehículos y solicitudes.</h1>
+        <p class="lede">
+          Mantén tu cuenta lista, registra vehículos con ayuda de IA y reporta emergencias marcando el punto exacto en el mapa.
+        </p>
       </section>
 
-      <main class="dashboard-grid">
-        <section class="panel">
+      <section class="resumen-rapido">
+        <p class="section-kicker">Resumen rapido</p>
+        <div class="resumen-cards">
+          <article class="resumen-card">
+            <div class="resumen-icon resumen-icon-left">&#128663;</div>
+            <div class="resumen-text">
+              <strong>{{ vehicles.length }}</strong>
+              <span>Vehículos</span>
+            </div>
+            <div class="resumen-icon resumen-icon-right">&#128663;</div>
+          </article>
+          <article class="resumen-card">
+            <div class="resumen-icon resumen-icon-left">&#128221;</div>
+            <div class="resumen-text">
+              <strong>{{ reports.length }}</strong>
+              <span>Solicitudes</span>
+            </div>
+            <div class="resumen-icon resumen-icon-right">&#128221;</div>
+          </article>
+          <article class="resumen-card">
+            <div class="resumen-icon resumen-icon-left">&#128184;</div>
+            <div class="resumen-text">
+              <strong>{{ payableReports.length }}</strong>
+              <span>Cobro listo</span>
+            </div>
+            <div class="resumen-icon resumen-icon-right">&#128184;</div>
+          </article>
+        </div>
+      </section>
+
+      <main class="dashboard-grid single-col">
+        <section class="panel panel-dark report-panel">
           <div class="panel-head">
             <div>
-              <p class="section-kicker">Cuenta</p>
-              <h2>Mi perfil</h2>
-              <p>Estos datos se comparten con la app movil del cliente.</p>
+              <p class="section-kicker section-kicker-light">Reportar accidente o falla</p>
             </div>
           </div>
 
-          <form [formGroup]="profileForm" (ngSubmit)="saveProfile()" class="form-layout">
-            <label class="field field-wide">
-              <span>Nombre completo</span>
-              <input type="text" formControlName="full_name" placeholder="Juan Perez" />
-            </label>
-            <label class="field">
-              <span>Usuario</span>
-              <input type="text" formControlName="username" placeholder="juanperez" />
-            </label>
-            <label class="field">
-              <span>Correo</span>
-              <input type="email" formControlName="email" placeholder="juan@mail.com" />
-            </label>
-
-            <div class="panel-actions">
-              <button class="btn-primary" type="submit" [disabled]="profileForm.invalid || savingProfile">
-                {{ savingProfile ? 'Guardando...' : 'Guardar perfil' }}
-              </button>
-            </div>
-          </form>
-
-          <p class="message success" *ngIf="profileMessage">{{ profileMessage }}</p>
-          <p class="message error" *ngIf="profileError">{{ profileError }}</p>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="section-kicker">Vehiculos</p>
-              <h2>Mis vehiculos</h2>
-              <p>Todo vehiculo registrado aqui quedara disponible para las solicitudes del cliente.</p>
-            </div>
-            <span class="badge">{{ vehicles.length }} activo(s)</span>
-          </div>
-
-          <form [formGroup]="vehicleForm" (ngSubmit)="addVehicle()" class="form-layout">
-            <label class="field">
-              <span>Placa</span>
-              <input type="text" formControlName="placa" placeholder="1234ABC" />
-            </label>
-            <label class="field">
-              <span>Marca</span>
-              <input type="text" formControlName="marca" placeholder="Toyota" />
-            </label>
-            <label class="field">
-              <span>Modelo</span>
-              <input type="text" formControlName="modelo" placeholder="Corolla" />
-            </label>
-            <label class="field">
-              <span>Color</span>
-              <input type="text" formControlName="color" placeholder="Blanco" />
-            </label>
-            <label class="field">
-              <span>Anio detectado</span>
-              <input type="text" formControlName="anio" placeholder="Opcional" />
-            </label>
-
-            <div class="field field-wide ai-upload-box">
-              <div>
-                <span>Fotos para IA</span>
-                <p>Sube una foto frontal/lateral o de la placa. La IA rellena sugerencias editables antes de guardar.</p>
-              </div>
-              <input type="file" accept="image/*" multiple (change)="handleVehiclePhotos($event)" />
-              <div class="ai-actions">
-                <span>{{ vehiclePhotoFiles.length }} foto(s) cargada(s)</span>
-                <button class="btn-secondary" type="button" (click)="analyzeVehiclePhotos()" [disabled]="!vehiclePhotoFiles.length || analyzingVehicle">
-                  {{ analyzingVehicle ? 'Analizando...' : 'Analizar con IA' }}
-                </button>
-              </div>
-              <div class="preview-card" *ngIf="vehiclePreview">
-                <strong>Previsualizacion IA</strong>
-                <p>{{ vehiclePreview.resumen }}</p>
-                <small>Fuente: {{ vehiclePreview.source }}. Revisa y corrige los campos antes de guardar.</small>
-              </div>
-            </div>
-
-            <div class="panel-actions">
-              <button class="btn-primary" type="submit" [disabled]="vehicleForm.invalid || savingVehicle">
-                {{ savingVehicle ? 'Registrando...' : 'Registrar vehiculo' }}
-              </button>
-            </div>
-          </form>
-
-          <p class="message success" *ngIf="vehicleMessage">{{ vehicleMessage }}</p>
-          <p class="message error" *ngIf="vehicleError">{{ vehicleError }}</p>
-
-          <div class="vehicle-list" *ngIf="vehicles.length; else emptyVehicleState">
-            <article class="vehicle-card" *ngFor="let vehicle of vehicles">
-              <div class="vehicle-plate">{{ vehicle.placa }}</div>
-              <strong>{{ vehicle.marca }} {{ vehicle.modelo }}</strong>
-              <p>{{ vehicle.color || 'Color no definido' }}</p>
-            </article>
-          </div>
-
-          <ng-template #emptyVehicleState>
-            <div class="empty-state">
-              <strong>Aun no registraste vehiculos.</strong>
-              <p>Empieza por cargar el auto principal para usarlo en los reportes.</p>
-            </div>
-          </ng-template>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="section-kicker">Emergencia</p>
-              <h2>Reportar accidente o falla</h2>
-              <p>Crea la solicitud desde web y fija el punto exacto dejando el pin sobre el mapa.</p>
-            </div>
-            <span class="badge">{{ reports.length }} historial</span>
-          </div>
-
-          <form [formGroup]="reportForm" (ngSubmit)="saveReport()" class="form-layout">
+          <form [formGroup]="reportForm" (ngSubmit)="saveReport()" class="report-form">
             <label class="field field-wide">
               <span>Vehiculo registrado</span>
               <select formControlName="vehiculo_id">
-                <option [ngValue]="null">Selecciona un vehiculo</option>
+                <option [ngValue]="null">Selecciona un vehículo</option>
                 <option *ngFor="let vehicle of vehicles" [ngValue]="vehicle.id">
                   {{ vehicle.placa }} - {{ vehicle.marca }} {{ vehicle.modelo }}
                 </option>
               </select>
             </label>
 
-            <label class="field field-wide">
-              <span>Descripcion del incidente</span>
-              <textarea
-                formControlName="descripcion"
-                rows="4"
-                placeholder="Ejemplo: choque leve, bateria descargada, llanta pinchada..."
-              ></textarea>
-            </label>
-
-            <div class="field-wide location-box">
-              <div>
-                <span class="location-title">Ubicacion seleccionada</span>
-                <p>{{ locationSummary }}</p>
-              </div>
-              <div class="location-actions">
-                <button class="btn-secondary" type="button" (click)="useCurrentLocation()">Usar actual</button>
-                <button class="btn-primary" type="button" (click)="openMapPicker()">Abrir mapa</button>
-              </div>
+            <div class="report-row">
+              <label class="field field-wide">
+                <span>Descripcion del incidente</span>
+                <textarea
+                  formControlName="descripcion"
+                  rows="4"
+                  placeholder="Ejemplo: choque leve, bateria descargada, llanta pinchada..."
+                ></textarea>
+              </label>
             </div>
 
-            <div class="panel-actions">
-              <button
-                class="btn-primary"
-                type="submit"
-                [disabled]="reportForm.invalid || savingReport || !vehicles.length"
-              >
-                {{ savingReport ? 'Creando...' : 'Crear solicitud' }}
+            <div class="report-side-actions">
+              <button class="btn-side btn-side-light" type="button" (click)="useCurrentLocation()">Usar ubicación actual</button>
+              <button class="btn-side btn-side-map" type="button" (click)="openMapPicker()">
+                {{ mapPickerOpen ? 'Mapa abierto' : 'Abrir mapa' }}
               </button>
+              <button class="btn-side btn-side-outline" type="button" (click)="goRegistrarVehiculo()">Registrar vehículo</button>
             </div>
+
+            <p class="location-summary">{{ locationSummary }}</p>
+
+            <section class="inline-map-panel" *ngIf="mapPickerOpen">
+              <div class="inline-map-copy">
+                <div>
+                  <p class="section-kicker section-kicker-light">Ubicación del incidente</p>
+                  <h3>Fija el punto exacto</h3>
+                  <p>Mueve el mapa hasta dejar el pin central donde necesitas la asistencia.</p>
+                </div>
+                <button class="btn-map-close" type="button" (click)="closeMapPicker()">Cerrar mapa</button>
+              </div>
+
+              <div class="map-frame">
+                <div id="client-report-map"></div>
+                <div class="center-pin" aria-hidden="true">
+                  <span class="pin-head">📍</span>
+                  <span class="pin-shadow"></span>
+                </div>
+              </div>
+
+              <div class="inline-map-footer">
+                <div class="modal-grid">
+                  <div class="modal-item">
+                    <span>Latitud</span>
+                    <strong>{{ selectedLat?.toFixed(6) || 'Pendiente' }}</strong>
+                  </div>
+                  <div class="modal-item">
+                    <span>Longitud</span>
+                    <strong>{{ selectedLng?.toFixed(6) || 'Pendiente' }}</strong>
+                  </div>
+                </div>
+
+                <div class="panel-actions">
+                  <button class="btn-secondary btn-secondary-on-dark" type="button" (click)="useCurrentLocation()">Usar actual</button>
+                  <button class="btn-primary" type="button" (click)="confirmMapLocation()">Confirmar pin</button>
+                </div>
+              </div>
+            </section>
+
+            <button
+              class="btn-crear-solicitud"
+              type="submit"
+              [disabled]="reportForm.invalid || savingReport || !vehicles.length"
+            >
+              {{ savingReport ? 'Creando...' : 'Crear solicitud' }}
+            </button>
           </form>
 
           <p class="message success" *ngIf="reportMessage">{{ reportMessage }}</p>
@@ -264,7 +170,7 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
 
               <p class="message" *ngIf="cotizacionesLoading[report.id]">Cargando cotizaciones...</p>
               <p class="message" *ngIf="!cotizacionesLoading[report.id] && !cotizacionesPorReporte[report.id]?.length">
-                Aun no hay cotizaciones. Los talleres cercanos estan revisando tu solicitud.
+                Aún no hay cotizaciones. Los talleres cercanos están revisando tu solicitud.
               </p>
 
               <div class="cotizacion-list" *ngIf="cotizacionesPorReporte[report.id]?.length">
@@ -342,7 +248,7 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
                   <strong>{{ report.taller_nombre || 'Pendiente de asignacion' }}</strong>
                 </div>
                 <div class="report-metric">
-                  <span>Tecnico</span>
+                  <span>Técnico</span>
                   <strong>{{ technicianLabel(report) }}</strong>
                 </div>
                 <div class="report-metric">
@@ -354,7 +260,7 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
                   <strong>{{ amountLabel(report) }}</strong>
                 </div>
                 <div class="report-metric">
-                  <span>Comision</span>
+                  <span>Comisión</span>
                   <strong>{{ commissionLabel(report) }}</strong>
                 </div>
               </div>
@@ -409,7 +315,7 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
               <strong>{{ selectedReportForPayment.taller_nombre || 'Pendiente' }}</strong>
             </div>
             <div class="modal-item">
-              <span>Tecnico</span>
+              <span>Técnico</span>
               <strong>{{ technicianLabel(selectedReportForPayment) }}</strong>
             </div>
           </div>
@@ -444,37 +350,6 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
         </section>
       </div>
 
-      <div class="modal-backdrop" *ngIf="mapPickerOpen" (click)="closeMapPicker()">
-        <section class="payment-modal map-modal" (click)="$event.stopPropagation()">
-          <p class="eyebrow">Mapa</p>
-          <h3>Fija el pin del incidente</h3>
-          <p>Mueve el mapa hasta dejar el pin central en el lugar exacto donde necesitas la asistencia.</p>
-
-          <div class="map-frame">
-            <div id="client-report-map"></div>
-            <div class="center-pin" aria-hidden="true">
-              <span class="pin-head">📍</span>
-              <span class="pin-shadow"></span>
-            </div>
-          </div>
-
-          <div class="modal-grid">
-            <div class="modal-item">
-              <span>Latitud</span>
-              <strong>{{ selectedLat?.toFixed(6) || 'Pendiente' }}</strong>
-            </div>
-            <div class="modal-item">
-              <span>Longitud</span>
-              <strong>{{ selectedLng?.toFixed(6) || 'Pendiente' }}</strong>
-            </div>
-          </div>
-
-          <div class="panel-actions">
-            <button class="btn-secondary" type="button" (click)="useCurrentLocation()">Usar actual</button>
-            <button class="btn-primary" type="button" (click)="confirmMapLocation()">Confirmar pin</button>
-          </div>
-        </section>
-      </div>
     </div>
   `,
   styles: [`
@@ -494,7 +369,6 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
       padding: 28px 20px 44px;
     }
 
-    .topbar,
     .hero-card,
     .panel,
     .payment-modal {
@@ -503,14 +377,314 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
       box-shadow: 0 18px 42px rgba(64, 37, 18, 0.08);
     }
 
-    .topbar {
+    /* Topbar oscura horizontal (rediseño Stitch) */
+    .navbar {
       display: flex;
+      align-items: center;
       justify-content: space-between;
-      align-items: flex-start;
-      gap: 20px;
+      gap: 18px;
+      background: #1a1410;
+      color: #f4e6d3;
+      border-radius: 14px;
+      padding: 12px 20px;
+      margin-bottom: 18px;
+    }
+    .navbar-brand {
+      font-weight: 800;
+      letter-spacing: 0.18em;
+      font-size: 13px;
+    }
+    .navbar-links {
+      display: flex;
+      gap: 22px;
+      flex: 1;
+      justify-content: center;
+    }
+    .nav-link {
+      color: #d8c4a8;
+      text-decoration: none;
+      font-size: 13px;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+    }
+    .nav-link.active,
+    .nav-link:hover {
+      color: #fff8ef;
+    }
+    .navbar-user {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .user-chip {
+      text-align: right;
+      font-size: 12px;
+      color: #c19a6a;
+    }
+    .user-chip strong {
+      display: block;
+      color: #fff8ef;
+      font-size: 13px;
+    }
+    .btn-logout {
+      background: transparent;
+      border: 1px solid #5a3a22;
+      color: #f4c58e;
+      padding: 8px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+    }
+    .btn-logout:hover { background: #2a1d14; }
+
+    .page-heading {
+      padding: 10px 4px 22px;
+    }
+
+    /* Resumen rapido en 3 cards horizontales */
+    .resumen-rapido { margin-bottom: 22px; }
+    .resumen-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      background: linear-gradient(135deg, #1f1a16 0%, #5b3a23 60%, #b5651d 100%);
+      padding: 18px;
+      border-radius: 22px;
+    }
+    .resumen-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: rgba(255, 248, 239, 0.94);
+      border-radius: 18px;
+      padding: 14px 18px;
+    }
+    .resumen-text { display: flex; flex-direction: column; gap: 2px; flex: 1; padding: 0 6px; }
+    .resumen-icon { flex-shrink: 0; line-height: 1; }
+    .resumen-icon-left {
+      font-size: 22px;
+      background: #f4dbb9;
+      border-radius: 12px;
+      padding: 8px;
+    }
+    .resumen-icon-right { font-size: 32px; opacity: 0.55; }
+
+    /* Mis vehiculos: hero card con thumbnail + grid 2x2 */
+    .vehicle-hero {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      padding: 16px;
+      background: #fdf6ec;
+      border: 1px solid #eadcca;
+      border-radius: 18px;
+      margin-bottom: 14px;
+    }
+    .vehicle-thumb {
+      width: 96px; height: 70px;
+      background: #d8c4a8;
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 36px;
+      flex-shrink: 0;
+    }
+    .vehicle-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 22px;
+      flex: 1;
+    }
+    .vehicle-grid > div span {
+      display: block;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: #8a6647;
+    }
+    .vehicle-grid > div strong { font-size: 1rem; }
+    .form-section-title {
+      margin: 8px 0 6px;
+      font-weight: 800;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: #8a6647;
+    }
+
+    /* Reportar accidente sobre fondo oscuro marron */
+    .panel-dark {
+      background: linear-gradient(135deg, #4a3120 0%, #7a4d2c 100%);
+      color: #fff8ef;
+      border: none;
+    }
+    .report-panel {
+      width: min(1220px, calc(100% - 24px));
+      margin-inline: auto;
       border-radius: 28px;
-      padding: 22px;
-      margin-bottom: 20px;
+      padding: clamp(22px, 3vw, 34px);
+      box-shadow: 0 24px 60px rgba(74, 49, 32, 0.22);
+    }
+    .report-panel .panel-head,
+    .report-form {
+      width: min(1080px, 100%);
+      margin-inline: auto;
+    }
+    .panel-dark .section-kicker-light { color: #f4c58e; font-size: 13px; }
+    .panel-dark .field span { color: #f0d8b8; }
+    .panel-dark select,
+    .panel-dark textarea,
+    .panel-dark input[type=text] {
+      background: #fff8ef;
+      color: #1f1a16;
+      border-radius: 10px;
+      border: 1px solid #c19a6a;
+      padding: 10px 12px;
+    }
+    .report-form { display: flex; flex-direction: column; gap: 14px; }
+    .report-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 12px;
+      align-items: stretch;
+    }
+    .report-side-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .btn-side {
+      min-height: 44px;
+      border-radius: 14px;
+      padding: 11px 16px;
+      cursor: pointer;
+      font-weight: 900;
+      font-size: 14px;
+      transition: transform .2s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease;
+    }
+    .btn-side:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 28px rgba(31, 26, 22, .22);
+    }
+    .btn-side-light {
+      background: #fff8ef;
+      color: #4a3120;
+      border: 1px solid #f4c58e;
+    }
+    .btn-side-light:hover { background: #ffe9c7; }
+    .btn-side-map {
+      background: linear-gradient(180deg, #f4c58e 0%, #d58a3a 100%);
+      color: #2f1e12;
+      border: 1px solid #f7d29e;
+    }
+    .btn-side-map:hover { background: linear-gradient(180deg, #ffd799 0%, #e99b40 100%); }
+    .btn-side-outline {
+      background: rgba(255, 248, 239, .08);
+      color: #fff8ef;
+      border: 1px solid rgba(244, 197, 142, .55);
+    }
+    .btn-side-outline:hover { background: rgba(255, 248, 239, .16); }
+    .location-summary {
+      font-size: 12px;
+      color: #f4c58e;
+      margin: 2px 0 0;
+    }
+    .inline-map-panel {
+      overflow: hidden;
+      border-radius: 24px;
+      padding: 20px;
+      background: rgba(47, 30, 18, .58);
+      border: 1px solid rgba(244, 197, 142, .35);
+      box-shadow: inset 0 1px 0 rgba(255, 248, 239, .08), 0 24px 48px rgba(31, 26, 22, .22);
+      animation: mapReveal .42s cubic-bezier(.2,.8,.2,1) both;
+      transform-origin: top center;
+    }
+    .inline-map-copy {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 14px;
+    }
+    .inline-map-copy h3 {
+      margin: 0 0 4px;
+      color: #fff8ef;
+      font-size: 1.35rem;
+    }
+    .inline-map-copy p {
+      margin: 0;
+      color: #f0d8b8;
+      line-height: 1.55;
+    }
+    .btn-map-close {
+      flex: 0 0 auto;
+      border: 1px solid rgba(244, 197, 142, .45);
+      border-radius: 999px;
+      background: rgba(255, 248, 239, .1);
+      color: #fff8ef;
+      padding: 10px 14px;
+      font-weight: 900;
+      cursor: pointer;
+      transition: transform .2s ease, background .2s ease;
+    }
+    .btn-map-close:hover {
+      transform: translateY(-2px);
+      background: rgba(255, 248, 239, .18);
+    }
+    .inline-map-footer {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+    }
+    .inline-map-footer .modal-grid {
+      margin: 0;
+      align-items: stretch;
+    }
+    .btn-secondary-on-dark {
+      background: #fff8ef !important;
+      color: #4a3120 !important;
+      border-color: #f4c58e !important;
+    }
+    @keyframes mapReveal {
+      from {
+        opacity: 0;
+        max-height: 0;
+        transform: translateY(-12px) scale(.98);
+      }
+      to {
+        opacity: 1;
+        max-height: 760px;
+        transform: translateY(0) scale(1);
+      }
+    }
+    .btn-crear-solicitud {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(180deg, #b5651d 0%, #8a4a16 100%);
+      color: #fff8ef;
+      border: none;
+      border-radius: 12px;
+      font-weight: 800;
+      font-size: 1rem;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+    }
+    .btn-crear-solicitud:disabled { opacity: 0.5; cursor: not-allowed; }
+    .resumen-card strong {
+      font-size: 1.8rem;
+      line-height: 1;
+      color: #1f1a16;
+    }
+    .resumen-card span {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #8a6647;
     }
 
     .eyebrow,
@@ -656,6 +830,7 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
       line-height: 1;
     }
 
+    .dashboard-grid.single-col { grid-template-columns: 1fr !important; }
     .dashboard-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -1103,10 +1278,15 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
     }
 
     .modal-item {
-      padding: 14px;
+      min-height: 78px;
+      padding: 14px 16px;
       border-radius: 18px;
       background: #fff8ef;
       border: 1px solid #efdfcd;
+      display: grid;
+      align-content: center;
+      gap: 6px;
+      overflow: hidden;
     }
 
     .modal-item span {
@@ -1120,7 +1300,13 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
     }
 
     .modal-item strong {
-      line-height: 1.45;
+      display: block;
+      min-width: 0;
+      line-height: 1.35;
+      color: #2f241d;
+      font-size: 1rem;
+      overflow-wrap: anywhere;
+      white-space: normal;
     }
 
     .map-modal {
@@ -1233,6 +1419,10 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
       .report-metrics {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+
+      .inline-map-footer {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media (max-width: 820px) {
@@ -1258,8 +1448,22 @@ import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.se
 
       .form-layout,
       .report-metrics,
-      .modal-grid {
+      .modal-grid,
+      .report-side-actions {
         grid-template-columns: 1fr;
+      }
+
+      .report-panel {
+        width: 100%;
+        border-radius: 22px;
+      }
+
+      .inline-map-copy {
+        flex-direction: column;
+      }
+
+      .map-frame {
+        height: 320px;
       }
 
       .location-box {
@@ -1421,7 +1625,7 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
         this.loadReports();
       },
       error: () => {
-        this.vehicleError = 'No se pudieron cargar tus vehiculos.';
+        this.vehicleError = 'No se pudieron cargar tus vehículos.';
         this.reports = [];
       }
     });
@@ -1550,7 +1754,7 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
         this.loadReports();
       },
       error: (error) => {
-        this.vehicleError = error?.error?.detail || 'No se pudo registrar el vehiculo.';
+        this.vehicleError = error?.error?.detail || 'No se pudo registrar el vehículo.';
       }
     });
   }
@@ -1611,7 +1815,7 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
 
   analyzeVehiclePhotos() {
     if (!this.vehiclePhotoFiles.length) {
-      this.vehicleError = 'Selecciona al menos una foto del vehiculo.';
+      this.vehicleError = 'Selecciona al menos una foto del vehículo.';
       return;
     }
 
@@ -1637,7 +1841,7 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
         this.vehicleMessage = 'La IA completo una previsualizacion editable. Revisa los campos antes de guardar.';
       },
       error: (error) => {
-        this.vehicleError = error?.error?.detail || 'La IA no pudo analizar las fotos del vehiculo.';
+        this.vehicleError = error?.error?.detail || 'La IA no pudo analizar las fotos del vehículo.';
       }
     });
   }
@@ -1758,8 +1962,8 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
       pendiente_sync: 'Pendiente sync',
       buscando_taller: 'Buscando taller',
       asignada: 'Asignada',
-      tecnico_en_camino: 'Tecnico en camino',
-      tecnico_llego: 'Tecnico llego',
+      tecnico_en_camino: 'Técnico en camino',
+      tecnico_llego: 'Técnico llegó',
       en_proceso: 'En proceso',
       finalizado: 'Finalizado',
       cancelado: 'Cancelado',
@@ -1881,5 +2085,9 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
 
   logout() {
     this.authService.logout();
+  }
+
+  goRegistrarVehiculo() {
+    this.router.navigate(['/cliente/vehiculos']);
   }
 }

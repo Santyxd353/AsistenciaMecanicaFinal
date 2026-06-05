@@ -47,7 +47,8 @@ TECNICO_FORGOT_PASSWORD_RESPONSE = (
 
 
 class LoginAdminPayload(BaseModel):
-    username: str
+    email: str | None = None
+    username: str | None = None
     password: str
 
 
@@ -58,7 +59,8 @@ class LoginWorkerPayload(BaseModel):
 
 
 class LoginClientPayload(BaseModel):
-    username: str
+    email: str | None = None
+    username: str | None = None
     password: str
 
 
@@ -205,11 +207,18 @@ def login(db: Session = Depends(get_session), form_data: OAuth2PasswordRequestFo
 
 @router.post("/login/admin", response_model=AuthResponse)
 def login_admin(payload: LoginAdminPayload, db: Session = Depends(get_session)):
-    user = db.exec(select(User).where(User.username == payload.username.strip())).first()
+    identifier = (payload.email or payload.username or "").strip().lower()
+    if not identifier:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ingresa tu correo.",
+        )
+
+    user = db.exec(select(User).where(User.email == identifier)).first()
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuario o contrasena incorrectos.",
+            detail="Correo o contraseña incorrectos.",
         )
     if user.role not in {UserRole.ADMIN, UserRole.WORKSHOP}:
         raise HTTPException(
@@ -223,11 +232,18 @@ def login_admin(payload: LoginAdminPayload, db: Session = Depends(get_session)):
 
 @router.post("/login/client", response_model=AuthResponse)
 def login_client(payload: LoginClientPayload, db: Session = Depends(get_session)):
-    user = db.exec(select(User).where(User.username == payload.username.strip())).first()
+    identifier = (payload.email or payload.username or "").strip().lower()
+    if not identifier:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ingresa tu correo.",
+        )
+
+    user = db.exec(select(User).where(User.email == identifier)).first()
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuario o contrasena incorrectos.",
+            detail="Correo o contraseña incorrectos.",
         )
     if user.role != UserRole.DRIVER:
         raise HTTPException(

@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
 import 'repositories.dart';
+import 'services/connectivity_service.dart';
+import 'services/offline_queue_service.dart';
 import 'services/push_notifications.dart';
+import 'services/realtime_service.dart';
 
 class AppController extends ChangeNotifier {
   bool _initialized = false;
@@ -16,23 +22,93 @@ class AppController extends ChangeNotifier {
   List<EmergencyRequest> _requests = const [];
   List<Technician> _technicians = const [];
   List<AppNotification> _notifications = const [];
+  List<SaaSPlan> _plans = const [];
+  List<PublicWorkshop> _publicWorkshops = const [];
+  final Map<int, List<Cotizacion>> _cotizacionesByRequest = {};
   WorkshopProfile? _workshopProfile;
   WorkshopStats? _workshopStats;
+
+  ConnectivityService? _connectivity;
+  OfflineQueueService? _offlineQueue;
+  RealtimeService? _realtime;
+
+  /// Timer activo del modo "técnico transmitiendo ubicación". Solo uno a la vez:
+  /// si el técnico recibe una nueva asignación se reusa el ciclo.
+  Timer? _trackingTimer;
+  int? _trackingRequestId;
 
   bool get initialized => _initialized;
   bool get loading => _loading;
   String get baseUrl => _baseUrl;
   String? get accessToken => _accessToken;
+  ApiClient get apiClient => ApiClient(baseUrl: _baseUrl, token: _accessToken);
+
+  /// Servicio de conectividad (online/offline). Singleton perezoso.
+  ConnectivityService get connectivity {
+    _connectivity ??= ConnectivityService()
+      ..isOnline$.listen((online) {
+        if (online) {
+          offlineQueue.flush();
+        }
+      });
+    return _connectivity!;
+  }
+
+  /// Cola offline persistida en SQLite. Singleton perezoso.
+  OfflineQueueService get offlineQueue {
+    _offlineQueue ??= OfflineQueueService(() => apiClient);
+    return _offlineQueue!;
+  }
+
+  /// Cliente WebSocket. Reconstruido si cambia el token.
+  RealtimeService get realtime {
+    final current = _realtime;
+    if (current == null || current.token != (_accessToken ?? '')) {
+      current?.dispose();
+      _realtime = RealtimeService(baseUrl: _baseUrl, token: _accessToken ?? '');
+    }
+    return _realtime!;
+  }
+
+  /// Crea una emergencia con payload crudo. Si NO hay conexión la encola
+  /// y devuelve `null` (la UI muestra "pendiente de sincronización").
+  /// Si hay conexión, postea directo. Cuando vuelve online, las encoladas
+  /// se sincronizan solas vía el listener en `connectivity`.
+  ///
+  /// Pensado para flujos compactos / offline-first. Para el flujo
+  /// estándar con vehículo + adjuntos usar `submitEmergency(...)`.
+  Future<EmergencyRequest?> submitEmergencyRaw(
+    Map<String, dynamic> payload,
+  ) async {
+    // Asegura el listener montado.
+    connectivity;
+    if (!connectivity.currentOnline) {
+      await offlineQueue.enqueue(payload);
+      return null;
+    }
+    try {
+      return await apiClient.createRequestRaw(payload);
+    } catch (e) {
+      // Si falla la red en el ultimo segundo, encola.
+      await offlineQueue.enqueue(payload);
+      return null;
+    }
+  }
+
   AppUser? get currentUser => _currentUser;
   bool get isAuthenticated => _accessToken != null && _currentUser != null;
   bool get isDriver => _currentUser?.isDriver ?? false;
   bool get isWorkshopLike => _currentUser?.isWorkshopLike ?? false;
   bool get isAdmin => _currentUser?.role == 'admin';
+  bool get isGlobalAdmin => _currentUser?.isGlobalAdmin ?? false;
   List<Vehicle> get vehicles => List.unmodifiable(_vehicles);
   List<LocalRequestMeta> get requestMetas => List.unmodifiable(_requestMetas);
   List<EmergencyRequest> get requests => List.unmodifiable(_requests);
   List<Technician> get technicians => List.unmodifiable(_technicians);
   List<AppNotification> get notifications => List.unmodifiable(_notifications);
+  List<SaaSPlan> get plans => List.unmodifiable(_plans);
+  List<PublicWorkshop> get publicWorkshops =>
+      List.unmodifiable(_publicWorkshops);
   WorkshopProfile? get workshopProfile => _workshopProfile;
   WorkshopStats? get workshopStats => _workshopStats;
   bool get hasWorkshopProfile => _workshopProfile != null;
@@ -115,6 +191,15 @@ class AppController extends ChangeNotifier {
       }
     }
 
+    // Si la app arranca con conexión y hay emergencias encoladas de una sesión
+    // anterior (creadas offline), se sincronizan ahora. El listener de
+    // connectivity sólo dispara cuando hay un cambio online↔offline; un cold
+    // start ya online no le llega, así que lo forzamos acá.
+    connectivity; // monta el listener si aún no estaba
+    if (connectivity.currentOnline) {
+      unawaited(offlineQueue.flush());
+    }
+
     _initialized = true;
     _setLoading(false);
   }
@@ -161,6 +246,127 @@ class AppController extends ChangeNotifier {
       final auth = await ApiClient(
         baseUrl: _baseUrl,
       ).login(username: username, password: password);
+      await _applyAuth(storage: storage, auth: auth);
+      await _refreshRemoteData(storage);
+    });
+  }
+
+  Future<void> loginClient({
+    required String email,
+    required String password,
+  }) async {
+    await _executeWithLoading(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final storage = LocalRepository(prefs);
+      final auth = await ApiClient(
+        baseUrl: _baseUrl,
+      ).loginClient(email: email, password: password);
+      await _applyAuth(storage: storage, auth: auth);
+      await _refreshRemoteData(storage);
+    });
+  }
+
+  Future<void> loginAdmin({
+    required String email,
+    required String password,
+  }) async {
+    await _executeWithLoading(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final storage = LocalRepository(prefs);
+      final auth = await ApiClient(
+        baseUrl: _baseUrl,
+      ).loginAdmin(email: email, password: password);
+      await _applyAuth(storage: storage, auth: auth);
+      await _refreshRemoteData(storage);
+    });
+  }
+
+  Future<void> loginWorker({
+    required PublicWorkshop workshop,
+    required String username,
+    required String password,
+  }) async {
+    await _executeWithLoading(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final storage = LocalRepository(prefs);
+      final auth = await ApiClient(baseUrl: _baseUrl).loginWorker(
+        tallerId: workshop.id,
+        username: username,
+        password: password,
+      );
+      await _applyAuth(storage: storage, auth: auth);
+      await _refreshRemoteData(storage);
+    });
+  }
+
+  Future<void> searchPublicWorkshops(String query) async {
+    _publicWorkshops = await ApiClient(
+      baseUrl: _baseUrl,
+    ).searchPublicWorkshops(query);
+    notifyListeners();
+  }
+
+  Future<void> loadPlans() async {
+    await _executeWithLoading(() async {
+      _plans = await ApiClient(baseUrl: _baseUrl).fetchPlans();
+    });
+  }
+
+  Future<PlanPayment> simulatePlanPurchase({
+    required SaaSPlan plan,
+    required String email,
+    required String nombreContacto,
+  }) async {
+    late final PlanPayment payment;
+    await _executeWithLoading(() async {
+      final api = ApiClient(baseUrl: _baseUrl);
+      final checkout = await api.createPlanCheckout(
+        planCodigo: plan.codigo,
+        email: email,
+        nombreContacto: nombreContacto,
+      );
+      payment = await api.payPlanCheckout(checkout.checkoutId);
+    });
+    return payment;
+  }
+
+  Future<void> onboardWorkshop({
+    required String onboardingToken,
+    required String adminUsername,
+    required String adminEmail,
+    required String adminFullName,
+    required String adminPassword,
+    required String nombreComercial,
+    required String direccion,
+    required String telefono,
+    required String emailContacto,
+    required String horarioAtencion,
+    required List<int> especialidadIds,
+    String? descripcion,
+    String? sitioWeb,
+    double? latitud,
+    double? longitud,
+  }) async {
+    await _executeWithLoading(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final storage = LocalRepository(prefs);
+      final auth = await ApiClient(baseUrl: _baseUrl).onboardWorkshop(
+        onboardingToken: onboardingToken,
+        adminUsername: adminUsername,
+        adminEmail: adminEmail,
+        adminFullName: adminFullName,
+        adminPassword: adminPassword,
+        nombreComercial: nombreComercial,
+        direccion: direccion,
+        telefono: telefono,
+        emailContacto: emailContacto,
+        horarioAtencion: horarioAtencion,
+        especialidadIds: especialidadIds,
+        descripcion: descripcion,
+        sitioWeb: sitioWeb,
+        latitud: latitud,
+        longitud: longitud,
+      );
       await _applyAuth(storage: storage, auth: auth);
       await _refreshRemoteData(storage);
     });
@@ -221,6 +427,7 @@ class AppController extends ChangeNotifier {
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     final storage = LocalRepository(prefs);
+    stopMechanicTracking();
     _accessToken = null;
     _currentUser = null;
     _vehicles = const [];
@@ -228,6 +435,8 @@ class AppController extends ChangeNotifier {
     _requests = const [];
     _technicians = const [];
     _notifications = const [];
+    _publicWorkshops = const [];
+    _cotizacionesByRequest.clear();
     _workshopProfile = null;
     _workshopStats = null;
     await storage.clearSession();
@@ -512,16 +721,34 @@ class AppController extends ChangeNotifier {
       throw ApiException('Debes iniciar sesion para reportar una emergencia.');
     }
 
+    final composedDescriptionPreview = [
+      'Vehiculo ${vehicle.placa} (${vehicle.marca} ${vehicle.modelo})',
+      'Tipo de emergencia: $incidentType',
+      description.trim(),
+      if (extraNotes.trim().isNotEmpty)
+        'Notas del conductor: ${extraNotes.trim()}',
+    ].join('. ');
+
+    // OFFLINE: si no hay conexión, encolamos y avisamos al caller.
+    // Backend dedupea por `cliente_sync_id` cuando se haga el flush.
+    if (!connectivity.currentOnline) {
+      await offlineQueue.enqueue({
+        'descripcion': composedDescriptionPreview,
+        'latitud': latitud,
+        'longitud': longitud,
+        if (vehicle.remoteId != null) 'vehiculo_id': vehicle.remoteId,
+      });
+      throw ApiException(
+        'Sin conexion. Emergencia guardada localmente; se enviara automaticamente al volver online.',
+      );
+    }
+
     late EmergencyRequest created;
     await _executeWithLoading(() async {
       final prefs = await SharedPreferences.getInstance();
       final storage = LocalRepository(prefs);
       final composedDescription = [
-        'Vehiculo ${vehicle.placa} (${vehicle.marca} ${vehicle.modelo})',
-        'Tipo de emergencia: $incidentType',
-        description.trim(),
-        if (extraNotes.trim().isNotEmpty)
-          'Notas del conductor: ${extraNotes.trim()}',
+        composedDescriptionPreview,
         if (imagePaths.isNotEmpty || (audioPath?.isNotEmpty ?? false))
           'Adjuntos capturados desde Flutter: ${imagePaths.length} foto(s)${audioPath != null ? " y 1 audio" : ""}.',
       ].join('. ');
@@ -659,6 +886,170 @@ class AppController extends ChangeNotifier {
     return preview;
   }
 
+  List<Cotizacion> cotizacionesFor(int requestId) {
+    return List.unmodifiable(_cotizacionesByRequest[requestId] ?? const []);
+  }
+
+  Future<void> loadCotizaciones(int requestId) async {
+    if (!isAuthenticated) {
+      return;
+    }
+    final cotizaciones = await ApiClient(
+      baseUrl: _baseUrl,
+      token: _accessToken,
+    ).fetchCotizaciones(requestId);
+    _cotizacionesByRequest[requestId] = cotizaciones;
+    notifyListeners();
+  }
+
+  Future<void> createCotizacion({
+    required EmergencyRequest request,
+    required double costoEstimado,
+    required double tiempoReparacionHoras,
+    required int etaLlegadaMinutos,
+    required String descripcion,
+    required bool incluyeRepuestos,
+    required int garantiaDias,
+  }) async {
+    if (!isAuthenticated || !isWorkshopLike) {
+      return;
+    }
+    await _executeWithLoading(() async {
+      await ApiClient(baseUrl: _baseUrl, token: _accessToken).createCotizacion(
+        requestId: request.id,
+        costoEstimado: costoEstimado,
+        tiempoReparacionHoras: tiempoReparacionHoras,
+        etaLlegadaMinutos: etaLlegadaMinutos,
+        descripcion: descripcion,
+        incluyeRepuestos: incluyeRepuestos,
+        garantiaDias: garantiaDias,
+      );
+      await loadCotizaciones(request.id);
+    });
+  }
+
+  Future<void> selectCotizacion(Cotizacion cotizacion) async {
+    if (!isAuthenticated || !isDriver) {
+      return;
+    }
+    await _executeWithLoading(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final storage = LocalRepository(prefs);
+      await ApiClient(
+        baseUrl: _baseUrl,
+        token: _accessToken,
+      ).selectCotizacion(cotizacion.id);
+      await _refreshRemoteData(storage);
+      await loadCotizaciones(cotizacion.solicitudId);
+    });
+  }
+
+  /// Estados en los que el técnico debe estar transmitiendo su ubicación.
+  /// Fuera de estos estados detenemos el timer para no consumir batería.
+  static const _trackingActiveStates = {
+    'asignada',
+    'tecnico_en_camino',
+    'tecnico_llego',
+    'en_proceso',
+  };
+
+  bool get isTrackingActive => _trackingTimer != null;
+  int? get trackingRequestId => _trackingRequestId;
+
+  /// Arranca el envío periódico de ubicación del técnico al backend para una
+  /// solicitud concreta. Usar desde la pantalla detalle del técnico cuando la
+  /// solicitud entra en cualquiera de [_trackingActiveStates]. Si ya estaba
+  /// trackeando otra solicitud, se cambia el target sin reiniciar el timer.
+  ///
+  /// Periodo por defecto: 15 segundos. Lo suficientemente fino para ver el
+  /// avance en el mapa del cliente sin saturar batería ni datos móviles.
+  void startMechanicTracking(
+    EmergencyRequest request, {
+    Duration interval = const Duration(seconds: 15),
+  }) {
+    if (_currentUser?.role != 'tecnico') return;
+    if (_trackingRequestId == request.id && _trackingTimer != null) {
+      return; // ya activo para esta misma solicitud
+    }
+    _trackingTimer?.cancel();
+    _trackingRequestId = request.id;
+    // Emitimos un ping inmediato para que el cliente vea al técnico de una.
+    unawaited(_safePing(request));
+    _trackingTimer = Timer.periodic(interval, (_) async {
+      final current = _trackingRequestId;
+      if (current == null) {
+        return;
+      }
+      EmergencyRequest? target;
+      try {
+        target = requestById(current);
+      } catch (_) {
+        target = null;
+      }
+      if (target == null) {
+        stopMechanicTracking();
+        return;
+      }
+      if (!_trackingActiveStates.contains(target.estado)) {
+        // El servicio terminó / canceló: liberamos batería.
+        stopMechanicTracking();
+        return;
+      }
+      await _safePing(target);
+    });
+    notifyListeners();
+  }
+
+  void stopMechanicTracking() {
+    if (_trackingTimer == null && _trackingRequestId == null) {
+      return;
+    }
+    _trackingTimer?.cancel();
+    _trackingTimer = null;
+    _trackingRequestId = null;
+    notifyListeners();
+  }
+
+  /// Wrapper de `sendCurrentMechanicLocation` que NO propaga errores: el timer
+  /// no debe morir porque un GPS fix tardó un poco.
+  Future<void> _safePing(EmergencyRequest request) async {
+    try {
+      await sendCurrentMechanicLocation(request);
+    } catch (e) {
+      debugPrint('[tracking] ping fallido: $e');
+    }
+  }
+
+  Future<void> sendCurrentMechanicLocation(EmergencyRequest request) async {
+    if (!isAuthenticated || _currentUser?.role != 'tecnico') {
+      return;
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      throw ApiException('Activa el permiso de ubicacion para compartir ruta.');
+    }
+
+    final position = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 12),
+      ),
+    );
+
+    await ApiClient(baseUrl: _baseUrl, token: _accessToken).sendTrackingPing(
+      requestId: request.id,
+      latitud: position.latitude,
+      longitud: position.longitude,
+      velocidadKmh: position.speed.isFinite ? position.speed * 3.6 : null,
+      rumboGrados: position.heading.isFinite ? position.heading : null,
+    );
+  }
+
   LocalRequestMeta? metaFor(int requestId) {
     for (final meta in _requestMetas) {
       if (meta.requestId == requestId) {
@@ -726,10 +1117,10 @@ class AppController extends ChangeNotifier {
   }
 
   String etaLabelFor(EmergencyRequest request) {
-    if (request.estado == 'cancelada') {
+    if (request.estado == 'cancelado' || request.estado == 'cancelada') {
       return 'Cancelada';
     }
-    if (request.estado == 'resuelta') {
+    if (request.estado == 'finalizado' || request.estado == 'resuelta') {
       return 'Finalizada';
     }
     if (request.tiempoEstimadoMinutos == null) {
@@ -842,7 +1233,17 @@ class AppController extends ChangeNotifier {
     _currentUser = remoteUser;
     await storage.saveSession(token: _accessToken!, user: remoteUser);
 
-    if (remoteUser.isDriver) {
+    if (remoteUser.isGlobalAdmin) {
+      _vehicles = const [];
+      _requests = const [];
+      _requestMetas = const [];
+      _technicians = const [];
+      _workshopProfile = null;
+      _workshopStats = null;
+      await storage.saveVehicles(_vehicles);
+      await storage.saveRequestMetas(_requestMetas);
+      await storage.saveNotifications(_notifications);
+    } else if (remoteUser.isDriver) {
       final remoteVehicles = await api.fetchVehicles(_vehicles);
       final remoteById = {
         for (final vehicle in remoteVehicles)

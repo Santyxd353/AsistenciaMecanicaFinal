@@ -20,18 +20,14 @@ router = APIRouter()
 
 @router.get("/public/search")
 def buscar_talleres_publico(
-    q: str,
+    q: str = "",
     session: Session = Depends(get_session),
 ):
     texto = q.strip()
-    if len(texto) < 2:
-        return []
-    talleres = session.exec(
-        select(Taller)
-        .where(Taller.activo == True)
-        .where(Taller.nombre_comercial.ilike(f"%{texto}%"))
-        .limit(15)
-    ).all()
+    stmt = select(Taller).where(Taller.activo == True)
+    if texto:
+        stmt = stmt.where(Taller.nombre_comercial.ilike(f"%{texto}%"))
+    talleres = session.exec(stmt.limit(25)).all()
     response = []
     for taller in talleres:
         tenant = session.get(Tenant, taller.tenant_id) if taller.tenant_id else None

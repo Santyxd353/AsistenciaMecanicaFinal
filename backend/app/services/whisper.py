@@ -1,32 +1,27 @@
-"""Transcripción de audio → texto con faster-whisper (CPU local).
+"""Transcripcion de audio -> texto via Groq Whisper API (cloud, ligero).
 
-Decisiones:
-* Usamos `faster-whisper` en lugar de `openai-whisper` por menor consumo RAM
-  y por estar optimizado con CTranslate2 (~4x más rápido en CPU).
-* El modelo se carga perezosamente y se cachea con `@lru_cache` para no pagar
-  el coste de carga en cada request.
-* Tamaño del modelo controlado por env `WHISPER_MODEL_SIZE` (default `small`).
-  Para producción podríamos saltar a `medium`/`large-v3` si hay GPU.
-* Idioma fijado a español por defecto pero permitimos override por request.
+Antes este modulo usaba `faster-whisper` localmente (~3-4 GB de modelo y
+torch). Migrado a Groq para reducir el tamano de la imagen y no depender de
+torch/CTranslate2. Si no hay `GROQ_API_KEY` configurada, devuelve un fallback
+explicito en lugar de romper el arranque del backend (mismo contrato que la
+version anterior).
 
-Si la dependencia `faster-whisper` no está instalada, el módulo igual carga
-y `transcribir_audio` devuelve un fallback explícito en lugar de romper el
-arranque del backend. Esto facilita ejecutar el resto del sistema sin la IA
-pesada durante desarrollo.
+Interfaz publica intacta:
+    - dataclass TranscriptionResult
+    - funcion transcribir_audio(audio_path, language=...)
+    - funcion warm_whisper()  (no-op en la version cloud)
 """
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
+from app.services.groq_client import groq_audio_transcribe
 
-WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "small")
-WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
-WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
+
 WHISPER_DEFAULT_LANGUAGE = os.getenv("WHISPER_LANGUAGE", "es")
 
 
@@ -35,27 +30,8 @@ class TranscriptionResult:
     text: str
     language: Optional[str]
     duration_seconds: Optional[float]
-    source: str  # "faster-whisper" | "fallback" | "error"
+    source: str  # "groq-whisper" | "fallback" | "error"
     error: Optional[str] = None
-
-
-@lru_cache(maxsize=1)
-def _load_model():
-    """Carga perezosa del modelo. Devuelve None si la dependencia no está."""
-    try:
-        from faster_whisper import WhisperModel  # type: ignore
-    except Exception as exc:  # noqa: BLE001
-        print(f"faster-whisper no disponible: {exc}")
-        return None
-    try:
-        return WhisperModel(
-            WHISPER_MODEL_SIZE,
-            device=WHISPER_DEVICE,
-            compute_type=WHISPER_COMPUTE_TYPE,
-        )
-    except Exception as exc:  # noqa: BLE001
-        print(f"No se pudo cargar el modelo whisper '{WHISPER_MODEL_SIZE}': {exc}")
-        return None
 
 
 def transcribir_audio(
@@ -63,11 +39,6 @@ def transcribir_audio(
     *,
     language: Optional[str] = None,
 ) -> TranscriptionResult:
-    """Transcribe el archivo de audio indicado.
-
-    El audio puede venir en cualquier formato soportado por ffmpeg (mp3, wav,
-    m4a, ogg, webm). faster-whisper lo decodifica internamente.
-    """
     path = Path(audio_path)
     if not path.exists():
         return TranscriptionResult(
@@ -78,43 +49,28 @@ def transcribir_audio(
             error=f"Archivo no encontrado: {audio_path}",
         )
 
-    model = _load_model()
-    if model is None:
+    result = groq_audio_transcribe(
+        audio_path=str(path),
+        language=language or WHISPER_DEFAULT_LANGUAGE,
+    )
+    if not result:
         return TranscriptionResult(
             text="",
             language=None,
             duration_seconds=None,
             source="fallback",
-            error="faster-whisper no instalado o modelo no disponible.",
+            error="GROQ_API_KEY ausente o llamada fallida.",
         )
 
-    try:
-        segments_iter, info = model.transcribe(
-            str(path),
-            language=language or WHISPER_DEFAULT_LANGUAGE,
-            beam_size=1,
-            vad_filter=True,
-        )
-        # segments es un generator; lo materializamos para devolver el texto
-        # completo en una sola pasada.
-        segments = list(segments_iter)
-        text = " ".join(segment.text.strip() for segment in segments if segment.text).strip()
-        return TranscriptionResult(
-            text=text,
-            language=info.language,
-            duration_seconds=getattr(info, "duration", None),
-            source="faster-whisper",
-        )
-    except Exception as exc:  # noqa: BLE001
-        return TranscriptionResult(
-            text="",
-            language=None,
-            duration_seconds=None,
-            source="error",
-            error=str(exc),
-        )
+    text = (result.get("text") or "").strip()
+    return TranscriptionResult(
+        text=text,
+        language=result.get("language") or language or WHISPER_DEFAULT_LANGUAGE,
+        duration_seconds=result.get("duration"),
+        source="groq-whisper",
+    )
 
 
 def warm_whisper() -> None:
-    """Pre-carga el modelo. Útil en background si se quiere precalentar."""
-    _load_model()
+    """No-op: el modelo vive en la nube, no hay carga local que precalentar."""
+    return None

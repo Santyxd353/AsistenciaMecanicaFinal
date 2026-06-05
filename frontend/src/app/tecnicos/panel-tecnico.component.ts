@@ -38,7 +38,7 @@ export class PanelTecnicoComponent implements OnInit {
       return this.perfilTecnico.nombre.trim();
     }
     const currentUser = this.authService.currentUserValue;
-    return currentUser?.full_name?.trim() || currentUser?.username || 'Tecnico';
+    return currentUser?.full_name?.trim() || currentUser?.username || 'Técnico';
   }
 
   cerrarSesion(): void {
@@ -116,7 +116,7 @@ export class PanelTecnicoComponent implements OnInit {
         this.actualizandoSolicitudId = null;
       },
       error: (error) => {
-        this.errorAsignaciones = error?.error?.detail || 'No se pudo actualizar el estado de la asignacion.';
+        this.errorAsignaciones = error?.error?.detail || 'No se pudo actualizar el estado de la asignación.';
         this.actualizandoSolicitudId = null;
       }
     });
@@ -145,7 +145,7 @@ export class PanelTecnicoComponent implements OnInit {
         this.cargandoPerfil = false;
       },
       error: (error) => {
-        this.errorPerfil = error?.error?.detail || 'No se pudo cargar el perfil tecnico.';
+        this.errorPerfil = error?.error?.detail || 'No se pudo cargar el perfil técnico.';
         this.cargandoPerfil = false;
       }
     });
