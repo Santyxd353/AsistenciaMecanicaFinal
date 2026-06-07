@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:onesignal_flutter/onesignal_flutter.dart';
 
+import '../models.dart';
 import '../repositories.dart';
 
 typedef ForegroundPushHandler =
@@ -32,10 +34,23 @@ class PushNotificationsService {
   static Future<void> registerDevice({
     required String baseUrl,
     required String accessToken,
+    required AppUser currentUser,
     ForegroundPushHandler? onForegroundMessage,
   }) async {
     if (kIsWeb || accessToken.isEmpty) {
       return;
+    }
+
+    try {
+      final externalId = _buildExternalId(currentUser);
+      await OneSignal.login(externalId);
+      await OneSignal.User.addTags({
+        'user_id': currentUser.id,
+        'role': currentUser.role,
+        'tenant_id': currentUser.tenantId ?? 'global',
+      });
+    } catch (error) {
+      debugPrint('No se pudo asociar usuario en OneSignal: $error');
     }
 
     try {
@@ -84,5 +99,22 @@ class PushNotificationsService {
     } catch (error) {
       debugPrint('FCM no configurado o no disponible: $error');
     }
+  }
+
+  static Future<void> logout() async {
+    if (kIsWeb) {
+      return;
+    }
+
+    try {
+      await OneSignal.logout();
+    } catch (error) {
+      debugPrint('No se pudo cerrar sesion de OneSignal: $error');
+    }
+  }
+
+  static String _buildExternalId(AppUser user) {
+    final tenantKey = user.tenantId?.toString() ?? 'global';
+    return '$tenantKey:${user.id}';
   }
 }

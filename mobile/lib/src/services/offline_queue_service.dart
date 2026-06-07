@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../repositories.dart';
@@ -28,6 +29,9 @@ class OfflineQueueService {
   Stream<OfflineFlushResult> get events$ => _events.stream;
 
   Future<String> enqueue(Map<String, dynamic> payload) async {
+    if (kIsWeb) {
+      return _uuid.v4();
+    }
     final db = await LocalDb.instance.db;
     final syncId = _uuid.v4();
     final fullPayload = {...payload, 'cliente_sync_id': syncId};
@@ -42,6 +46,9 @@ class OfflineQueueService {
   }
 
   Future<List<Map<String, dynamic>>> pending() async {
+    if (kIsWeb) {
+      return const [];
+    }
     final db = await LocalDb.instance.db;
     return db.query(
       'pending_emergencias',
@@ -52,6 +59,9 @@ class OfflineQueueService {
   }
 
   Future<int> pendingCount() async {
+    if (kIsWeb) {
+      return 0;
+    }
     final db = await LocalDb.instance.db;
     final rows = await db.rawQuery(
       "SELECT COUNT(*) AS c FROM pending_emergencias WHERE status='pending'",
@@ -62,6 +72,15 @@ class OfflineQueueService {
   /// Sincroniza todas las pendientes contra el backend.
   /// Backend dedupea por `cliente_sync_id`, así que un POST repetido es seguro.
   Future<OfflineFlushResult> flush() async {
+    if (kIsWeb) {
+      final result = OfflineFlushResult(
+        synced: 0,
+        pending: 0,
+        failed: 0,
+      );
+      _events.add(result);
+      return result;
+    }
     final db = await LocalDb.instance.db;
     final rows = await pending();
     int synced = 0;

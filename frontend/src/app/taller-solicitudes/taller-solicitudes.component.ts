@@ -40,6 +40,7 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
   guardandoCotizacion = false;
   errorCotizacion = '';
   mensajeCotizacion = '';
+  alertaRealtime = '';
   montoCobro: number | null = null;
   cotizacionDraft = {
     costo_estimado: null as number | null,
@@ -64,6 +65,7 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
   private readonly backendBaseUrl = 'http://localhost:8000';
   private detalleRealtimeSub?: Subscription;
   private tallerRealtimeSub?: Subscription;
+  private alertaRealtimeTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
     private solicitudService: SolicitudService,
@@ -83,6 +85,9 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.detalleRealtimeSub?.unsubscribe();
     this.tallerRealtimeSub?.unsubscribe();
+    if (this.alertaRealtimeTimer) {
+      clearTimeout(this.alertaRealtimeTimer);
+    }
   }
 
   etiquetaEstado(estado: string): string {
@@ -601,6 +606,20 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
   }
 
   private aplicarEventoRealtime(event: RealtimeEvent): void {
+    if (event.event === 'taller.solicitud_actualizada') {
+      const payload = event.payload as Partial<Solicitud>;
+      if (payload.id) {
+        this.aplicarPatchSolicitud(payload.id, payload);
+      }
+      this.mostrarAlertaRealtime(
+        payload.taller_id
+          ? 'Actualización operativa recibida en tiempo real.'
+          : 'Nueva solicitud candidata recibida en tiempo real.'
+      );
+      this.cargarSolicitudes();
+      return;
+    }
+
     if (event.event === 'tracking.update') {
       const payload = event.payload as {
         solicitud_id?: number;
@@ -634,6 +653,18 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
     if (this.solicitudSeleccionada?.id === solicitudId) {
       this.solicitudSeleccionada = { ...this.solicitudSeleccionada, ...patch };
     }
+    this.cdr.detectChanges();
+  }
+
+  private mostrarAlertaRealtime(message: string): void {
+    this.alertaRealtime = message;
+    if (this.alertaRealtimeTimer) {
+      clearTimeout(this.alertaRealtimeTimer);
+    }
+    this.alertaRealtimeTimer = setTimeout(() => {
+      this.alertaRealtime = '';
+      this.cdr.detectChanges();
+    }, 5000);
     this.cdr.detectChanges();
   }
 }

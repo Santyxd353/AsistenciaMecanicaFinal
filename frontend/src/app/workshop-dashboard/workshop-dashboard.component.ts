@@ -1,10 +1,12 @@
-import { Component, OnInit, ChangeDetectorRef  } from '@angular/core';
+import { Component, OnDestroy, OnInit, ChangeDetectorRef  } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { timeout } from 'rxjs';
+import { Subscription, timeout } from 'rxjs';
 
 import { AuthService } from '../core/auth.service';
+import { RealtimeEvent, RealtimeService } from '../core/realtime.service';
+import { SolicitudService } from '../core/incident.service';
 import { WorkshopProfileService, Taller, WorkshopStats } from '../core/workshop-profile.service';
 import { KpiDashboardComponent } from '../shared/kpi-dashboard/kpi-dashboard.component';
 
@@ -219,6 +221,12 @@ import { KpiDashboardComponent } from '../shared/kpi-dashboard/kpi-dashboard.com
                 <span class="action-badge">Atención</span>
                 <strong>Revisar solicitudes</strong>
                 <p>Consulta los casos pendientes y su avance operativo.</p>
+                <span class="action-inline-status" *ngIf="pendingSolicitudesCount > 0">
+                  {{ pendingSolicitudesCount }} pendiente(s)
+                </span>
+                <span class="action-inline-alert" *ngIf="solicitudesRealtimeMessage">
+                  {{ solicitudesRealtimeMessage }}
+                </span>
               </button>
               <button class="action-card" (click)="editarPerfil()">
                 <span class="action-badge">Perfil</span>
@@ -783,6 +791,24 @@ import { KpiDashboardComponent } from '../shared/kpi-dashboard/kpi-dashboard.com
       font-size: 14px;
     }
 
+    .action-inline-status {
+      align-self: flex-start;
+      margin-top: 4px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .action-inline-alert {
+      margin-top: 4px;
+      color: #166534;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
     .mini-metrics {
       display: grid;
       grid-template-columns: 1fr;
@@ -1148,7 +1174,7 @@ import { KpiDashboardComponent } from '../shared/kpi-dashboard/kpi-dashboard.com
     }
   `]
 })
-export class WorkshopDashboardComponent implements OnInit {
+export class WorkshopDashboardComponent implements OnInit, OnDestroy {
   taller: Taller | null = null;
   estadisticas: WorkshopStats | null = null;
   mostrarPerfil = false;
@@ -1165,10 +1191,16 @@ export class WorkshopDashboardComponent implements OnInit {
     notificaciones_pagos: false,
     reportes_semanales: false
   };
+  pendingSolicitudesCount = 0;
+  solicitudesRealtimeMessage = '';
+  private tallerRealtimeSub?: Subscription;
+  private solicitudesRealtimeTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
     private authService: AuthService,
     private workshopService: WorkshopProfileService,
+    private solicitudService: SolicitudService,
+    private realtimeService: RealtimeService,
     private router: Router,
     private cdr: ChangeDetectorRef 
   ) {}
@@ -1181,6 +1213,13 @@ export class WorkshopDashboardComponent implements OnInit {
 
     this.applyTheme();
     this.cargarDatos();
+  }
+
+  ngOnDestroy(): void {
+    this.tallerRealtimeSub?.unsubscribe();
+    if (this.solicitudesRealtimeTimer) {
+      clearTimeout(this.solicitudesRealtimeTimer);
+    }
   }
 
   toggleDarkMode(): void {
@@ -1205,6 +1244,8 @@ export class WorkshopDashboardComponent implements OnInit {
         console.log('Taller cargado:', taller);
         this.taller = taller;
         this.resetNotificationDraft();
+        this.conectarTallerRealtime(taller);
+        this.cargarConteoSolicitudesPendientes();
         this.cdr.detectChanges();
         
         this.workshopService.getWorkshopStats().pipe(timeout(12000)).subscribe({
@@ -1237,6 +1278,56 @@ export class WorkshopDashboardComponent implements OnInit {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  private conectarTallerRealtime(taller: Taller): void {
+    this.tallerRealtimeSub?.unsubscribe();
+    if (!taller.id) {
+      return;
+    }
+
+    this.tallerRealtimeSub = this.realtimeService.subscribe('taller', taller.id).subscribe((event) => {
+      this.aplicarEventoRealtime(event);
+    });
+  }
+
+  private aplicarEventoRealtime(event: RealtimeEvent): void {
+    if (event.event !== 'taller.solicitud_actualizada') {
+      return;
+    }
+
+    const payload = (event.payload ?? {}) as { taller_id?: number | null };
+    this.cargarConteoSolicitudesPendientes();
+    this.mostrarAvisoSolicitudes(
+      payload.taller_id
+        ? 'Se actualizó una solicitud del taller.'
+        : 'Ha llegado una nueva solicitud.'
+    );
+  }
+
+  private cargarConteoSolicitudesPendientes(): void {
+    this.solicitudService.getSolicitudesPendientesTaller().pipe(timeout(12000)).subscribe({
+      next: (solicitudes) => {
+        this.pendingSolicitudesCount = Array.isArray(solicitudes) ? solicitudes.length : 0;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.pendingSolicitudesCount = 0;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private mostrarAvisoSolicitudes(message: string): void {
+    this.solicitudesRealtimeMessage = message;
+    if (this.solicitudesRealtimeTimer) {
+      clearTimeout(this.solicitudesRealtimeTimer);
+    }
+    this.solicitudesRealtimeTimer = setTimeout(() => {
+      this.solicitudesRealtimeMessage = '';
+      this.cdr.detectChanges();
+    }, 6000);
+    this.cdr.detectChanges();
   }
 
   get specialtyTags(): string[] {

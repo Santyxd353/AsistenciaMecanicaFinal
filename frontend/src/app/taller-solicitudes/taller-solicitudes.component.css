@@ -313,6 +313,13 @@
   font-weight: 700;
 }
 
+.taller-solicitudes-alerta-realtime {
+  background: #edf9ef;
+  border-color: #bfe7c7;
+  color: #166534;
+  font-weight: 700;
+}
+
 .taller-solicitudes-estado-pill {
   display: inline-flex;
   align-items: center;

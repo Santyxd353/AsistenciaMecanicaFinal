@@ -428,6 +428,7 @@ class AppController extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final storage = LocalRepository(prefs);
     stopMechanicTracking();
+    await PushNotificationsService.logout();
     _accessToken = null;
     _currentUser = null;
     _vehicles = const [];
@@ -1197,13 +1198,18 @@ class AppController extends ChangeNotifier {
 
   Future<void> _registerPushNotifications() async {
     final token = _accessToken;
+    final user = _currentUser;
     if (token == null || token.isEmpty) {
+      return;
+    }
+    if (user == null) {
       return;
     }
 
     await PushNotificationsService.registerDevice(
       baseUrl: _baseUrl,
       accessToken: token,
+      currentUser: user,
       onForegroundMessage:
           ({required String title, required String message, int? requestId}) {
             _pushNotification(

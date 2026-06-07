@@ -1,10 +1,20 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:provider/provider.dart';
 
 import 'src/app_controller.dart';
+import 'src/app_config.dart';
 import 'src/app_shell.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb && AppConfig.isDevelopment) {
+    OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
+  }
+  if (!kIsWeb && AppConfig.oneSignalAppId.isNotEmpty) {
+    OneSignal.initialize(AppConfig.oneSignalAppId);
+  }
   runApp(const AsistenciaMecanicaApp());
 }
 

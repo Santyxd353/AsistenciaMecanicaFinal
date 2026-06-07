@@ -1,3 +1,4 @@
+import os
 from typing import Iterable, Optional
 
 from sqlmodel import Session
@@ -5,6 +6,12 @@ from sqlmodel import Session
 from app.models.domain import Notificacion, TipoNotificacion
 from app.models.user import User
 from app.services.push_fcm import enviar_push_al_usuario
+from app.services.push_onesignal import enviar_push_al_usuario as enviar_push_onesignal
+
+
+def _legacy_fcm_fallback_enabled() -> bool:
+    value = os.getenv("ENABLE_LEGACY_FCM_FALLBACK", "true").strip().lower()
+    return value not in {"0", "false", "no", "off"}
 
 
 def crear_notificacion(
@@ -35,15 +42,25 @@ def crear_notificacion(
     session.add(notificacion)
     session.flush()
 
-    enviar_push_al_usuario(
-        session,
-        usuario_id=destinatario_id,
+    enviado_por_onesignal = enviar_push_onesignal(
+        usuario=destinatario,
         titulo=titulo,
         mensaje=mensaje,
         solicitud_id=solicitud_id,
         tipo=tipo.value,
         accion_url=accion_url,
     )
+
+    if not enviado_por_onesignal and _legacy_fcm_fallback_enabled():
+        enviar_push_al_usuario(
+            session,
+            usuario_id=destinatario_id,
+            titulo=titulo,
+            mensaje=mensaje,
+            solicitud_id=solicitud_id,
+            tipo=tipo.value,
+            accion_url=accion_url,
+        )
 
     if commit:
         session.commit()

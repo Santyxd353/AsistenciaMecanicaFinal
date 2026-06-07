@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_config.dart';
 import 'models.dart';
 
 class LocalRepository {
@@ -15,9 +17,7 @@ class LocalRepository {
   static const _vehiclesKey = 'vehicles';
   static const _requestMetasKey = 'request_metas';
   static const _notificationsKey = 'notifications';
-  static const defaultBaseUrl = 'http://10.0.2.2:8000';
-  static const _legacyCloudBaseUrl =
-      'https://backend-958497253028.europe-west1.run.app';
+  static String get defaultBaseUrl => AppConfig.defaultBaseUrl;
 
   final SharedPreferences _prefs;
 
@@ -53,11 +53,7 @@ class LocalRepository {
               .toList();
 
     final storedBaseUrl = _prefs.getString(_baseUrlKey);
-    final normalizedBaseUrl = normalizeBaseUrl(
-      storedBaseUrl == _legacyCloudBaseUrl
-          ? defaultBaseUrl
-          : storedBaseUrl ?? defaultBaseUrl,
-    );
+    final normalizedBaseUrl = AppConfig.resolveStoredBaseUrl(storedBaseUrl);
 
     if (storedBaseUrl != null && normalizedBaseUrl != storedBaseUrl) {
       _prefs.setString(_baseUrlKey, normalizedBaseUrl);
@@ -74,7 +70,7 @@ class LocalRepository {
   }
 
   Future<void> saveBaseUrl(String value) async {
-    await _prefs.setString(_baseUrlKey, normalizeBaseUrl(value));
+    await _prefs.setString(_baseUrlKey, AppConfig.normalizeBaseUrl(value));
   }
 
   Future<void> saveSession({
@@ -119,7 +115,7 @@ class LocalRepository {
 
 class ApiClient {
   ApiClient({required String baseUrl, this.token})
-    : _baseUrl = normalizeBaseUrl(baseUrl);
+    : _baseUrl = AppConfig.normalizeBaseUrl(baseUrl);
 
   final String _baseUrl;
   final String? token;
@@ -153,7 +149,9 @@ class ApiClient {
           headers: _headers(json: true),
           body: jsonEncode({
             'token': fcmToken,
-            'plataforma': Platform.isAndroid ? 'android' : 'mobile',
+            'plataforma': kIsWeb
+                ? 'web'
+                : (Platform.isAndroid ? 'android' : 'mobile'),
           }),
         )
         .timeout(const Duration(seconds: 12));
@@ -902,19 +900,9 @@ class ApiException implements Exception {
 }
 
 String normalizeBaseUrl(String value) {
-  final trimmed = value.trim();
-  if (trimmed.isEmpty) {
-    return LocalRepository.defaultBaseUrl;
-  }
+  return AppConfig.normalizeBaseUrl(value);
+}
 
-  final normalized = trimmed.endsWith('/')
-      ? trimmed.substring(0, trimmed.length - 1)
-      : trimmed;
-
-  if (normalized == 'http://localhost:8000' ||
-      normalized == 'http://127.0.0.1:8000') {
-    return LocalRepository.defaultBaseUrl;
-  }
-
-  return normalized;
+String platformDefaultBaseUrl() {
+  return AppConfig.defaultBaseUrl;
 }
