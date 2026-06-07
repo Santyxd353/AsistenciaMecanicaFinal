@@ -40,6 +40,7 @@ dependencies:
   image_picker: ^1.1.2
   intl: ^0.20.2
   latlong2: ^0.9.1
+  onesignal_flutter: ^5.3.4
   provider: ^6.1.5
   path_provider: ^2.1.5
   record: ^6.1.2

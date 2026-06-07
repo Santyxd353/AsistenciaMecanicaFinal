@@ -21,6 +21,10 @@
     {{ error }}
   </section>
 
+  <section *ngIf="alertaRealtime" class="taller-solicitudes-bloque taller-solicitudes-alerta-realtime">
+    {{ alertaRealtime }}
+  </section>
+
   <div *ngIf="!cargando && !error" class="taller-solicitudes-operacion">
     <section class="taller-solicitudes-bloque">
       <div class="taller-solicitudes-tabs">
