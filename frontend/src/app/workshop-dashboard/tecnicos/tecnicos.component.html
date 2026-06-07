@@ -160,6 +160,10 @@
           </div>
 
           <div class="tech-card-actions">
+            <a class="btn-secondary" [routerLink]="['/mecanicos', t.id]">
+              Ver perfil
+            </a>
+
             <button class="btn-secondary" type="button" (click)="editar(t)">
               Editar
             </button>
@@ -224,6 +228,26 @@
             <div class="field-error" *ngIf="nombreCtrl.invalid && nombreCtrl.touched">
               <span *ngIf="nombreCtrl.errors?.['required']">El nombre del mecánico es obligatorio.</span>
               <span *ngIf="nombreCtrl.errors?.['minlength']">El nombre debe tener al menos 3 caracteres.</span>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label for="email">Correo electrónico</label>
+            <input
+              id="email"
+              type="email"
+              [(ngModel)]="form.email"
+              name="email"
+              #emailCtrl="ngModel"
+              required
+              email
+              placeholder="Ej. ramiro@taller.com"
+              autocomplete="off"
+            />
+            <small class="hint">El mecánico usará este correo para entrar al sistema.</small>
+            <div class="field-error" *ngIf="emailCtrl.invalid && emailCtrl.touched">
+              <span *ngIf="emailCtrl.errors?.['required']">El correo es obligatorio.</span>
+              <span *ngIf="emailCtrl.errors?.['email']">Ingresa un correo válido.</span>
             </div>
           </div>
 
@@ -437,6 +461,53 @@
           </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal con las credenciales generadas al crear un mecánico nuevo.
+       Se muestra una sola vez (la contraseña no se persiste en claro). -->
+  <div class="modal-overlay" *ngIf="credencialesDialog" (click)="cerrarCredenciales()">
+    <div class="modal-content credenciales-modal" (click)="$event.stopPropagation()">
+      <header class="modal-header">
+        <div>
+          <p class="overline">Credenciales generadas</p>
+          <h2>Entrega estos datos a {{ credencialesDialog.nombre }}</h2>
+        </div>
+        <button class="modal-close" type="button" (click)="cerrarCredenciales()" aria-label="Cerrar">×</button>
+      </header>
+
+      <p class="credenciales-warning">
+        ⚠️ Esta contraseña <strong>no se mostrará otra vez</strong>. Cópiala ahora y
+        entrégala al mecánico para que pueda iniciar sesión.
+      </p>
+
+      <dl class="credenciales-grid">
+        <div>
+          <dt>Correo (login)</dt>
+          <dd>{{ credencialesDialog.email }}</dd>
+        </div>
+        <div>
+          <dt>Usuario interno</dt>
+          <dd>{{ credencialesDialog.username }}</dd>
+        </div>
+        <div>
+          <dt>Contraseña temporal</dt>
+          <dd class="credenciales-password">{{ credencialesDialog.password }}</dd>
+        </div>
+      </dl>
+
+      <div *ngIf="credencialesCopiado" class="alert alert-success">
+        {{ credencialesCopiado }}
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-secondary" type="button" (click)="cerrarCredenciales()">
+          Cerrar
+        </button>
+        <button class="btn-primary" type="button" (click)="copiarCredenciales()">
+          Copiar credenciales
+        </button>
+      </div>
     </div>
   </div>
 </div>

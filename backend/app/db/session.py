@@ -83,6 +83,17 @@ def ensure_legacy_schema():
         "ALTER TABLE tecnico ADD COLUMN IF NOT EXISTS direccion VARCHAR NULL",
         "ALTER TABLE tecnico ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT TRUE",
         "ALTER TABLE tecnico ADD COLUMN IF NOT EXISTS id_usuario INTEGER NULL",
+        "ALTER TABLE tecnico ADD COLUMN IF NOT EXISTS calificacion_promedio DOUBLE PRECISION DEFAULT 0.0",
+        "ALTER TABLE tecnico ADD COLUMN IF NOT EXISTS total_calificaciones INTEGER DEFAULT 0",
+        # Columna legacy `tecnico.especialidad` (string libre) ya no existe en
+        # el modelo Python: las especialidades se manejan via tabla pivote
+        # `tecnicos_especialidades`. La columna quedó en BD con NOT NULL y
+        # rompía cualquier INSERT moderno con
+        # "null value in column 'especialidad' violates not-null constraint".
+        # Hacemos DROP idempotente (IF EXISTS) y, si por algún motivo el
+        # DROP falla, al menos quitamos NOT NULL para que el INSERT pase.
+        "ALTER TABLE tecnico ALTER COLUMN especialidad DROP NOT NULL",
+        "ALTER TABLE tecnico DROP COLUMN IF EXISTS especialidad",
         # placa: pasamos de UNIQUE global a índice no único (la unicidad pasa a
         # ser por (tenant_id, placa) verificada en aplicación).
         "ALTER TABLE vehiculo DROP CONSTRAINT IF EXISTS vehiculo_placa_key",
@@ -104,9 +115,36 @@ def ensure_legacy_schema():
         "DROP TYPE IF EXISTS estadosolicitud CASCADE",
     ]
 
-    with engine.begin() as connection:
-        for statement in statements:
-            connection.execute(text(statement))
+    # Cada statement va en su propia transacción para que un fallo (p.ej.
+    # ALTER COLUMN sobre una columna que ya no existe en BDs frescas) no
+    # aborte los demás. Las DDL legacy son idempotentes por diseño; un
+    # fallo individual se loguea y se sigue adelante.
+    for statement in statements:
+        try:
+            with engine.begin() as connection:
+                connection.execute(text(statement))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[ensure_legacy_schema] skip '{statement[:80]}...': {exc}")
+
+    # ALTER TYPE ... ADD VALUE no puede ejecutarse dentro de un bloque
+    # transaccional implícito en versiones antiguas de Postgres; lo corremos
+    # en AUTOCOMMIT por seguridad. `IF NOT EXISTS` lo hace idempotente.
+    #
+    # Razón: cuando agregamos `UserRole.TECNICO = "tecnico"` al enum Python,
+    # el tipo enum nativo en Postgres (`userrole`) creado por la primera
+    # `create_all` todavía solo tiene {DRIVER, WORKSHOP, ADMIN}. Crear un
+    # técnico falla con `invalid input value for enum userrole: "TECNICO"`.
+    autocommit_statements = [
+        "ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'TECNICO'",
+    ]
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        for statement in autocommit_statements:
+            try:
+                connection.execute(text(statement))
+            except Exception as exc:  # noqa: BLE001
+                # Si el tipo no existe (BD fresca) ignoramos; SQLModel creó
+                # un Enum nativo distinto o el tipo ya tenía el valor.
+                print(f"[ensure_legacy_schema] skip '{statement}': {exc}")
 
 
 def seed_default_tenant():
@@ -244,13 +282,45 @@ def seed_default_specialties():
     """Crea especialidades base para onboarding y gestion de mecanicos."""
     from app.models.domain import Especialidad, EspecialidadTaller
 
+    # Catálogo amplio (>20) que cubre tanto autos a combustión como eléctricos.
+    # Se ordenan agrupados por área lógica (mecánica → eléctrica → carrocería
+    # → consumibles → autos eléctricos → otros) para que la UI los muestre
+    # razonablemente cuando se renderizan por orden de inserción.
     names = [
-        "Bateria",
-        "Llantas",
-        "Motor",
-        "Frenos",
-        "Electricidad",
+        # ─── Mecánica general ─────────────────────────────────────────────
         "Auxilio general",
+        "Motor",
+        "Transmisión / Caja",
+        "Suspensión",
+        "Frenos",
+        "Dirección",
+        "Embrague",
+        "Escape",
+        "Refrigeración / Radiador",
+        # ─── Eléctrica / electrónica ─────────────────────────────────────
+        "Batería",
+        "Electricidad",
+        "Alternador y arranque",
+        "Diagnóstico electrónico (OBD)",
+        "Inyección y combustible",
+        # ─── Llantas y consumibles ───────────────────────────────────────
+        "Llantas",
+        "Alineación y balanceo",
+        "Lubricantes y filtros",
+        "Aire acondicionado",
+        # ─── Carrocería / cristales ──────────────────────────────────────
+        "Carrocería y pintura",
+        "Cerrajería automotriz",
+        "Cristales y parabrisas",
+        # ─── Autos eléctricos / híbridos ─────────────────────────────────
+        "Autos eléctricos - Batería de tracción",
+        "Autos eléctricos - Carga rápida",
+        "Autos eléctricos - Inversor / motor eléctrico",
+        "Autos híbridos",
+        # ─── Servicios especiales ────────────────────────────────────────
+        "Grúa / Remolque",
+        "Pre-ITV y revisión técnica",
+        "Lavado y detallado",
     ]
     with Session(engine) as session:
         for name in names:
@@ -258,6 +328,34 @@ def seed_default_specialties():
                 session.add(EspecialidadTaller(nombre=name))
             if not session.exec(select(Especialidad).where(Especialidad.nombre == name)).first():
                 session.add(Especialidad(nombre=name))
+        session.commit()
+
+
+def seed_default_tipos_vehiculo():
+    """Catálogo base de tipos de vehículo soportados por los talleres."""
+    from app.models.domain import TipoVehiculo
+
+    tipos = [
+        "Automóvil",
+        "Camioneta / SUV",
+        "Moto",
+        "Auto eléctrico",
+        "Auto híbrido",
+        "Auto deportivo",
+        "Auto de alta gama",
+        "Camión",
+        "Vehículo pesado",
+        "Vehículo comercial / Van",
+        "Vehículo de carga",
+        "Scooter eléctrico",
+        "Bicicleta eléctrica",
+        "Cuatrimoto / ATV",
+        "Maquinaria agrícola ligera",
+    ]
+    with Session(engine) as session:
+        for name in tipos:
+            if not session.exec(select(TipoVehiculo).where(TipoVehiculo.nombre == name)).first():
+                session.add(TipoVehiculo(nombre=name))
         session.commit()
 
 
@@ -308,6 +406,7 @@ def init_db():
     seed_saas_plans()
     seed_default_subscriptions()
     seed_default_specialties()
+    seed_default_tipos_vehiculo()
     seed_admin()
 
 

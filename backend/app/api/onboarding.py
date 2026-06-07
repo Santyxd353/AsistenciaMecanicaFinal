@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.api.auth import build_auth_response
-from app.api.talleres import _obtener_especialidades_taller
+from app.api.talleres import _obtener_especialidades_taller, _obtener_tipos_vehiculo
 from app.core.security import get_password_hash
 from app.db.session import get_session
 from app.models.domain import (
@@ -67,6 +67,7 @@ def crear_taller_desde_onboarding(
         raise HTTPException(status_code=400, detail="El nombre comercial del taller es obligatorio.")
 
     especialidades = _obtener_especialidades_taller(session, payload.taller.especialidad_ids)
+    tipos_vehiculo = _obtener_tipos_vehiculo(session, payload.taller.tipo_vehiculo_ids or [])
     tenant = Tenant(
         nombre=payload.taller.nombre_comercial.strip(),
         slug=_unique_slug(session, payload.taller.nombre_comercial),
@@ -88,13 +89,14 @@ def crear_taller_desde_onboarding(
     session.add(admin)
     session.flush()
 
-    taller_data = payload.taller.model_dump(exclude={"especialidad_ids"})
+    taller_data = payload.taller.model_dump(exclude={"especialidad_ids", "tipo_vehiculo_ids"})
     taller = Taller(
         **taller_data,
         propietario_id=admin.id or 0,
         tenant_id=tenant.id,
     )
     taller.especialidades = especialidades
+    taller.tipos_vehiculo = tipos_vehiculo
     session.add(taller)
     session.flush()
 

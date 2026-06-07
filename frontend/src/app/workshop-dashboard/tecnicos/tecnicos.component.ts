@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { FormsModule, NgForm  } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Tecnico, TecnicoPayload, TecnicoService, TecnicoUsuarioPayload } from '../../core/tecnico.service';
 import { EspecialidadService, Especialidad } from '../../core/especialidad.service';
@@ -9,7 +9,7 @@ import { EspecialidadService, Especialidad } from '../../core/especialidad.servi
 @Component({
   selector: 'app-tecnicos',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterModule],
   templateUrl: './tecnicos.component.html',
   styleUrl: './tecnicos.component.css'
 })
@@ -48,6 +48,7 @@ export class TecnicosComponent implements OnInit {
   form: any = {
     id: null,
     nombre: '',
+    email: '',
     ci: '',
     direccion: '',
     especialidad_ids: [],
@@ -57,6 +58,19 @@ export class TecnicosComponent implements OnInit {
     latitud: null,
     longitud: null
   };
+
+  /**
+   * Tras crear un mecánico, mostramos sus credenciales en un modal aparte
+   * para que el operador pueda copiarlas. La contraseña temporal sólo se
+   * muestra una vez (no se guarda en claro en backend).
+   */
+  credencialesDialog: {
+    nombre: string;
+    email: string;
+    username: string;
+    password: string;
+  } | null = null;
+  credencialesCopiado = '';
 
   constructor(
     private tecnicoService: TecnicoService,
@@ -221,6 +235,7 @@ export class TecnicosComponent implements OnInit {
     this.form = {
       id: null,
       nombre: '',
+      email: '',
       ci: '',
       direccion: '',
       especialidad_ids: [],
@@ -277,6 +292,7 @@ export class TecnicosComponent implements OnInit {
     this.form = {
       id: null,
       nombre: '',
+      email: '',
       ci: '',
       direccion: '',
       especialidad_ids: [],
@@ -332,36 +348,49 @@ export class TecnicosComponent implements OnInit {
             ? ` Usuario: ${res.usuario_username} | Contraseña temporal: ${res.password_temporal}`
             : '';
           this.mensajeExito = `Mecánico creado correctamente.${credenciales}`;
+          this.guardando = false;
           this.cerrarModal();
           setTimeout(() => this.cargar(), 0);
         },
         error: (err: unknown) => {
           console.error(err);
-          this.mensajeError = this.obtenerMensajeError(err, 'No se pudo actualizar el técnico.');
+          // El modal queda abierto mostrando el error en `modalMensajeError`.
+          // Antes solo se actualizaba `mensajeError` (fuera del modal), así
+          // que el usuario veía el botón "Guardando..." reset pero ningún
+          // feedback dentro del modal → daba sensación de quedarse colgado.
+          const message = this.obtenerMensajeError(err, 'No se pudo actualizar el técnico.');
+          this.modalMensajeError = message;
+          this.mensajeError = message;
           this.guardando = false;
         },
-        complete: () => {
-          this.guardando = false;
-        }
       });
     } else {
       this.tecnicoService.crearTecnico(payload).subscribe({
         next: (res: Tecnico) => {
-          const credenciales = res.usuario_username && res.password_temporal
-            ? ` Usuario: ${res.usuario_username} | Contraseña temporal: ${res.password_temporal}`
-            : '';
-          this.mensajeExito = `Mecánico creado correctamente.${credenciales}`;
+          this.mensajeExito = 'Mecánico creado correctamente.';
+          this.guardando = false;
           this.cerrarModal();
+          // Mostrar credenciales en un diálogo aparte para que el operador
+          // pueda copiarlas y entregarlas al mecánico. El password sólo se
+          // expone aquí — no queda en claro en backend.
+          if (res.usuario_username && res.password_temporal) {
+            this.credencialesDialog = {
+              nombre: res.nombre,
+              email: res.usuario_email || payload.email || '',
+              username: res.usuario_username,
+              password: res.password_temporal,
+            };
+            this.credencialesCopiado = '';
+          }
           setTimeout(() => this.cargar(), 0);
         },
         error: (err: unknown) => {
           console.error(err);
-          this.mensajeError = this.obtenerMensajeError(err, 'No se pudo crear el técnico.');
+          const message = this.obtenerMensajeError(err, 'No se pudo crear el técnico.');
+          this.modalMensajeError = message;
+          this.mensajeError = message;
           this.guardando = false;
         },
-        complete: () => {
-          this.guardando = false;
-        }
       });
     }
   }
@@ -543,6 +572,9 @@ export class TecnicosComponent implements OnInit {
   private buildPayload(nombre: string): TecnicoPayload {
     return {
       nombre,
+      // Backend valida formato + unicidad. Acá lo normalizamos a minúsculas
+      // para evitar duplicados por mayúsculas/minúsculas (Ramiro@... vs ramiro@...).
+      email: (this.form.email || '').trim().toLowerCase(),
       ci: (this.form.ci || '').trim(),
       direccion: (this.form.direccion || '').trim(),
       especialidad_ids: this.especialidadesSeleccionadas.map(item => item.id),
@@ -551,6 +583,28 @@ export class TecnicosComponent implements OnInit {
       latitud: this.form.latitud ?? null,
       longitud: this.form.longitud ?? null
     };
+  }
+
+  cerrarCredenciales(): void {
+    this.credencialesDialog = null;
+    this.credencialesCopiado = '';
+  }
+
+  /** Copia el conjunto de credenciales al clipboard del operador. */
+  async copiarCredenciales(): Promise<void> {
+    const c = this.credencialesDialog;
+    if (!c) return;
+    const text =
+      `Mecánico: ${c.nombre}\n` +
+      `Correo (login): ${c.email}\n` +
+      `Usuario: ${c.username}\n` +
+      `Contraseña temporal: ${c.password}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      this.credencialesCopiado = 'Credenciales copiadas al portapapeles.';
+    } catch {
+      this.credencialesCopiado = 'No se pudo copiar. Selecciona y copia manualmente.';
+    }
   }
 
   private obtenerMensajeError(error: unknown, fallback: string): string {

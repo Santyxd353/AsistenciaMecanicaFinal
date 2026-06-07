@@ -16,11 +16,20 @@ export interface Tecnico {
   taller_id?: number;
   id_usuario?: number | null;
   usuario_username?: string | null;
+  usuario_email?: string | null;
   password_temporal?: string | null;
 }
 
 export interface TecnicoPayload {
   nombre: string;
+  /**
+   * Correo del mecánico — lo usará para hacer login.
+   * Obligatorio al CREAR (backend TecnicoIn lo exige), pero en updates el
+   * endpoint PUT usa `TecnicoUpdate` que no lo lleva. Lo dejamos opcional
+   * a nivel de tipo para que update flows compilen, y el form de creación
+   * lo marca `required`.
+   */
+  email?: string;
   ci: string;
   direccion: string;
   especialidad_ids: number[];

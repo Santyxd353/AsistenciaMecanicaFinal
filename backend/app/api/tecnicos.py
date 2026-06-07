@@ -19,6 +19,7 @@ router = APIRouter()
 
 class TecnicoIn(BaseModel):
     nombre: str
+    email: str
     ci: str | None = None
     direccion: str | None = None
     especialidad_ids: list[int] = []
@@ -35,6 +36,18 @@ class TecnicoIn(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("Este campo es obligatorio")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def validar_email(cls, value: str) -> str:
+        value = (value or "").strip().lower()
+        if not value:
+            raise ValueError("El correo del mecánico es obligatorio.")
+        # Regex pragmático suficiente para distinguir errores de tipeo. La
+        # unicidad se verifica al insertar contra la BD.
+        if "@" not in value or "." not in value.split("@")[-1]:
+            raise ValueError("Ingresa un correo electrónico válido.")
         return value
 
     @field_validator("ci")
@@ -251,11 +264,26 @@ def crear_tecnico(
 
     ci_value = tecnico_in.ci or f"AUTO{secrets.token_hex(3).upper()}"[:10]
     direccion_value = tecnico_in.direccion or "Pendiente"
+
+    # El email lo provee el operador del taller — es el que el mecánico va a
+    # usar para hacer login. Validamos unicidad acá para devolver un error
+    # claro antes del INSERT (el constraint UNIQUE del schema sigue siendo
+    # la red de seguridad).
+    email_normalizado = tecnico_in.email
+    existente_email = session.exec(
+        select(User).where(User.email == email_normalizado)
+    ).first()
+    if existente_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ya existe una cuenta con ese correo. Usa otro correo para este mecánico.",
+        )
+
     username = _username_unico(session, tecnico_in.nombre)
     password_temporal = _password_temporal(ci_value)
     usuario = User(
         username=username,
-        email=f"{username}@mecanico.local",
+        email=email_normalizado,
         full_name=tecnico_in.nombre,
         role=UserRole.TECNICO,
         is_active=tecnico_in.activo,
@@ -284,9 +312,25 @@ def crear_tecnico(
         session.commit()
     except IntegrityError as exc:
         session.rollback()
+        # Diagnóstico fino del constraint violado. Antes devolvíamos siempre
+        # "CI duplicado" aunque el problema fuera de username, email o FK,
+        # lo cual escondía el error real al cliente y dejaba al usuario sin
+        # forma de corregirlo.
+        msg = str(getattr(exc, "orig", exc) or exc).lower()
+        print(f"[crear_tecnico] IntegrityError: {msg}")
+        if "tecnico_ci_key" in msg:
+            detail = "El CI ya está registrado para otro técnico."
+        elif "user_username_key" in msg:
+            detail = "Conflicto con el usuario interno autogenerado. Reintenta."
+        elif "user_email_key" in msg:
+            detail = "Conflicto con el email interno autogenerado. Reintenta."
+        elif "tecnico_id_usuario_key" in msg:
+            detail = "Conflicto con la relación de usuario interno. Reintenta."
+        else:
+            detail = "No se pudo guardar el mecánico (violación de restricción)."
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El CI ya está registrado para otro técnico.",
+            detail=detail,
         ) from exc
     tecnico_creado = _obtener_tecnico_con_especialidades(session, tecnico.id)
     if not tecnico_creado:
@@ -294,6 +338,7 @@ def crear_tecnico(
     return TecnicoRead.model_validate(tecnico_creado).model_copy(
         update={
             "usuario_username": username,
+            "usuario_email": email_normalizado,
             "password_temporal": password_temporal,
         }
     )

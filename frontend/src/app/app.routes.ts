@@ -117,5 +117,14 @@ export const routes: Routes = [
     loadComponent: () => import('./taller-solicitudes/taller-solicitudes.component').then((m) => m.TallerSolicitudesComponent),
     canActivate: [WorkshopGuard]
   },
+  {
+    // Perfil público del mecánico: accesible para cualquier usuario
+    // autenticado (taller, cliente, mecánico viendo perfiles ajenos, admin).
+    path: 'mecanicos/:id',
+    loadComponent: () =>
+      import('./mechanic-profile/mechanic-profile.component').then(
+        (m) => m.MechanicProfileComponent,
+      ),
+  },
   { path: '**', redirectTo: '/login' }
 ];

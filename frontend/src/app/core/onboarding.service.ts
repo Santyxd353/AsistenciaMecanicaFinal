@@ -19,6 +19,8 @@ export interface OnboardingPayload {
     email_contacto?: string | null;
     horario_atencion: string;
     especialidad_ids: number[];
+    /** IDs del catálogo `/api/v1/tipos-vehiculo/`. Opcional para retrocompat. */
+    tipo_vehiculo_ids?: number[];
     descripcion?: string | null;
     sitio_web?: string | null;
     latitud?: number | null;

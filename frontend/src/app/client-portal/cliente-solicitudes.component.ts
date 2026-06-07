@@ -2,16 +2,19 @@ import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { timeout } from 'rxjs/operators';
+import { FormsModule } from '@angular/forms';
+import { RouterModule } from '@angular/router';
 import { AuthService } from '../core/auth.service';
 import { Cotizacion, CotizacionService } from '../core/cotizacion.service';
 import { Solicitud, SolicitudService } from '../core/incident.service';
 import { VehicleService } from '../core/vehicle.service';
+import { MechanicProfileService } from '../core/mechanic-profile.service';
 import { ClienteNavbarComponent } from './cliente-navbar.component';
 
 @Component({
   selector: 'app-cliente-solicitudes',
   standalone: true,
-  imports: [CommonModule, ClienteNavbarComponent],
+  imports: [CommonModule, FormsModule, RouterModule, ClienteNavbarComponent],
   template: `
     <div class="portal-shell">
       <app-cliente-navbar></app-cliente-navbar>
@@ -69,10 +72,64 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
         <div class="panel-actions" *ngIf="canPay(r)">
           <button class="btn-primary" type="button" (click)="pagar(r)">Pagar Bs {{ r.precio_cobrado }}</button>
         </div>
+
+        <!-- Calificación al mecánico: aparece solo cuando la solicitud está
+             FINALIZADA, tiene tecnico_id, y el cliente aún no calificó. -->
+        <div class="rating-cta" *ngIf="canRateMechanic(r)">
+          <div class="rating-cta-text">
+            <p class="section-kicker">Califica al mecánico</p>
+            <strong>¿Cómo fue tu experiencia con {{ r.tecnico_nombre || 'el mecánico' }}?</strong>
+          </div>
+          <div class="rating-cta-actions">
+            <a class="btn-ghost" [routerLink]="['/mecanicos', r.tecnico_id]" *ngIf="r.tecnico_id">Ver perfil</a>
+            <button class="btn-primary" type="button" (click)="abrirCalificacion(r)">
+              Calificar
+            </button>
+          </div>
+        </div>
+        <div class="rating-done" *ngIf="ratedRequestIds.has(r.id)">
+          ✓ Gracias por tu calificación.
+        </div>
       </section>
 
       <p class="message success" *ngIf="msg">{{ msg }}</p>
       <p class="message error" *ngIf="err">{{ err }}</p>
+
+      <!-- Dialog: calificar mecánico (puntaje 1-5 + comentario opcional) -->
+      <div class="rating-overlay" *ngIf="ratingDialog" (click)="cerrarCalificacion()">
+        <div class="rating-modal" (click)="$event.stopPropagation()">
+          <header>
+            <p class="section-kicker">Calificación</p>
+            <h2>{{ ratingDialog.tecnicoNombre }}</h2>
+            <p class="rating-sub">Solicitud #{{ ratingDialog.solicitudId }}</p>
+          </header>
+
+          <div class="rating-stars-pick" role="radiogroup" aria-label="Puntaje">
+            <button *ngFor="let star of [1,2,3,4,5]" type="button"
+                    class="rating-star"
+                    [class.filled]="star <= ratingDialog.puntaje"
+                    (click)="ratingDialog && (ratingDialog.puntaje = star)">★</button>
+          </div>
+
+          <textarea class="rating-textarea"
+                    rows="3"
+                    placeholder="Comentario opcional (calidad, puntualidad, trato…)"
+                    [(ngModel)]="ratingDialog.comentario"
+                    name="comentario"
+                    maxlength="500"></textarea>
+
+          <div class="rating-error" *ngIf="ratingError">{{ ratingError }}</div>
+
+          <div class="rating-actions">
+            <button class="btn-ghost" type="button" (click)="cerrarCalificacion()">Cancelar</button>
+            <button class="btn-primary" type="button"
+                    [disabled]="ratingDialog.puntaje < 1 || ratingDialog.saving"
+                    (click)="enviarCalificacion()">
+              {{ ratingDialog.saving ? 'Enviando...' : 'Enviar calificación' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   `,
   styles: [`
@@ -129,6 +186,44 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
     .message { margin-top: 10px; font-size: 13px; }
     .message.success { color: #2e7d32; }
     .message.error { color: #c62828; }
+    .btn-ghost { background: transparent; border: 1px solid #b89a72; color: #6c4a2a;
+                 padding: 9px 14px; border-radius: 10px; font-weight: 800;
+                 cursor: pointer; text-decoration: none; display: inline-block; }
+    .btn-ghost:hover { background: #f5e6cf; }
+
+    /* CTA inline para calificar al mecánico tras finalizar la solicitud. */
+    .rating-cta { display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+                  margin-top: 12px; padding: 14px 16px;
+                  background: #fff8ef; border: 1px solid #eadcca;
+                  border-radius: 14px; }
+    .rating-cta-text { flex: 1 1 auto; min-width: 200px; }
+    .rating-cta-text strong { display: block; margin-top: 2px; color: #2f241d; }
+    .rating-cta-actions { display: flex; gap: 8px; }
+    .rating-done { margin-top: 10px; color: #2e7d32; font-weight: 800; }
+
+    /* Modal de calificación (overlay + card centrada). */
+    .rating-overlay { position: fixed; inset: 0; background: rgba(31,18,8,0.55);
+                      display: flex; align-items: center; justify-content: center;
+                      padding: 20px; z-index: 1000; }
+    .rating-modal { background: #fff; border-radius: 18px; max-width: 480px;
+                    width: 100%; padding: 22px;
+                    box-shadow: 0 30px 80px rgba(20,10,4,0.32); }
+    .rating-modal h2 { margin: 4px 0 0; font-size: 1.4rem; }
+    .rating-sub { margin: 4px 0 14px; color: #7a6554; font-size: 13px; }
+    .rating-stars-pick { display: flex; gap: 6px; justify-content: center;
+                         margin: 6px 0 12px; }
+    .rating-star { background: transparent; border: none; cursor: pointer;
+                   font-size: 36px; line-height: 1; color: #dcd2c2;
+                   transition: color .15s ease, transform .12s ease; }
+    .rating-star:hover { transform: scale(1.12); }
+    .rating-star.filled { color: #f5a524; }
+    .rating-textarea { width: 100%; resize: vertical; border-radius: 12px;
+                       border: 1px solid #eadcca; padding: 10px 12px;
+                       font: inherit; background: #fffaf2; }
+    .rating-error { background: #fee2e2; color: #991b1b; padding: 10px;
+                    border-radius: 10px; margin-top: 10px; }
+    .rating-actions { display: flex; justify-content: flex-end; gap: 8px;
+                      margin-top: 14px; }
   `]
 })
 export class ClienteSolicitudesComponent implements OnInit {
@@ -137,6 +232,7 @@ export class ClienteSolicitudesComponent implements OnInit {
   private readonly solicitudService = inject(SolicitudService);
   private readonly cotizacionService = inject(CotizacionService);
   private readonly vehicleService = inject(VehicleService);
+  private readonly mechanicProfile = inject(MechanicProfileService);
 
   reports: Solicitud[] = [];
   cotizacionesPorReporte: Record<number, Cotizacion[]> = {};
@@ -144,6 +240,25 @@ export class ClienteSolicitudesComponent implements OnInit {
   selectingId: number | null = null;
   msg = '';
   err = '';
+
+  /**
+   * IDs de solicitudes que el cliente ya calificó en esta sesión. Se popula
+   * tras enviar la calificación. Persistencia más allá del refresh requeriría
+   * un endpoint `GET /tecnicos/{id}/calificaciones?solicitud_id=` — fuera de
+   * scope ahora; al refrescar el cliente verá el CTA de nuevo y el backend
+   * rechazará con 409 si ya existe, manteniendo la integridad.
+   */
+  ratedRequestIds = new Set<number>();
+
+  ratingDialog: {
+    solicitudId: number;
+    tecnicoId: number;
+    tecnicoNombre: string;
+    puntaje: number;
+    comentario: string;
+    saving: boolean;
+  } | null = null;
+  ratingError = '';
 
   ngOnInit(): void {
     if (!this.auth.isLoggedIn()) { this.router.navigate(['/login']); return; }
@@ -203,6 +318,61 @@ export class ClienteSolicitudesComponent implements OnInit {
         this.reports = this.reports.map(r => r.id === updated.id ? updated : r);
       },
       error: (error) => { this.err = error?.error?.detail || 'No se pudo pagar.'; },
+    });
+  }
+
+  /** Habilita el CTA "Calificar mecánico" tras finalizar el servicio. */
+  canRateMechanic(r: Solicitud): boolean {
+    return (
+      !!r.tecnico_id &&
+      ['finalizado', 'resuelta'].includes((r.estado || '').toLowerCase()) &&
+      !this.ratedRequestIds.has(r.id)
+    );
+  }
+
+  abrirCalificacion(r: Solicitud): void {
+    if (!r.tecnico_id) return;
+    this.ratingDialog = {
+      solicitudId: r.id,
+      tecnicoId: r.tecnico_id,
+      tecnicoNombre: r.tecnico_nombre || 'Mecánico',
+      puntaje: 0,
+      comentario: '',
+      saving: false,
+    };
+    this.ratingError = '';
+  }
+
+  cerrarCalificacion(): void {
+    this.ratingDialog = null;
+    this.ratingError = '';
+  }
+
+  enviarCalificacion(): void {
+    const dialog = this.ratingDialog;
+    if (!dialog || dialog.puntaje < 1 || dialog.puntaje > 5 || dialog.saving) {
+      return;
+    }
+    dialog.saving = true;
+    this.ratingError = '';
+    this.mechanicProfile.createRating(
+      dialog.tecnicoId,
+      dialog.solicitudId,
+      {
+        puntaje: dialog.puntaje,
+        comentario: (dialog.comentario || '').trim() || null,
+      },
+    ).subscribe({
+      next: () => {
+        this.ratedRequestIds.add(dialog.solicitudId);
+        this.msg = 'Calificación enviada. ¡Gracias por tu feedback!';
+        this.ratingDialog = null;
+      },
+      error: (error) => {
+        dialog.saving = false;
+        this.ratingError =
+          error?.error?.detail || 'No se pudo enviar la calificación.';
+      },
     });
   }
 

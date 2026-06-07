@@ -636,3 +636,56 @@
     width: 100%;
   }
 }
+
+/* Dialog credenciales tras crear mecánico. Aprovecha .modal-overlay y
+   .modal-content existentes; sólo agrega los detalles tipográficos. */
+.credenciales-modal { max-width: 480px; }
+.credenciales-modal .overline {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 11px;
+  font-weight: 800;
+  color: #8b5e34;
+  margin: 0 0 6px;
+}
+.credenciales-warning {
+  background: #fff4e0;
+  border: 1px solid #f0d9a8;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0 0 14px;
+  color: #6b4f1f;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.credenciales-grid {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+.credenciales-grid > div {
+  background: #fff8ef;
+  border: 1px solid #ead7c4;
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+.credenciales-grid dt {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8b5e34;
+  margin: 0 0 4px;
+}
+.credenciales-grid dd {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #2f241d;
+  font-family: 'Menlo', 'Consolas', monospace;
+  word-break: break-all;
+}
+.credenciales-grid .credenciales-password {
+  font-size: 18px;
+  color: #5c2f16;
+}

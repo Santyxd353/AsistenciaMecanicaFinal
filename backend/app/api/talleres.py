@@ -11,6 +11,7 @@ from app.models.domain import (
     TallerRead,
     TallerUpdate,
     Tenant,
+    TipoVehiculo,
 )
 from app.models.user import User, UserRole
 from app.api.deps import get_current_user
@@ -39,6 +40,26 @@ def buscar_talleres_publico(
             "tenant_nombre": tenant.nombre if tenant else None,
         })
     return response
+
+
+def _obtener_tipos_vehiculo(
+    session: Session,
+    tipo_vehiculo_ids: List[int],
+) -> List[TipoVehiculo]:
+    """Resuelve IDs a entidades preservando orden. Lista vacía = no asigna."""
+    ids_unicos = list(dict.fromkeys(tipo_vehiculo_ids))
+    if not ids_unicos:
+        return []
+    tipos = session.exec(
+        select(TipoVehiculo).where(TipoVehiculo.id.in_(ids_unicos))
+    ).all()
+    if len(tipos) != len(ids_unicos):
+        raise HTTPException(
+            status_code=400,
+            detail="Uno o más tipos de vehículo no existen",
+        )
+    por_id = {tipo.id: tipo for tipo in tipos}
+    return [por_id[i] for i in ids_unicos]
 
 
 def _obtener_especialidades_taller(
@@ -100,15 +121,17 @@ def crear_taller(
         )
 
     especialidades = _obtener_especialidades_taller(session, taller_in.especialidad_ids)
+    tipos = _obtener_tipos_vehiculo(session, taller_in.tipo_vehiculo_ids or [])
 
     # Crear el taller
-    taller_data = taller_in.model_dump(exclude={"especialidad_ids"})
+    taller_data = taller_in.model_dump(exclude={"especialidad_ids", "tipo_vehiculo_ids"})
     taller = Taller(
         **taller_data,
         propietario_id=current_user.id,
         tenant_id=current_user.tenant_id,
     )
     taller.especialidades = especialidades
+    taller.tipos_vehiculo = tipos
 
     session.add(taller)
     session.commit()

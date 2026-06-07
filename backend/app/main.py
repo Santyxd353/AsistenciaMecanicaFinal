@@ -26,6 +26,7 @@ from app.models.user import User  # noqa: F401 ensures table registration
 from app.models.domain import (  # noqa: F401 ensures table registration
     AnalisisIA,
     AuditLog,
+    CalificacionMecanico,
     CalificacionServicio,
     ChatMensaje,
     Cotizacion,
@@ -41,6 +42,8 @@ from app.models.domain import (  # noqa: F401 ensures table registration
     Solicitud,
     Taller,
     TalleresEspecialidades,
+    TalleresTiposVehiculo,
+    TipoVehiculo,
     Tecnico,
     Tenant,
     TenantSubscription,
@@ -58,6 +61,8 @@ from app.api import (
     dispositivos,
     especialidades,
     especialidades_taller,
+    tecnicos_perfil,
+    tipos_vehiculo,
     ia,
     kpis,
     notificaciones,
@@ -138,9 +143,13 @@ app.include_router(onboarding.router, prefix="/api/v1/onboarding", tags=["Onboar
 app.include_router(vehiculos.router, prefix="/api/v1/vehiculos", tags=["Vehiculos"])
 app.include_router(solicitudes.router, prefix="/api/v1/solicitudes", tags=["Solicitudes"])
 app.include_router(tecnicos.router, prefix="/api/v1/tecnicos", tags=["Técnicos"])
+# Sub-router para perfil público + calificaciones (mismo prefijo, tag aparte
+# para que el Swagger los agrupe lógicamente).
+app.include_router(tecnicos_perfil.router, prefix="/api/v1/tecnicos", tags=["Mecánicos - Perfil"])
 app.include_router(talleres.router, prefix="/api/v1/talleres", tags=["Talleres"])
 app.include_router(especialidades.router, prefix="/api/v1/especialidades", tags=["Especialidades"])
 app.include_router(especialidades_taller.router, prefix="/api/v1/especialidades-taller", tags=["Especialidades Taller"])
+app.include_router(tipos_vehiculo.router, prefix="/api/v1/tipos-vehiculo", tags=["Tipos de vehículo"])
 app.include_router(notificaciones.router, prefix="/api/v1/notificaciones", tags=["Notificaciones"])
 app.include_router(dispositivos.router, prefix="/api/v1/dispositivos", tags=["Dispositivos"])
 app.include_router(tracking.router, prefix="/api/v1/tracking", tags=["Tracking"])

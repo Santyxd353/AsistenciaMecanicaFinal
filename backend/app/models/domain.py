@@ -353,6 +353,44 @@ class EspecialidadTallerRead(SQLModel):
     id: int
     nombre: str
 
+
+# ============================================================================
+# TIPOS DE VEHÍCULOS QUE ATIENDE UN TALLER
+# ----------------------------------------------------------------------------
+# Catálogo separado de las especialidades porque responde a otra pregunta:
+# "¿qué clase de vehículo atiendes?" (automóvil, moto, eléctrico, deportivo,
+# alta gama, etc.) versus "¿qué reparas?" (motor, frenos, llantas…).
+#
+# Tabla pivote `talleres_tipos_vehiculo` para la relación N:M.
+# ============================================================================
+
+
+class TalleresTiposVehiculo(SQLModel, table=True):
+    __tablename__ = "talleres_tipos_vehiculo"
+
+    taller_id: Optional[int] = Field(default=None, foreign_key="taller.id", primary_key=True)
+    tipo_vehiculo_id: Optional[int] = Field(default=None, foreign_key="tipo_vehiculo.id", primary_key=True)
+
+
+class TipoVehiculoBase(SQLModel):
+    nombre: str
+
+
+class TipoVehiculo(TipoVehiculoBase, table=True):
+    __tablename__ = "tipo_vehiculo"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    nombre: str = Field(index=True, unique=True)
+    talleres: List["Taller"] = Relationship(
+        back_populates="tipos_vehiculo",
+        link_model=TalleresTiposVehiculo,
+    )
+
+
+class TipoVehiculoRead(SQLModel):
+    id: int
+    nombre: str
+
 class TecnicoBase(SQLModel):
     nombre: str
     ci: str = Field(index=True, unique=True, max_length=10)
@@ -370,6 +408,11 @@ class TecnicoBase(SQLModel):
     taller_id: Optional[int] = Field(default=None, foreign_key="taller.id")
     id_usuario: Optional[int] = Field(default=None, foreign_key="user.id", unique=True)
     tenant_id: Optional[int] = Field(default=None, foreign_key="tenant.id", index=True)
+    # Reputación denormalizada (recalculada cada vez que un cliente califica).
+    # Mantenerla acá permite ordenar / filtrar mecánicos por rating sin pagar
+    # un GROUP BY por solicitud en cada listado.
+    calificacion_promedio: float = Field(default=0.0)
+    total_calificaciones: int = Field(default=0)
 
 class Tecnico(TecnicoBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -386,7 +429,66 @@ class TecnicoRead(TecnicoBase):
     id: int
     especialidades: List[EspecialidadRead] = Field(default_factory=list)
     usuario_username: Optional[str] = None
+    usuario_email: Optional[str] = None
     password_temporal: Optional[str] = None
+
+
+class TecnicoPerfilPublicoRead(SQLModel):
+    """Datos públicos del mecánico para clientes que evalúan al equipo del taller.
+
+    NO incluye CI, dirección, email ni id_usuario — esos son datos internos.
+    """
+    id: int
+    nombre: str
+    foto_url: Optional[str] = None
+    taller_id: Optional[int] = None
+    taller_nombre: Optional[str] = None
+    disponible: bool = True
+    activo: bool = True
+    especialidades: List[EspecialidadRead] = Field(default_factory=list)
+    calificacion_promedio: float = 0.0
+    total_calificaciones: int = 0
+    total_servicios_finalizados: int = 0
+
+
+class CalificacionMecanicoBase(SQLModel):
+    tecnico_id: int = Field(foreign_key="tecnico.id", index=True)
+    cliente_id: int = Field(foreign_key="user.id", index=True)
+    solicitud_id: int = Field(foreign_key="solicitud.id", index=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="tenant.id", index=True)
+    puntaje: int = Field(index=True)
+    comentario: Optional[str] = None
+
+
+class CalificacionMecanico(CalificacionMecanicoBase, table=True):
+    """Calificación del cliente al mecánico tras una solicitud finalizada.
+
+    Reglas:
+    * (cliente_id, solicitud_id, tecnico_id) único — evita calificaciones
+      duplicadas para el mismo servicio (la unicidad se verifica al insertar).
+    * Solo el cliente dueño del vehículo de la solicitud puede crearla, y
+      sólo cuando el estado de la solicitud sea `FINALIZADO`.
+    """
+    __tablename__ = "calificacion_mecanico"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    fecha_creacion: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class CalificacionMecanicoCreate(SQLModel):
+    puntaje: int
+    comentario: Optional[str] = None
+
+
+class CalificacionMecanicoRead(SQLModel):
+    id: int
+    tecnico_id: int
+    cliente_id: int
+    solicitud_id: int
+    puntaje: int
+    comentario: Optional[str] = None
+    fecha_creacion: datetime
+    cliente_nombre: Optional[str] = None
 
 class SolicitudBase(SQLModel):
     descripcion: str
@@ -509,6 +611,10 @@ class Taller(TallerBase, table=True):
         back_populates="talleres",
         link_model=TalleresEspecialidades
     )
+    tipos_vehiculo: List["TipoVehiculo"] = Relationship(
+        back_populates="talleres",
+        link_model=TalleresTiposVehiculo,
+    )
 
 
 class TallerCreate(SQLModel):
@@ -522,11 +628,15 @@ class TallerCreate(SQLModel):
     sitio_web: Optional[str] = None
     latitud: Optional[float] = None
     longitud: Optional[float] = None
+    # IDs de los tipos de vehículo que atiende el taller (Automóvil, Moto,
+    # Eléctrico, Deportivo, Alta gama, etc.). Opcional para retrocompat.
+    tipo_vehiculo_ids: Optional[List[int]] = None
 
 
 class TallerRead(TallerBase):
     id: int
     especialidades: List[EspecialidadTallerRead] = Field(default_factory=list)
+    tipos_vehiculo: List[TipoVehiculoRead] = Field(default_factory=list)
 
 
 class TallerUpdate(SQLModel):
@@ -536,6 +646,7 @@ class TallerUpdate(SQLModel):
     email_contacto: Optional[str] = None
     horario_atencion: Optional[str] = None
     especialidad_ids: Optional[List[int]] = None
+    tipo_vehiculo_ids: Optional[List[int]] = None
     descripcion: Optional[str] = None
     sitio_web: Optional[str] = None
     latitud: Optional[float] = None

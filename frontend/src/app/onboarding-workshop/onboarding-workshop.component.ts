@@ -15,6 +15,7 @@ import { AuthService } from '../core/auth.service';
 import { OnboardingService } from '../core/onboarding.service';
 import { WorkshopSpecialtyService } from '../core/workshop-specialty.service';
 import { EspecialidadTaller } from '../core/workshop-profile.service';
+import { VehicleTypeService, TipoVehiculo } from '../core/vehicle-type.service';
 
 // Default center: Santa Cruz de la Sierra. Cualquier click reubica el pin.
 const DEFAULT_CENTER: [number, number] = [-17.7833, -63.1821];
@@ -143,6 +144,7 @@ const DEFAULT_ZOOM = 13;
 
         <section>
           <h2>Especialidades</h2>
+          <p class="hint">Marca todos los servicios mecánicos que ofrece tu taller.</p>
           <div class="specialties">
             <label *ngFor="let item of specialties">
               <input type="checkbox" [checked]="isSelected(item.id)" (change)="toggleSpecialty(item.id)">
@@ -151,8 +153,22 @@ const DEFAULT_ZOOM = 13;
           </div>
         </section>
 
+        <section>
+          <h2>Tipos de vehículos que atienden</h2>
+          <p class="hint">
+            Marca las categorías de vehículos que pueden recibir servicio en tu taller
+            (autos, motos, eléctricos, deportivos, alta gama, etc).
+          </p>
+          <div class="specialties">
+            <label *ngFor="let item of tiposVehiculo">
+              <input type="checkbox" [checked]="isTipoSelected(item.id)" (change)="toggleTipoVehiculo(item.id)">
+              {{ item.nombre }}
+            </label>
+          </div>
+        </section>
+
         <div class="error" *ngIf="error">{{ error }}</div>
-        <button [disabled]="loading || form.invalid || !selectedSpecialtyIds.length || taller.latitud == null || !horarioFormatted">
+        <button [disabled]="loading || form.invalid || !selectedSpecialtyIds.length || !selectedTipoVehiculoIds.length || taller.latitud == null || !horarioFormatted">
           {{ loading ? 'Creando...' : 'Crear taller y entrar' }}
         </button>
       </form>
@@ -196,6 +212,8 @@ export class OnboardingWorkshopComponent implements OnInit, AfterViewInit, OnDes
 
   specialties: EspecialidadTaller[] = [];
   selectedSpecialtyIds: number[] = [];
+  tiposVehiculo: TipoVehiculo[] = [];
+  selectedTipoVehiculoIds: number[] = [];
   loading = false;
   locating = false;
   error = '';
@@ -235,10 +253,11 @@ export class OnboardingWorkshopComponent implements OnInit, AfterViewInit, OnDes
   private map?: L.Map;
 
   constructor(
-    private specialtiesService: WorkshopSpecialtyService,
-    private onboarding: OnboardingService,
-    private auth: AuthService,
-    private router: Router,
+    private readonly specialtiesService: WorkshopSpecialtyService,
+    private readonly vehicleTypes: VehicleTypeService,
+    private readonly onboarding: OnboardingService,
+    private readonly auth: AuthService,
+    private readonly router: Router,
   ) {}
 
   ngOnInit(): void {
@@ -247,6 +266,9 @@ export class OnboardingWorkshopComponent implements OnInit, AfterViewInit, OnDes
       return;
     }
     this.specialtiesService.getSpecialties().subscribe((items) => this.specialties = items);
+    // Tipos de vehículo se cargan en paralelo. El servicio devuelve el catálogo
+    // seedeado por el backend (15 categorías al momento de escribir esto).
+    this.vehicleTypes.list().subscribe((items) => this.tiposVehiculo = items);
   }
 
   ngAfterViewInit(): void {
@@ -375,6 +397,13 @@ export class OnboardingWorkshopComponent implements OnInit, AfterViewInit, OnDes
       : [...this.selectedSpecialtyIds, id];
   }
 
+  isTipoSelected(id: number): boolean { return this.selectedTipoVehiculoIds.includes(id); }
+  toggleTipoVehiculo(id: number): void {
+    this.selectedTipoVehiculoIds = this.isTipoSelected(id)
+      ? this.selectedTipoVehiculoIds.filter((item) => item !== id)
+      : [...this.selectedTipoVehiculoIds, id];
+  }
+
   submit(): void {
     const token = sessionStorage.getItem('onboarding_token');
     if (!token) return;
@@ -410,6 +439,7 @@ export class OnboardingWorkshopComponent implements OnInit, AfterViewInit, OnDes
       taller: {
         ...this.taller,
         especialidad_ids: this.selectedSpecialtyIds,
+        tipo_vehiculo_ids: this.selectedTipoVehiculoIds,
       },
     }).subscribe({
       next: (response) => {
