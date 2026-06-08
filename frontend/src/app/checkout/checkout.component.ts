@@ -131,11 +131,26 @@ export class CheckoutComponent implements OnInit {
           next: async (paid) => {
             this.activeStep = 3;
             await this.delay(650);
-            sessionStorage.setItem('onboarding_token', paid.onboarding_token);
-            sessionStorage.setItem('onboarding_plan', paid.plan_codigo);
+            // Persistimos en sessionStorage (sobrevive refresh dentro de la
+            // misma pestaña) y, como red de seguridad, lo pasamos también
+            // como queryParam: si por alguna razón el storage está vacío
+            // (incógnito, política de privacidad, cache stale), el componente
+            // de onboarding lo lee del URL y lo rehidrata en storage antes de
+            // continuar.
+            if (paid.onboarding_token) {
+              sessionStorage.setItem('onboarding_token', paid.onboarding_token);
+            }
+            if (paid.plan_codigo) {
+              sessionStorage.setItem('onboarding_plan', paid.plan_codigo);
+            }
             this.paid = true;
             this.activeStep = 4;
-            this.router.navigate(['/onboarding/taller']);
+            this.router.navigate(['/onboarding/taller'], {
+              queryParams: {
+                t: paid.onboarding_token,
+                plan: paid.plan_codigo,
+              },
+            });
           },
           error: (err) => this.fail(err),
         });

@@ -260,6 +260,40 @@ def _build_scores(
     return scores
 
 
+def _build_fallback_scores(session: Session, solicitud: Solicitud) -> list[TallerScore]:
+    """Ultimo recurso: no dejar la solicitud invisible para los talleres.
+
+    Si el scoring estricto no encuentra candidatos por distancia, capacidad o
+    especialidad, igual notificamos talleres activos. El taller decide si
+    cotiza o rechaza. Esto evita que el cliente cree un auxilio y nadie lo vea.
+    """
+    scores: list[TallerScore] = []
+    for taller in talleres_activos(session):
+        if taller.latitud is None or taller.longitud is None:
+            distancia = 45.0
+        else:
+            distancia = haversine_km(
+                solicitud.latitud,
+                solicitud.longitud,
+                taller.latitud,
+                taller.longitud,
+            )
+        eta = eta_desde_distancia(distancia)
+        reputacion = min(5.0, taller.calificacion_promedio or 0.0) * 2.0
+        score = max(1.0, 25.0 - min(distancia, 25.0)) + reputacion
+        scores.append(
+            TallerScore(
+                taller=taller,
+                score=round(score, 2),
+                distancia_km=round(distancia, 2),
+                eta_minutos=eta,
+                razon="fallback: sin candidatos estrictos; taller activo notificado",
+            )
+        )
+    scores.sort(key=lambda item: (item.distancia_km, -item.score))
+    return scores
+
+
 def generar_candidatos(
     session: Session,
     solicitud: Solicitud,
@@ -275,12 +309,28 @@ def generar_candidatos(
     session.flush()
 
     scores = _build_scores(session, solicitud)
-    if not scores and allow_relaxed_retry:
+    if allow_relaxed_retry and len(scores) < MAX_CANDIDATOS:
         logger.warning(
-            "Matching estricto sin candidatos para solicitud %s; reintentando con especialidad relajada.",
+            "Matching estricto con pocos candidatos para solicitud %s; completando con especialidad relajada.",
             solicitud.id,
         )
-        scores = _build_scores(session, solicitud, ignore_specialty=True)
+        existentes_ids = {item.taller.id for item in scores}
+        for item in _build_scores(session, solicitud, ignore_specialty=True):
+            if item.taller.id not in existentes_ids:
+                scores.append(item)
+                existentes_ids.add(item.taller.id)
+        scores.sort(key=lambda item: item.score, reverse=True)
+
+    if len(scores) < MAX_CANDIDATOS:
+        logger.warning(
+            "Matching con pocos candidatos para solicitud %s; completando con fallback de talleres activos.",
+            solicitud.id,
+        )
+        existentes_ids = {item.taller.id for item in scores}
+        for item in _build_fallback_scores(session, solicitud):
+            if item.taller.id not in existentes_ids:
+                scores.append(item)
+                existentes_ids.add(item.taller.id)
 
     candidatos: list[SolicitudCandidato] = []
     for index, item in enumerate(scores[:MAX_CANDIDATOS], start=1):

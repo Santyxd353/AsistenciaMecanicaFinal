@@ -50,6 +50,7 @@ from app.models.domain import (  # noqa: F401 ensures table registration
     TrackingPing,
     SubscriptionPaymentMock,
     Vehiculo,
+    VehiculoHistorialReparacion,
 )
 from app.api import (
     admin,

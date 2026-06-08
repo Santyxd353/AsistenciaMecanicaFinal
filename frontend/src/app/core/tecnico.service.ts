@@ -6,6 +6,7 @@ import { Especialidad } from './especialidad.service';
 export interface Tecnico {
   id: number;
   nombre: string;
+  email?: string | null;
   ci: string;
   direccion: string;
   especialidades: Especialidad[];

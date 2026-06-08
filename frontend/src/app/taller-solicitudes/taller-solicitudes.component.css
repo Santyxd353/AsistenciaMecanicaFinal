@@ -566,6 +566,35 @@
   margin-top: 8px;
 }
 
+.taller-solicitudes-historial-item {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 14px;
+  border: 1px solid #eadcca;
+  border-radius: 18px;
+  background: #fffaf4;
+  box-shadow: 0 10px 24px rgba(75, 43, 20, 0.06);
+}
+
+.taller-solicitudes-historial-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.taller-solicitudes-historial-head span,
+.taller-solicitudes-historial-item small {
+  color: #8a6647;
+  font-size: 12px;
+}
+
+.taller-solicitudes-historial-item p {
+  margin: 0;
+  color: #4f3b2a;
+  line-height: 1.5;
+}
+
 .taller-solicitudes-modal-footer {
   display: flex;
   justify-content: flex-end;

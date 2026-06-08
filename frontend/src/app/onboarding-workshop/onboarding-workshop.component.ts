@@ -8,7 +8,7 @@ import {
   ViewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import * as L from 'leaflet';
 
 import { AuthService } from '../core/auth.service';
@@ -258,9 +258,33 @@ export class OnboardingWorkshopComponent implements OnInit, AfterViewInit, OnDes
     private readonly onboarding: OnboardingService,
     private readonly auth: AuthService,
     private readonly router: Router,
+    private readonly route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
+    // Rehidratación: si el checkout pasó el token vía queryParam (`?t=...`)
+    // lo guardamos en sessionStorage. Esto cubre casos donde el storage está
+    // vacío (cache del SW, política privacidad, otra pestaña) y evita el
+    // bug de "rebota a /planes tras pagar".
+    const tokenFromUrl = this.route.snapshot.queryParamMap.get('t');
+    const planFromUrl = this.route.snapshot.queryParamMap.get('plan');
+    if (tokenFromUrl) {
+      sessionStorage.setItem('onboarding_token', tokenFromUrl);
+    }
+    if (planFromUrl) {
+      sessionStorage.setItem('onboarding_plan', planFromUrl);
+    }
+
+    // El registro de taller es un flujo anónimo: si quedó un Bearer viejo en
+    // localStorage (admin loggeado antes de cerrar sesión), el interceptor lo
+    // adjuntaría a las requests y un 401 (token expirado) tiraría al usuario
+    // de vuelta a /login. Limpiamos las claves de sesión para entrar limpios.
+    if (tokenFromUrl) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('role');
+      localStorage.removeItem('currentUser');
+    }
+
     if (!sessionStorage.getItem('onboarding_token')) {
       this.router.navigate(['/planes']);
       return;

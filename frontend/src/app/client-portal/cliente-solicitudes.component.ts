@@ -1,20 +1,25 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { timeout } from 'rxjs/operators';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { AuthService } from '../core/auth.service';
 import { Cotizacion, CotizacionService } from '../core/cotizacion.service';
 import { Solicitud, SolicitudService } from '../core/incident.service';
-import { VehicleService } from '../core/vehicle.service';
 import { MechanicProfileService } from '../core/mechanic-profile.service';
+import { RealtimeEvent, RealtimeService } from '../core/realtime.service';
+import {
+  MapaGeolocalizacionComponent,
+  PuntoMapaGeolocalizacion,
+} from '../mapa/geolocalizacion/mapa-geolocalizacion.component';
 import { ClienteNavbarComponent } from './cliente-navbar.component';
 
 @Component({
   selector: 'app-cliente-solicitudes',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, ClienteNavbarComponent],
+  imports: [CommonModule, FormsModule, RouterModule, ClienteNavbarComponent, MapaGeolocalizacionComponent],
   template: `
     <div class="portal-shell">
       <app-cliente-navbar></app-cliente-navbar>
@@ -24,7 +29,42 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
         <p class="lede">Estado de las solicitudes de auxilio, cotizaciones de talleres y pagos pendientes.</p>
       </section>
 
-      <p class="empty" *ngIf="!reports.length">Aún no tienes solicitudes registradas.</p>
+      <section class="active-panel" *ngIf="solicitudEnCurso as activa">
+        <div class="active-copy">
+          <p class="section-kicker">Solicitud en curso</p>
+          <h2>{{ activa.descripcion || 'Auxilio activo' }}</h2>
+          <p>{{ descripcionSeguimiento(activa) }}</p>
+          <div class="active-steps">
+            <span [class.done]="pasoActivo(activa) >= 1">Cotizacion</span>
+            <span [class.done]="pasoActivo(activa) >= 2">Taller</span>
+            <span [class.done]="pasoActivo(activa) >= 3">Mecanico</span>
+            <span [class.done]="pasoActivo(activa) >= 4">Servicio</span>
+            <span [class.done]="pasoActivo(activa) >= 5">Pago</span>
+          </div>
+        </div>
+        <div class="tracking-card">
+          <div class="tracking-head">
+            <div>
+              <span>Estado</span>
+              <strong>{{ labelForStatus(activa.estado) }}</strong>
+            </div>
+            <div>
+              <span>ETA</span>
+              <strong>{{ activa.tiempo_estimado_minutos ? activa.tiempo_estimado_minutos + ' min' : 'Pendiente' }}</strong>
+            </div>
+          </div>
+          <app-mapa-geolocalizacion
+            [puntos]="puntosTracking(activa)"
+            [alto]="'300px'"
+          />
+          <p class="tracking-note" *ngIf="!activa.tecnico_latitud || !activa.tecnico_longitud">
+            Cuando el mecanico comparta ubicacion, se vera aqui en tiempo real.
+          </p>
+        </div>
+      </section>
+
+      <p class="empty" *ngIf="loading">Cargando tus solicitudes...</p>
+      <p class="empty" *ngIf="!loading && !reports.length">Aun no tienes solicitudes registradas.</p>
 
       <section class="panel" *ngFor="let r of reports">
         <div class="panel-head">
@@ -152,6 +192,30 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
       border-radius: 22px; padding: 20px; margin-bottom: 14px;
       box-shadow: 0 18px 42px rgba(64,37,18,0.08);
     }
+    .active-panel {
+      display: grid; grid-template-columns: minmax(280px, 0.8fr) minmax(320px, 1.2fr);
+      gap: 16px; align-items: stretch; margin-bottom: 18px;
+      background: linear-gradient(135deg, #684021 0%, #3a2418 100%);
+      color: #fff8ef; border-radius: 26px; padding: 20px;
+      box-shadow: 0 24px 60px rgba(64,37,18,0.22);
+    }
+    .active-copy { display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+    .active-copy h2 { font-size: clamp(1.45rem, 3vw, 2.2rem); }
+    .active-copy p:not(.section-kicker) { color: #f5dfc8; line-height: 1.55; margin: 0; }
+    .active-steps { display: flex; flex-wrap: wrap; gap: 8px; }
+    .active-steps span {
+      padding: 8px 10px; border-radius: 999px; background: rgba(255,248,239,0.12);
+      color: #f5dfc8; font-size: 12px; font-weight: 800;
+    }
+    .active-steps span.done { background: #fff8ef; color: #684021; }
+    .tracking-card {
+      background: #fffaf2; color: #2f241d; border-radius: 20px;
+      padding: 12px; border: 1px solid rgba(255,248,239,0.35);
+    }
+    .tracking-head { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    .tracking-head div { background: #f2e4d3; border-radius: 14px; padding: 10px 12px; }
+    .tracking-head span { display: block; color: #8a6647; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; font-weight: 800; }
+    .tracking-note { margin: 10px 4px 0; color: #7a6554; font-size: 13px; }
     .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
     .status-chip {
       padding: 6px 12px; border-radius: 999px; font-size: 11px; font-weight: 800;
@@ -224,22 +288,28 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
                     border-radius: 10px; margin-top: 10px; }
     .rating-actions { display: flex; justify-content: flex-end; gap: 8px;
                       margin-top: 14px; }
+    @media (max-width: 760px) {
+      .active-panel { grid-template-columns: 1fr; }
+      .report-meta, .cotizacion-grid { grid-template-columns: repeat(2,1fr); }
+    }
   `]
 })
-export class ClienteSolicitudesComponent implements OnInit {
+export class ClienteSolicitudesComponent implements OnInit, OnDestroy {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly solicitudService = inject(SolicitudService);
   private readonly cotizacionService = inject(CotizacionService);
-  private readonly vehicleService = inject(VehicleService);
   private readonly mechanicProfile = inject(MechanicProfileService);
+  private readonly realtimeService = inject(RealtimeService);
 
   reports: Solicitud[] = [];
   cotizacionesPorReporte: Record<number, Cotizacion[]> = {};
   cotizacionesLoading: Record<number, boolean> = {};
   selectingId: number | null = null;
+  loading = false;
   msg = '';
   err = '';
+  private readonly realtimeSubs = new Map<number, Subscription>();
 
   /**
    * IDs de solicitudes que el cliente ya calificó en esta sesión. Se popula
@@ -265,19 +335,23 @@ export class ClienteSolicitudesComponent implements OnInit {
     this.load();
   }
 
+  ngOnDestroy(): void {
+    this.desconectarRealtime();
+  }
+
   load(): void {
-    this.vehicleService.getVehicles().pipe(timeout(10000)).subscribe({
-      next: (vehicles) => {
-        const ownIds = new Set(vehicles.map(v => v.id));
-        this.solicitudService.getSolicitudes().pipe(timeout(10000)).subscribe({
-          next: (reports) => {
-            this.reports = reports
-              .filter(r => !!r.vehiculo_id && ownIds.has(r.vehiculo_id))
-              .sort((a, b) => b.id - a.id);
-            this.reports.filter(r => this.isPending(r)).forEach(r => this.loadCotizaciones(r.id));
-          },
-          error: () => { this.err = 'No se pudieron cargar tus solicitudes.'; },
-        });
+    this.loading = true;
+    this.err = '';
+    this.solicitudService.getMisReportesCliente().pipe(timeout(10000)).subscribe({
+      next: (reports) => {
+        this.reports = [...reports].sort((a, b) => b.id - a.id);
+        this.reports.filter(r => this.isPending(r)).forEach(r => this.loadCotizaciones(r.id));
+        this.conectarRealtimeSolicitudes();
+        this.loading = false;
+      },
+      error: () => {
+        this.loading = false;
+        this.err = 'No se pudieron cargar tus solicitudes.';
       },
     });
   }
@@ -376,13 +450,147 @@ export class ClienteSolicitudesComponent implements OnInit {
     });
   }
 
+  get solicitudEnCurso(): Solicitud | null {
+    return this.reports.find((report) => !this.esTerminal(report)) ?? null;
+  }
+
+  puntosTracking(r: Solicitud): PuntoMapaGeolocalizacion[] {
+    return [
+      {
+        latitud: r.latitud,
+        longitud: r.longitud,
+        etiqueta: 'Tu ubicacion',
+        tipo: 'incidente',
+      },
+      {
+        latitud: r.taller_latitud ?? null,
+        longitud: r.taller_longitud ?? null,
+        etiqueta: r.taller_nombre || 'Taller asignado',
+        tipo: 'taller',
+      },
+      {
+        latitud: r.tecnico_latitud ?? null,
+        longitud: r.tecnico_longitud ?? null,
+        etiqueta: r.tecnico_nombre || 'Mecanico',
+        tipo: 'tecnico',
+      },
+    ];
+  }
+
+  descripcionSeguimiento(r: Solicitud): string {
+    const estado = (r.estado || '').toLowerCase();
+    if (estado === 'pendiente' || estado === 'buscando_taller') {
+      return 'Tu solicitud esta enviada. Cuando lleguen cotizaciones, podras elegir un taller.';
+    }
+    if (estado === 'asignada') {
+      return `Taller asignado: ${r.taller_nombre || 'pendiente de nombre'}. Falta asignar mecanico.`;
+    }
+    if (estado === 'tecnico_en_camino') {
+      return `${r.tecnico_nombre || 'El mecanico'} va en camino. Sigue su ubicacion en el mapa.`;
+    }
+    if (estado === 'tecnico_llego') {
+      return 'El mecanico llego al punto indicado.';
+    }
+    if (estado === 'en_proceso') {
+      return 'El servicio esta en atencion. Cuando finalice podras pagar y calificar.';
+    }
+    return 'Revisa el estado actualizado de tu auxilio.';
+  }
+
+  pasoActivo(r: Solicitud): number {
+    const estado = (r.estado || '').toLowerCase();
+    if (estado === 'pendiente' || estado === 'buscando_taller') return 1;
+    if (estado === 'asignada') return 2;
+    if (estado === 'tecnico_en_camino' || estado === 'tecnico_llego') return 3;
+    if (estado === 'en_proceso' || estado === 'finalizado' || estado === 'resuelta') return 4;
+    if (r.estado_pago === 'pagado') return 5;
+    return 1;
+  }
+
+  private esTerminal(r: Solicitud): boolean {
+    const estado = (r.estado || '').toLowerCase();
+    return ['finalizado', 'resuelta', 'cancelado', 'cancelada'].includes(estado)
+      && r.estado_pago === 'pagado';
+  }
+
+  private conectarRealtimeSolicitudes(): void {
+    const idsActivos = new Set(
+      this.reports
+        .filter((report) => report.id > 0 && !this.esTerminal(report))
+        .map((report) => report.id),
+    );
+
+    for (const [id, sub] of this.realtimeSubs.entries()) {
+      if (!idsActivos.has(id)) {
+        sub.unsubscribe();
+        this.realtimeSubs.delete(id);
+      }
+    }
+
+    for (const id of idsActivos) {
+      if (this.realtimeSubs.has(id)) continue;
+      const sub = this.realtimeService.subscribe('solicitud', id).subscribe((event) => {
+        this.aplicarEventoRealtime(event, id);
+      });
+      this.realtimeSubs.set(id, sub);
+    }
+  }
+
+  private desconectarRealtime(): void {
+    for (const sub of this.realtimeSubs.values()) {
+      sub.unsubscribe();
+    }
+    this.realtimeSubs.clear();
+  }
+
+  private aplicarEventoRealtime(event: RealtimeEvent, solicitudId: number): void {
+    if (event.event === 'cotizacion.nueva') {
+      this.loadCotizaciones(solicitudId);
+      return;
+    }
+
+    if (event.event === 'cotizacion.aceptada') {
+      this.load();
+      return;
+    }
+
+    if (event.event === 'tracking.update') {
+      const payload = event.payload as {
+        solicitud_id?: number;
+        latitud?: number;
+        longitud?: number;
+        eta_minutos?: number;
+        distancia_restante_km?: number;
+      };
+      if (!payload.solicitud_id) return;
+      this.actualizarReporte(payload.solicitud_id, {
+        tecnico_latitud: payload.latitud,
+        tecnico_longitud: payload.longitud,
+        tiempo_estimado_minutos: payload.eta_minutos,
+        distancia_tecnico_km: payload.distancia_restante_km,
+      });
+      return;
+    }
+
+    if (event.event === 'solicitud.actualizada') {
+      const payload = event.payload as Partial<Solicitud>;
+      if (payload.id) {
+        this.actualizarReporte(payload.id, payload);
+      }
+    }
+  }
+
+  private actualizarReporte(id: number, patch: Partial<Solicitud>): void {
+    this.reports = this.reports.map((report) => report.id === id ? { ...report, ...patch } : report);
+  }
+
   isPending(r: Solicitud): boolean {
-    return ['pendiente', 'buscando_taller'].includes(r.estado);
+    return ['pendiente', 'buscando_taller'].includes((r.estado || '').toLowerCase());
   }
 
   canPay(r: Solicitud): boolean {
     return !!r.precio_cobrado && r.estado_pago !== 'pagado'
-      && ['en_proceso', 'tecnico_llego', 'finalizado', 'resuelta'].includes(r.estado);
+      && ['en_proceso', 'tecnico_llego', 'finalizado', 'resuelta'].includes((r.estado || '').toLowerCase());
   }
 
   labelForStatus(s: string): string {

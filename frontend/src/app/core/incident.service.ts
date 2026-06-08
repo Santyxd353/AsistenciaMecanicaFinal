@@ -35,6 +35,7 @@ export interface Solicitud {
   audio_resumen_ia?: string;
   ruta_recomendada_ia?: string;
   cliente_sync_id?: string;
+  cotizacion_seleccionada_id?: number;
   fecha_creacion: string;
 }
 
@@ -48,6 +49,10 @@ export class SolicitudService {
 
   getSolicitudes(): Observable<Solicitud[]> {
     return this.http.get<Solicitud[]>(this.apiUrl);
+  }
+
+  getMisReportesCliente(): Observable<Solicitud[]> {
+    return this.http.get<Solicitud[]>(`${this.apiUrl}mis-reportes`);
   }
 
   getSolicitudesPendientesTaller(): Observable<Solicitud[]> {

@@ -35,6 +35,30 @@ export interface VehiclePhotoPreview {
   source: string;
 }
 
+export interface VehicleRepairHistory {
+  id: number;
+  vehiculo_id: number;
+  solicitud_id?: number | null;
+  taller_id?: number | null;
+  tecnico_id?: number | null;
+  tenant_id?: number | null;
+  titulo: string;
+  diagnostico?: string | null;
+  acciones_realizadas?: string | null;
+  categoria?: string | null;
+  prioridad?: string | null;
+  costo?: number | null;
+  estado_pago?: string | null;
+  kilometraje?: number | null;
+  observaciones?: string | null;
+  fecha_servicio: string;
+  fecha_creacion: string;
+  fecha_actualizacion: string;
+  taller_nombre?: string | null;
+  tecnico_nombre?: string | null;
+  solicitud_estado?: string | null;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -59,5 +83,9 @@ export class VehicleService {
     const form = new FormData();
     files.slice(0, 4).forEach((file) => form.append('fotos', file));
     return this.http.post<VehiclePhotoPreview>(`${this.apiUrl}preview-from-photo`, form);
+  }
+
+  getVehicleHistory(vehicleId: number): Observable<VehicleRepairHistory[]> {
+    return this.http.get<VehicleRepairHistory[]>(`${this.apiUrl}${vehicleId}/historial`);
   }
 }

@@ -164,6 +164,14 @@
               Ver perfil
             </a>
 
+            <button
+              class="btn-secondary"
+              type="button"
+              *ngIf="puedeVerCredenciales(t)"
+              (click)="mostrarCredenciales(t)">
+              Ver credenciales
+            </button>
+
             <button class="btn-secondary" type="button" (click)="editar(t)">
               Editar
             </button>
@@ -466,8 +474,8 @@
 
   <!-- Modal con las credenciales generadas al crear un mecánico nuevo.
        Se muestra una sola vez (la contraseña no se persiste en claro). -->
-  <div class="modal-overlay" *ngIf="credencialesDialog" (click)="cerrarCredenciales()">
-    <div class="modal-content credenciales-modal" (click)="$event.stopPropagation()">
+  <div class="modal-backdrop" *ngIf="credencialesDialog" (click)="cerrarCredenciales()">
+    <div class="modal-card credenciales-modal" (click)="$event.stopPropagation()">
       <header class="modal-header">
         <div>
           <p class="overline">Credenciales generadas</p>
@@ -476,10 +484,16 @@
         <button class="modal-close" type="button" (click)="cerrarCredenciales()" aria-label="Cerrar">×</button>
       </header>
 
-      <p class="credenciales-warning">
+      <p class="credenciales-warning" *ngIf="credencialesDialog.password; else credencialesSinPassword">
         ⚠️ Esta contraseña <strong>no se mostrará otra vez</strong>. Cópiala ahora y
         entrégala al mecánico para que pueda iniciar sesión.
       </p>
+      <ng-template #credencialesSinPassword>
+        <p class="credenciales-warning">
+          Este mecánico ya tiene usuario vinculado. Por seguridad la contraseña
+          anterior no se puede ver; si la perdió, crea/restablece una contraseña temporal.
+        </p>
+      </ng-template>
 
       <dl class="credenciales-grid">
         <div>
@@ -492,7 +506,9 @@
         </div>
         <div>
           <dt>Contraseña temporal</dt>
-          <dd class="credenciales-password">{{ credencialesDialog.password }}</dd>
+          <dd class="credenciales-password">
+            {{ credencialesDialog.password || 'No disponible' }}
+          </dd>
         </div>
       </dl>
 

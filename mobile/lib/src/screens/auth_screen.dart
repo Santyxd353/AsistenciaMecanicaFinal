@@ -54,7 +54,13 @@ class _AuthScreenState extends State<AuthScreen> {
   // ----- Horario estructurado del taller (UI nueva) -----
   // Días: 0=Lunes ... 6=Domingo. Por defecto abre Lun-Sáb.
   static const List<String> _diasFull = [
-    'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo',
+    'Lunes',
+    'Martes',
+    'Miércoles',
+    'Jueves',
+    'Viernes',
+    'Sábado',
+    'Domingo',
   ];
   final List<bool> _diasMarcados = [true, true, true, true, true, true, false];
   TimeOfDay _horarioBaseInicio = const TimeOfDay(hour: 8, minute: 0);
@@ -1353,7 +1359,11 @@ class _AuthScreenState extends State<AuthScreen> {
           const Text(
             'Marca los días que abren. El horario base aplica a todos los marcados; '
             'activa "Personalizar" en un día para darle un horario especial.',
-            style: TextStyle(color: Color(0xFF7A6554), height: 1.4, fontSize: 12),
+            style: TextStyle(
+              color: Color(0xFF7A6554),
+              height: 1.4,
+              fontSize: 12,
+            ),
           ),
           const SizedBox(height: 12),
           // Horario base.
@@ -1364,17 +1374,11 @@ class _AuthScreenState extends State<AuthScreen> {
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
               const Spacer(),
-              _timeChip(
-                _horarioBaseInicio,
-                () => _pickBaseTime(true),
-              ),
+              _timeChip(_horarioBaseInicio, () => _pickBaseTime(true)),
               const SizedBox(width: 6),
               const Text('a'),
               const SizedBox(width: 6),
-              _timeChip(
-                _horarioBaseFin,
-                () => _pickBaseTime(false),
-              ),
+              _timeChip(_horarioBaseFin, () => _pickBaseTime(false)),
             ],
           ),
           const SizedBox(height: 10),
@@ -1453,9 +1457,7 @@ class _AuthScreenState extends State<AuthScreen> {
               child: Row(
                 children: [
                   Icon(
-                    special == null
-                        ? Icons.add_circle_outline
-                        : Icons.tune,
+                    special == null ? Icons.add_circle_outline : Icons.tune,
                     size: 16,
                     color: const Color(0xFF8B5E34),
                   ),
@@ -1482,17 +1484,11 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
               )
             else ...[
-              _timeChip(
-                special.inicio,
-                () => _pickEspecialTime(i, true),
-              ),
+              _timeChip(special.inicio, () => _pickEspecialTime(i, true)),
               const SizedBox(width: 4),
               const Text('a', style: TextStyle(fontSize: 12)),
               const SizedBox(width: 4),
-              _timeChip(
-                special.fin,
-                () => _pickEspecialTime(i, false),
-              ),
+              _timeChip(special.fin, () => _pickEspecialTime(i, false)),
             ],
           ],
         ],
@@ -1583,17 +1579,22 @@ class _AuthScreenState extends State<AuthScreen> {
           fin: last.fin,
         );
       } else {
-        groups.add(
-          (desde: entry.dia, hasta: entry.dia, inicio: entry.inicio, fin: entry.fin),
-        );
+        groups.add((
+          desde: entry.dia,
+          hasta: entry.dia,
+          inicio: entry.inicio,
+          fin: entry.fin,
+        ));
       }
     }
-    return groups.map((g) {
-      final label = g.desde == g.hasta
-          ? _diasFull[g.desde]
-          : '${_diasFull[g.desde]} a ${_diasFull[g.hasta]}';
-      return '$label ${g.inicio}-${g.fin}';
-    }).join(', ');
+    return groups
+        .map((g) {
+          final label = g.desde == g.hasta
+              ? _diasFull[g.desde]
+              : '${_diasFull[g.desde]} a ${_diasFull[g.hasta]}';
+          return '$label ${g.inicio}-${g.fin}';
+        })
+        .join(', ');
   }
 
   Widget _buildWorkshopMap() {
@@ -1681,7 +1682,9 @@ class _AuthScreenState extends State<AuthScreen> {
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        throw Exception('Activa el permiso de ubicación para detectar tu taller.');
+        throw Exception(
+          'Activa el permiso de ubicación para detectar tu taller.',
+        );
       }
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
@@ -1937,9 +1940,13 @@ class _AuthScreenState extends State<AuthScreen> {
   void _showError(Object error) {
     if (!mounted) return;
     var message = error.toString().replaceFirst('Exception: ', '');
-    if (message.contains('TimeoutException') || message.contains('timed out')) {
+    if (message.contains('TimeoutException') ||
+        message.contains('timed out') ||
+        message.contains('Connection') ||
+        message.contains('SocketException') ||
+        message.contains('Failed host lookup')) {
       message =
-          'El servidor tardó demasiado. Intenta otra vez; si recién levantaste el sistema espera unos segundos.';
+          'No se pudo conectar al servidor. En telefono fisico ejecuta la app con API_BASE_URL=http://192.168.0.3:8000 y verifica que PC y telefono esten en la misma red Wi-Fi.';
     }
     setState(() {
       _error = message;
@@ -2414,7 +2421,7 @@ class _SelectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 142,
+      height: 164,
       width: double.infinity,
       child: Card(
         color: Colors.white,
@@ -2452,7 +2459,7 @@ class _SelectionCard extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   description,
-                  maxLines: 2,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Color(0xFF6F655B),

@@ -69,6 +69,7 @@ def ensure_legacy_schema():
         "ALTER TABLE solicitud_candidato ADD COLUMN IF NOT EXISTS tenant_id INTEGER NULL",
         "ALTER TABLE solicitud_historial ADD COLUMN IF NOT EXISTS tenant_id INTEGER NULL",
         "ALTER TABLE tracking_ping ADD COLUMN IF NOT EXISTS tenant_id INTEGER NULL",
+        "ALTER TABLE vehiculo_historial_reparacion ADD COLUMN IF NOT EXISTS tenant_id INTEGER NULL",
         # Solicitud: campos para KPIs (tiempos por etapa) + cotización seleccionada.
         "ALTER TABLE solicitud ADD COLUMN IF NOT EXISTS sla_esperado_minutos INTEGER DEFAULT 60",
         "ALTER TABLE solicitud ADD COLUMN IF NOT EXISTS fecha_taller_asignado TIMESTAMP NULL",
@@ -182,12 +183,63 @@ def seed_default_tenant():
             "solicitud_candidato",
             "solicitud_historial",
             "tracking_ping",
+            "vehiculo_historial_reparacion",
         ]
         with engine.begin() as connection:
             for table in backfill_tables:
                 connection.execute(text(
                     f"UPDATE {table} SET tenant_id = :tid WHERE tenant_id IS NULL"
                 ), {"tid": default.id})
+
+
+def backfill_vehicle_history():
+    """Crea fichas de historial para solicitudes finalizadas legacy."""
+    statement = """
+    INSERT INTO vehiculo_historial_reparacion (
+        vehiculo_id,
+        solicitud_id,
+        taller_id,
+        tecnico_id,
+        tenant_id,
+        titulo,
+        diagnostico,
+        acciones_realizadas,
+        categoria,
+        prioridad,
+        costo,
+        estado_pago,
+        fecha_servicio,
+        fecha_creacion,
+        fecha_actualizacion
+    )
+    SELECT
+        s.vehiculo_id,
+        s.id,
+        s.taller_id,
+        s.tecnico_id,
+        s.tenant_id,
+        COALESCE(s.clasificacion_ia, 'Atencion de auxilio vehicular'),
+        COALESCE(s.resumen_ia, s.descripcion),
+        'Servicio historico migrado automaticamente al expediente del vehiculo.',
+        s.clasificacion_ia,
+        s.prioridad_ia,
+        s.precio_cobrado,
+        COALESCE(s.estado_pago, 'pendiente'),
+        COALESCE(s.fecha_finalizado, s.fecha_creacion, NOW()),
+        NOW(),
+        NOW()
+    FROM solicitud s
+    WHERE s.vehiculo_id IS NOT NULL
+      AND LOWER(s.estado::text) IN ('finalizado', 'resuelta')
+      AND NOT EXISTS (
+          SELECT 1
+          FROM vehiculo_historial_reparacion h
+          WHERE h.solicitud_id = s.id
+            AND h.vehiculo_id = s.vehiculo_id
+      )
+    """
+    with engine.begin() as connection:
+        connection.execute(text(statement))
 
 
 def seed_saas_plans():
@@ -403,6 +455,7 @@ def init_db():
             time.sleep(retry_delay)
 
     seed_default_tenant()
+    backfill_vehicle_history()
     seed_saas_plans()
     seed_default_subscriptions()
     seed_default_specialties()

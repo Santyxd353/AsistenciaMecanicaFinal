@@ -9,12 +9,14 @@ class AppConfig {
 
   static const _appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'dev');
   static const _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
-  static const oneSignalAppId = String.fromEnvironment('ONESIGNAL_APP_ID');
+  static const oneSignalAppId = String.fromEnvironment(
+    'ONESIGNAL_APP_ID',
+    defaultValue: 'c14820b1-68ee-433d-9d6d-22c355daad2c',
+  );
   static const legacyCloudBaseUrl =
       'https://backend-958497253028.europe-west1.run.app';
 
-  static AppEnvironment get environment =>
-      _appEnv.toLowerCase() == 'prod'
+  static AppEnvironment get environment => _appEnv.toLowerCase() == 'prod'
       ? AppEnvironment.prod
       : AppEnvironment.dev;
 

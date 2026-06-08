@@ -1,17 +1,30 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, List
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.api.deps import get_current_user
 from app.db.session import get_session
-from app.models.domain import Vehiculo, VehiculoCreate, VehiculoRead, VehiculoUpdate
-from app.models.user import User
+from app.models.domain import (
+    Solicitud,
+    Taller,
+    Tecnico,
+    Vehiculo,
+    VehiculoCreate,
+    VehiculoHistorialCreate,
+    VehiculoHistorialRead,
+    VehiculoHistorialReparacion,
+    VehiculoRead,
+    VehiculoUpdate,
+)
+from app.models.user import User, UserRole
 from app.services.ai import analyze_vehicle_photos
+from app.services.audit import registrar_auditoria
 from app.services.storage import delete_relative_url, save_upload_file, url_to_path
 
 router = APIRouter()
@@ -25,6 +38,102 @@ class VehiclePreviewRead(BaseModel):
     color: str = ""
     resumen: str
     source: str
+
+
+def _taller_del_usuario(session: Session, user: User) -> Taller | None:
+    return session.exec(select(Taller).where(Taller.propietario_id == user.id)).first()
+
+
+def _tecnico_del_usuario(session: Session, user: User) -> Tecnico | None:
+    return session.exec(select(Tecnico).where(Tecnico.id_usuario == user.id)).first()
+
+
+def _vehiculo_visible_para_usuario(
+    session: Session,
+    vehiculo: Vehiculo,
+    current_user: User,
+) -> bool:
+    if current_user.role == UserRole.ADMIN:
+        return current_user.tenant_id is None or vehiculo.tenant_id == current_user.tenant_id
+
+    if current_user.role == UserRole.DRIVER:
+        return (
+            vehiculo.propietario_id == current_user.id
+            and vehiculo.tenant_id == current_user.tenant_id
+        )
+
+    if current_user.role == UserRole.WORKSHOP:
+        taller = _taller_del_usuario(session, current_user)
+        if not taller:
+            return False
+        return session.exec(
+            select(Solicitud)
+            .where(Solicitud.vehiculo_id == vehiculo.id)
+            .where(Solicitud.taller_id == taller.id)
+        ).first() is not None
+
+    if current_user.role == UserRole.TECNICO:
+        tecnico = _tecnico_del_usuario(session, current_user)
+        if not tecnico:
+            return False
+        return session.exec(
+            select(Solicitud)
+            .where(Solicitud.vehiculo_id == vehiculo.id)
+            .where(Solicitud.tecnico_id == tecnico.id)
+        ).first() is not None
+
+    return False
+
+
+def _puede_escribir_historial(
+    session: Session,
+    vehiculo: Vehiculo,
+    current_user: User,
+    solicitud_id: int | None,
+) -> tuple[bool, int | None, int | None]:
+    if current_user.role == UserRole.ADMIN:
+        return True, None, None
+
+    taller = _taller_del_usuario(session, current_user) if current_user.role == UserRole.WORKSHOP else None
+    tecnico = _tecnico_del_usuario(session, current_user) if current_user.role == UserRole.TECNICO else None
+
+    stmt = select(Solicitud).where(Solicitud.vehiculo_id == vehiculo.id)
+    if solicitud_id is not None:
+        stmt = stmt.where(Solicitud.id == solicitud_id)
+    if taller:
+        stmt = stmt.where(Solicitud.taller_id == taller.id)
+    elif tecnico:
+        stmt = stmt.where(Solicitud.tecnico_id == tecnico.id)
+    else:
+        return False, None, None
+
+    solicitud = session.exec(stmt).first()
+    if not solicitud:
+        return False, None, None
+    return True, solicitud.taller_id, solicitud.tecnico_id
+
+
+def _historial_read(session: Session, item: VehiculoHistorialReparacion) -> VehiculoHistorialRead:
+    data = VehiculoHistorialRead.model_validate(item)
+    taller_nombre = None
+    tecnico_nombre = None
+    solicitud_estado = None
+    if item.taller_id:
+        taller = session.get(Taller, item.taller_id)
+        taller_nombre = taller.nombre_comercial if taller else None
+    if item.tecnico_id:
+        tecnico = session.get(Tecnico, item.tecnico_id)
+        tecnico_nombre = tecnico.nombre if tecnico else None
+    if item.solicitud_id:
+        solicitud = session.get(Solicitud, item.solicitud_id)
+        solicitud_estado = solicitud.estado.value if solicitud and hasattr(solicitud.estado, "value") else (
+            str(solicitud.estado) if solicitud else None
+        )
+    return data.model_copy(update={
+        "taller_nombre": taller_nombre,
+        "tecnico_nombre": tecnico_nombre,
+        "solicitud_estado": solicitud_estado,
+    })
 
 
 async def _read_vehicle_payload(request: Request) -> dict[str, Any]:
@@ -156,6 +265,89 @@ def listar_vehiculos(
     )
     vehiculos = session.exec(statement).all()
     return vehiculos
+
+
+@router.get("/{vehiculo_id}/historial", response_model=List[VehiculoHistorialRead])
+def listar_historial_vehiculo(
+    *,
+    session: Session = Depends(get_session),
+    vehiculo_id: int,
+    current_user: User = Depends(get_current_user),
+):
+    vehiculo = session.get(Vehiculo, vehiculo_id)
+    if not vehiculo or not _vehiculo_visible_para_usuario(session, vehiculo, current_user):
+        raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
+
+    historial = session.exec(
+        select(VehiculoHistorialReparacion)
+        .where(VehiculoHistorialReparacion.vehiculo_id == vehiculo.id)
+        .order_by(VehiculoHistorialReparacion.fecha_servicio.desc())
+    ).all()
+    return [_historial_read(session, item) for item in historial]
+
+
+@router.post(
+    "/{vehiculo_id}/historial",
+    response_model=VehiculoHistorialRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def crear_historial_vehiculo(
+    *,
+    session: Session = Depends(get_session),
+    vehiculo_id: int,
+    payload: VehiculoHistorialCreate,
+    current_user: User = Depends(get_current_user),
+):
+    vehiculo = session.get(Vehiculo, vehiculo_id)
+    if not vehiculo or not _vehiculo_visible_para_usuario(session, vehiculo, current_user):
+        raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
+
+    puede_escribir, taller_id, tecnico_id = _puede_escribir_historial(
+        session,
+        vehiculo,
+        current_user,
+        payload.solicitud_id,
+    )
+    if not puede_escribir:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el taller o mecanico asignado pueden registrar historial tecnico.",
+        )
+
+    if payload.costo is not None and payload.costo < 0:
+        raise HTTPException(status_code=400, detail="El costo no puede ser negativo.")
+    if payload.kilometraje is not None and payload.kilometraje < 0:
+        raise HTTPException(status_code=400, detail="El kilometraje no puede ser negativo.")
+
+    item = VehiculoHistorialReparacion(
+        vehiculo_id=vehiculo.id or 0,
+        solicitud_id=payload.solicitud_id,
+        taller_id=taller_id,
+        tecnico_id=tecnico_id,
+        tenant_id=current_user.tenant_id or vehiculo.tenant_id,
+        titulo=(payload.titulo or "Atencion mecanica").strip(),
+        diagnostico=(payload.diagnostico or "").strip() or None,
+        acciones_realizadas=(payload.acciones_realizadas or "").strip() or None,
+        categoria=(payload.categoria or "").strip() or None,
+        prioridad=(payload.prioridad or "").strip() or None,
+        costo=payload.costo,
+        estado_pago=payload.estado_pago or "pendiente",
+        kilometraje=payload.kilometraje,
+        observaciones=(payload.observaciones or "").strip() or None,
+        fecha_servicio=datetime.utcnow(),
+    )
+    session.add(item)
+    registrar_auditoria(
+        session,
+        actor=current_user,
+        accion="vehiculo_historial_creado",
+        entidad="vehiculo",
+        entidad_id=vehiculo.id,
+        detalle=f"Historial tecnico creado para placa {vehiculo.placa}.",
+    )
+    session.commit()
+    session.refresh(item)
+    return _historial_read(session, item)
 
 
 @router.get("/{vehiculo_id}", response_model=VehiculoRead)

@@ -12,6 +12,20 @@
 </head>
 <body>
   <app-root></app-root>
+  <script>
+    // One-shot kill switch: si el usuario tenía un Service Worker viejo
+    // registrado (PWA habilitada en builds anteriores), se desregistra al
+    // cargar la nueva versión y se vacían sus caches para evitar que sirva
+    // chunks JS obsoletos. Quitar este script cuando se reactive el SW.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        regs.forEach((reg) => reg.unregister().catch(() => {}));
+      });
+      if ('caches' in globalThis) {
+        caches.keys().then((keys) => keys.forEach((k) => caches.delete(k).catch(() => {})));
+      }
+    }
+  </script>
 </body>
 </html>
 

@@ -245,6 +245,51 @@
   font-size: 0.94rem;
 }
 
+.panel-tecnico-historial {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--borde);
+  background: #fffaf4;
+}
+
+.panel-tecnico-historial > p {
+  margin: 0;
+  color: var(--texto-suave);
+}
+
+.panel-tecnico-historial-error {
+  color: #b13c31 !important;
+  font-weight: 800;
+}
+
+.panel-tecnico-historial-item {
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid #eadcca;
+  background: #fff;
+}
+
+.panel-tecnico-historial-item > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.panel-tecnico-historial-item > div span,
+.panel-tecnico-historial-item small {
+  color: #8a6647;
+  font-size: 12px;
+}
+
+.panel-tecnico-historial-item p {
+  margin: 8px 0;
+  color: #4f3b2a;
+  line-height: 1.45;
+}
+
 .panel-tecnico-estado {
   display: inline-flex;
   align-items: center;

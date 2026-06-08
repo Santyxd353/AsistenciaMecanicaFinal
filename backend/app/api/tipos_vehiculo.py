@@ -28,8 +28,10 @@ router = APIRouter()
 @router.get("/", response_model=list[TipoVehiculoRead])
 def listar_tipos_vehiculo(
     session: Session = Depends(get_session),
-    _: User = Depends(get_current_user),
 ):
+    """Catálogo público: lo consume el onboarding del taller ANTES de
+    autenticarse (durante el flujo "compré plan → registro taller").
+    Por eso no exige token."""
     items = session.exec(select(TipoVehiculo).order_by(TipoVehiculo.nombre)).all()
     return [TipoVehiculoRead.model_validate(item) for item in items]
 

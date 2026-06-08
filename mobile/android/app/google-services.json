@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "171620595285",
-    "project_id": "si2-auxiliomecanico",
-    "storage_bucket": "si2-auxiliomecanico.firebasestorage.app"
+    "project_number": "737912288963",
+    "project_id": "rutasos",
+    "storage_bucket": "rutasos.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:171620595285:android:0f7125a9854f3c0ac346dc",
+        "mobilesdk_app_id": "1:737912288963:android:dc55d09d7fad7dd22f9476",
         "android_client_info": {
           "package_name": "com.example.mobile"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyCL15DK1tb7uGhBoQDPgOA9Gbq0Uf4svcM"
+          "current_key": "AIzaSyDJpGPXmOo7BESK_wvD2PFCtgSdsSP1fRU"
         }
       ],
       "services": {

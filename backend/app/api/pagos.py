@@ -46,15 +46,6 @@ def _solicitud_del_cliente(session: Session, solicitud_id: int, current_user: Us
     solicitud = session.get(Solicitud, solicitud_id)
     if not solicitud:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada.")
-    if (
-        current_user.tenant_id is not None
-        and solicitud.tenant_id is not None
-        and current_user.tenant_id != solicitud.tenant_id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solicitud fuera de tu tenant.",
-        )
     if solicitud.vehiculo_id:
         vehiculo = session.get(Vehiculo, solicitud.vehiculo_id)
         if not vehiculo or vehiculo.propietario_id != current_user.id:
@@ -107,7 +98,13 @@ def registrar_pago(
             detail="Esta solicitud ya fue pagada.",
         )
 
-    monto = round(payload.monto, 2)
+    monto_base = solicitud.precio_cobrado if solicitud.cotizacion_seleccionada_id else payload.monto
+    if monto_base is None or monto_base <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La solicitud no tiene un monto valido para pagar.",
+        )
+    monto = round(monto_base, 2)
     comision = round(monto * COMISION_PLATAFORMA, 2)
 
     pago = Pago(

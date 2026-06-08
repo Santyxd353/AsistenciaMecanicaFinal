@@ -101,8 +101,40 @@
 
           <div class="panel-tecnico-asignacion-meta">
             <span>Fecha: {{ asignacion.fecha_creacion | date:'dd/MM/yyyy HH:mm' }}</span>
+            <span>Vehiculo: {{ asignacion.vehiculo_placa || (asignacion.vehiculo_id ? ('#' + asignacion.vehiculo_id) : 'No asociado') }}</span>
             <span *ngIf="asignacion.clasificacion_ia">Clasificacion: {{ asignacion.clasificacion_ia }}</span>
             <span *ngIf="asignacion.prioridad_ia">Prioridad: {{ asignacion.prioridad_ia }}</span>
+          </div>
+
+          <div class="panel-tecnico-acciones" *ngIf="asignacion.vehiculo_id">
+            <button
+              class="boton-secundario"
+              type="button"
+              (click)="toggleHistorialVehiculo(asignacion)"
+            >
+              {{ historialAbiertoSolicitudId === asignacion.id ? 'Ocultar historial del vehiculo' : 'Ver historial del vehiculo' }}
+            </button>
+          </div>
+
+          <div class="panel-tecnico-historial" *ngIf="historialAbiertoSolicitudId === asignacion.id">
+            <p *ngIf="historialCargandoSolicitudId === asignacion.id">Cargando historial del vehiculo...</p>
+            <p class="panel-tecnico-historial-error" *ngIf="historialError">{{ historialError }}</p>
+            <p *ngIf="historialCargandoSolicitudId !== asignacion.id && !historialError && !(historialPorVehiculo[asignacion.vehiculo_id!]?.length)">
+              Este vehiculo todavia no tiene reparaciones registradas.
+            </p>
+            <article class="panel-tecnico-historial-item" *ngFor="let item of historialPorVehiculo[asignacion.vehiculo_id!] || []">
+              <div>
+                <strong>{{ item.titulo || 'Atencion mecanica' }}</strong>
+                <span>{{ item.fecha_servicio | date:'dd/MM/yyyy HH:mm' }}</span>
+              </div>
+              <p>{{ item.diagnostico || item.acciones_realizadas || 'Sin detalle tecnico.' }}</p>
+              <small>
+                {{ item.taller_nombre || 'Taller no registrado' }}
+                <ng-container *ngIf="item.tecnico_nombre"> · {{ item.tecnico_nombre }}</ng-container>
+                <ng-container *ngIf="item.categoria"> · {{ item.categoria }}</ng-container>
+                <ng-container *ngIf="item.costo"> · Bs {{ item.costo | number:'1.2-2' }}</ng-container>
+              </small>
+            </article>
           </div>
 
           <div class="panel-tecnico-acciones" *ngIf="asignacion.estado === 'asignada' || asignacion.estado === 'en_progreso' || asignacion.estado === 'llegada'">

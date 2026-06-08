@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 from app.api.deps import get_current_user
 from app.core.security import get_password_hash
 from app.db.session import get_session
-from app.models.domain import Especialidad, Taller, Tecnico, TecnicoRead
+from app.models.domain import Especialidad, EspecialidadRead, Taller, Tecnico, TecnicoRead
 from app.models.user import User, UserRole
 from app.services.subscription_limits import ensure_can_create_mechanic
 
@@ -183,6 +183,45 @@ def _password_temporal(ci: str) -> str:
     return f"Mec-{suffix}-{secrets.token_hex(2)}"
 
 
+def _tecnico_read(
+    session: Session,
+    tecnico: Tecnico,
+    password_temporal: str | None = None,
+) -> TecnicoRead:
+    """Arma la respuesta del mecanico incluyendo su usuario vinculado.
+
+    `password_temporal` solo se entrega cuando acaba de crearse la cuenta. En
+    listados posteriores no se puede recuperar porque el backend guarda hash,
+    no contrasenas en claro.
+    """
+    usuario = session.get(User, tecnico.id_usuario) if tecnico.id_usuario else None
+    return TecnicoRead(
+        id=tecnico.id or 0,
+        nombre=tecnico.nombre,
+        ci=tecnico.ci or "",
+        direccion=tecnico.direccion or "",
+        latitud=tecnico.latitud,
+        longitud=tecnico.longitud,
+        latitud_actual=tecnico.latitud_actual,
+        longitud_actual=tecnico.longitud_actual,
+        ultima_actualizacion_ubicacion=tecnico.ultima_actualizacion_ubicacion,
+        disponible=tecnico.disponible,
+        activo=tecnico.activo,
+        taller_id=tecnico.taller_id,
+        id_usuario=tecnico.id_usuario,
+        tenant_id=tecnico.tenant_id,
+        calificacion_promedio=tecnico.calificacion_promedio or 0.0,
+        total_calificaciones=tecnico.total_calificaciones or 0,
+        especialidades=[
+            EspecialidadRead(id=esp.id or 0, nombre=esp.nombre)
+            for esp in (tecnico.especialidades or [])
+        ],
+        usuario_username=usuario.username if usuario else None,
+        usuario_email=usuario.email if usuario else None,
+        password_temporal=password_temporal,
+    )
+
+
 @router.get("/mi-perfil", response_model=TecnicoRead)
 def obtener_mi_perfil_tecnico(
     *,
@@ -207,7 +246,7 @@ def obtener_mi_perfil_tecnico(
             detail="No existe un perfil tecnico vinculado a este usuario.",
         )
 
-    return tecnico
+    return _tecnico_read(session, tecnico)
 
 
 @router.patch("/mi-disponibilidad", response_model=TecnicoRead)
@@ -241,7 +280,7 @@ def actualizar_mi_disponibilidad(
     if not tecnico_actualizado:
         raise HTTPException(status_code=500, detail="No se pudo cargar el tecnico actualizado")
 
-    return tecnico_actualizado
+    return _tecnico_read(session, tecnico_actualizado)
 
 @router.post("/", response_model=TecnicoRead)
 def crear_tecnico(
@@ -335,13 +374,7 @@ def crear_tecnico(
     tecnico_creado = _obtener_tecnico_con_especialidades(session, tecnico.id)
     if not tecnico_creado:
         raise HTTPException(status_code=500, detail="No se pudo cargar el técnico creado")
-    return TecnicoRead.model_validate(tecnico_creado).model_copy(
-        update={
-            "usuario_username": username,
-            "usuario_email": email_normalizado,
-            "password_temporal": password_temporal,
-        }
-    )
+    return _tecnico_read(session, tecnico_creado, password_temporal=password_temporal)
 
 @router.get("/", response_model=list[TecnicoRead])
 def listar_tecnicos(
@@ -360,7 +393,7 @@ def listar_tecnicos(
         )
         if current_user.tenant_id is not None:
             statement = statement.where(Tecnico.tenant_id == current_user.tenant_id)
-        return session.exec(statement).all()
+        return [_tecnico_read(session, tecnico) for tecnico in session.exec(statement).all()]
 
     taller = obtener_taller_del_usuario(session, current_user)
     if not taller:
@@ -373,7 +406,7 @@ def listar_tecnicos(
         .where(Tecnico.tenant_id == taller.tenant_id)
         .offset(skip).limit(limit)
     ).all()
-    return tecnicos
+    return [_tecnico_read(session, tecnico) for tecnico in tecnicos]
 
 
 @router.patch("/{tecnico_id}/disponibilidad", response_model=TecnicoRead)
@@ -402,7 +435,7 @@ def actualizar_disponibilidad(
     tecnico_actualizado = _obtener_tecnico_con_especialidades(session, tecnico.id)
     if not tecnico_actualizado:
         raise HTTPException(status_code=500, detail="No se pudo cargar el técnico actualizado")
-    return tecnico_actualizado
+    return _tecnico_read(session, tecnico_actualizado)
 
 class TecnicoUpdate(BaseModel):
     nombre: str | None = None
@@ -494,7 +527,7 @@ def actualizar_tecnico(
     tecnico_actualizado = _obtener_tecnico_con_especialidades(session, tecnico.id)
     if not tecnico_actualizado:
         raise HTTPException(status_code=500, detail="No se pudo cargar el técnico actualizado")
-    return tecnico_actualizado
+    return _tecnico_read(session, tecnico_actualizado)
 
 
 @router.post("/{tecnico_id}/convertir-a-usuario", response_model=TecnicoRead)
@@ -559,7 +592,7 @@ def convertir_tecnico_a_usuario(
     tecnico_actualizado = _obtener_tecnico_con_especialidades(session, tecnico.id)
     if not tecnico_actualizado:
         raise HTTPException(status_code=500, detail="No se pudo cargar el técnico actualizado")
-    return tecnico_actualizado
+    return _tecnico_read(session, tecnico_actualizado, password_temporal=data.password)
 
 @router.delete("/{tecnico_id}")
 def eliminar_tecnico(

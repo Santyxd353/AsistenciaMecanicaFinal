@@ -66,6 +66,23 @@ def crear_taller_desde_onboarding(
     if not payload.taller.nombre_comercial.strip():
         raise HTTPException(status_code=400, detail="El nombre comercial del taller es obligatorio.")
 
+    # Pre-chequeo email/username únicos antes del INSERT. Si falta, el flush
+    # del User explota con IntegrityError dentro del session.flush(), que NO
+    # estaba cubierto por el try/except del commit más abajo → el handler se
+    # convertía en 500 y el frontend quedaba colgado en "Creando...".
+    admin_email = payload.admin.email.strip().lower()
+    admin_username = payload.admin.username.strip()
+    if session.exec(select(User).where(User.email == admin_email)).first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ya existe una cuenta con ese correo. Usa otro correo o inicia sesión.",
+        )
+    if session.exec(select(User).where(User.username == admin_username)).first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El nombre de usuario ya está tomado. Cambia el correo o intenta de nuevo.",
+        )
+
     especialidades = _obtener_especialidades_taller(session, payload.taller.especialidad_ids)
     tipos_vehiculo = _obtener_tipos_vehiculo(session, payload.taller.tipo_vehiculo_ids or [])
     tenant = Tenant(
@@ -75,11 +92,18 @@ def crear_taller_desde_onboarding(
         activo=True,
     )
     session.add(tenant)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se pudo crear el tenant del taller (slug duplicado).",
+        ) from exc
 
     admin = User(
-        username=payload.admin.username.strip(),
-        email=payload.admin.email.strip().lower(),
+        username=admin_username,
+        email=admin_email,
         full_name=(payload.admin.full_name or "").strip() or None,
         role=UserRole.WORKSHOP,
         is_active=True,
@@ -87,7 +111,14 @@ def crear_taller_desde_onboarding(
         hashed_password=get_password_hash(payload.admin.password),
     )
     session.add(admin)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se pudo crear el usuario administrador. El correo o usuario ya existe.",
+        ) from exc
 
     taller_data = payload.taller.model_dump(exclude={"especialidad_ids", "tipo_vehiculo_ids"})
     taller = Taller(

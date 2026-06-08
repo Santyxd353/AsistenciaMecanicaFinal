@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../app_controller.dart';
 import '../models.dart';
 import '../services/realtime_service.dart';
+import '../widgets/vehicle_history_card.dart';
 
 class RequestDetailScreen extends StatefulWidget {
   const RequestDetailScreen({super.key, required this.requestId});
@@ -157,6 +158,10 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
               ),
             ),
             const SizedBox(height: 14),
+            if (request.vehiculoId != null) ...[
+              VehicleHistoryCard(vehicleId: request.vehiculoId!),
+              const SizedBox(height: 14),
+            ],
             if (request.estado == 'pendiente' ||
                 request.estado == 'buscando_taller' ||
                 cotizaciones.isNotEmpty) ...[

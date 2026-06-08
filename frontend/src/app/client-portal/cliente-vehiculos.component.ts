@@ -4,7 +4,7 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { Router } from '@angular/router';
 import { finalize, timeout } from 'rxjs/operators';
 import { AuthService } from '../core/auth.service';
-import { Vehicle, VehiclePhotoPreview, VehicleService } from '../core/vehicle.service';
+import { Vehicle, VehiclePhotoPreview, VehicleRepairHistory, VehicleService } from '../core/vehicle.service';
 import { ClienteNavbarComponent } from './cliente-navbar.component';
 
 @Component({
@@ -30,6 +30,31 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
               <div><span>Marca</span><strong>{{ v.marca }}</strong></div>
               <div><span>Modelo</span><strong>{{ v.modelo }}</strong></div>
               <div><span>Color</span><strong>{{ v.color || 'No definido' }}</strong></div>
+            </div>
+            <div class="vehicle-actions">
+              <button class="btn-secondary" type="button" (click)="toggleHistory(v)">
+                {{ historyOpenId === v.id ? 'Ocultar historial' : 'Ver historial' }}
+              </button>
+            </div>
+            <div class="vehicle-history" *ngIf="historyOpenId === v.id">
+              <p class="message" *ngIf="historyLoadingId === v.id">Cargando historial...</p>
+              <p class="message error" *ngIf="historyError">{{ historyError }}</p>
+              <p class="history-empty" *ngIf="historyLoadingId !== v.id && !historyError && !(histories[v.id]?.length)">
+                Este vehiculo todavia no tiene reparaciones registradas.
+              </p>
+              <article class="history-item" *ngFor="let h of histories[v.id] || []">
+                <div>
+                  <strong>{{ h.titulo || 'Atencion mecanica' }}</strong>
+                  <span>{{ h.fecha_servicio | date:'dd/MM/yyyy HH:mm' }}</span>
+                </div>
+                <p>{{ h.diagnostico || h.acciones_realizadas || 'Sin detalle tecnico.' }}</p>
+                <small>
+                  {{ h.taller_nombre || 'Taller no registrado' }}
+                  <ng-container *ngIf="h.tecnico_nombre"> · {{ h.tecnico_nombre }}</ng-container>
+                  <ng-container *ngIf="h.costo"> · Bs {{ h.costo | number:'1.2-2' }}</ng-container>
+                  <ng-container *ngIf="h.estado_pago"> · {{ h.estado_pago }}</ng-container>
+                </small>
+              </article>
             </div>
           </article>
         </div>
@@ -119,7 +144,7 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
     .panel-head { margin-bottom: 14px; }
     .vehicle-list { display: grid; gap: 12px; }
     .vehicle-hero {
-      display: flex; gap: 16px; align-items: center;
+      display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center;
       padding: 14px; background: #fdf6ec; border: 1px solid #eadcca; border-radius: 16px;
     }
     .vehicle-thumb {
@@ -132,6 +157,20 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
       letter-spacing: 0.14em; color: #8a6647;
     }
     .vehicle-grid > div strong { font-size: 1rem; }
+    .vehicle-actions { display: flex; justify-content: flex-end; }
+    .vehicle-history {
+      grid-column: 1 / -1; display: grid; gap: 10px; padding-top: 12px;
+      border-top: 1px dashed #eadcca;
+    }
+    .history-empty { margin: 0; color: #8a6647; }
+    .history-item {
+      background: #fff; border: 1px solid #eadcca; border-radius: 14px;
+      padding: 12px; box-shadow: 0 10px 22px rgba(64,37,18,0.06);
+    }
+    .history-item > div { display: flex; justify-content: space-between; gap: 10px; }
+    .history-item > div span { color: #8a6647; font-size: 12px; }
+    .history-item p { margin: 8px 0; color: #4f3b2a; }
+    .history-item small { color: #8a6647; }
     .ai-upload-box {
       padding: 16px; background: #fff8ef; border: 1px dashed #c19a6a;
       border-radius: 14px; margin-bottom: 14px;
@@ -170,6 +209,10 @@ export class ClienteVehiculosComponent implements OnInit {
 
   form: FormGroup;
   vehicles: Vehicle[] = [];
+  histories: Record<number, VehicleRepairHistory[]> = {};
+  historyOpenId: number | null = null;
+  historyLoadingId: number | null = null;
+  historyError = '';
   photoFiles: File[] = [];
   preview: VehiclePhotoPreview | null = null;
   analyzing = false;
@@ -195,6 +238,30 @@ export class ClienteVehiculosComponent implements OnInit {
     this.vehicleService.getVehicles().pipe(timeout(10000)).subscribe({
       next: (v) => { this.vehicles = v; },
       error: () => { this.err = 'No se pudieron cargar tus vehículos.'; },
+    });
+  }
+
+  toggleHistory(vehicle: Vehicle): void {
+    if (this.historyOpenId === vehicle.id) {
+      this.historyOpenId = null;
+      this.historyError = '';
+      return;
+    }
+    this.historyOpenId = vehicle.id;
+    this.historyError = '';
+    if (this.histories[vehicle.id]) {
+      return;
+    }
+    this.historyLoadingId = vehicle.id;
+    this.vehicleService.getVehicleHistory(vehicle.id).pipe(timeout(10000)).subscribe({
+      next: (items) => {
+        this.histories[vehicle.id] = Array.isArray(items) ? items : [];
+        this.historyLoadingId = null;
+      },
+      error: (error) => {
+        this.historyError = error?.error?.detail || 'No se pudo cargar el historial.';
+        this.historyLoadingId = null;
+      },
     });
   }
 

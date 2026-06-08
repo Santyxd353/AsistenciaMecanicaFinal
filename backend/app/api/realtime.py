@@ -22,7 +22,16 @@ from sqlmodel import Session, select
 
 from app.core.security import ALGORITHM, SECRET_KEY
 from app.db.session import engine
-from app.models.domain import Solicitud, Taller, Tecnico, Vehiculo
+from app.models.domain import (
+    Cotizacion,
+    EstadoCandidato,
+    EstadoSolicitud,
+    Solicitud,
+    SolicitudCandidato,
+    Taller,
+    Tecnico,
+    Vehiculo,
+)
 from app.models.user import User, UserRole
 from app.services.realtime import manager as realtime_manager
 
@@ -65,7 +74,35 @@ def _puede_unirse_a_solicitud(session: Session, user: User, solicitud_id: int) -
         taller = session.exec(
             select(Taller).where(Taller.propietario_id == user.id)
         ).first()
-        return bool(taller and solicitud.taller_id == taller.id)
+        if not taller:
+            return False
+        if solicitud.taller_id == taller.id:
+            return True
+
+        # Taller candidato aun antes de asignacion: necesita la sala para ver
+        # cambios en vivo mientras cotiza o espera seleccion del cliente.
+        candidato = session.exec(
+            select(SolicitudCandidato)
+            .where(SolicitudCandidato.solicitud_id == solicitud.id)
+            .where(SolicitudCandidato.taller_id == taller.id)
+            .where(SolicitudCandidato.estado.notin_([
+                EstadoCandidato.RECHAZADO,
+                EstadoCandidato.EXPIRADO,
+            ]))
+        ).first()
+        if (
+            candidato
+            and solicitud.taller_id is None
+            and solicitud.estado in {EstadoSolicitud.PENDIENTE, EstadoSolicitud.BUSCANDO_TALLER}
+        ):
+            return True
+
+        cotizacion = session.exec(
+            select(Cotizacion)
+            .where(Cotizacion.solicitud_id == solicitud.id)
+            .where(Cotizacion.taller_id == taller.id)
+        ).first()
+        return bool(cotizacion)
     if user.role == UserRole.TECNICO:
         tecnico = session.exec(
             select(Tecnico).where(Tecnico.id_usuario == user.id)

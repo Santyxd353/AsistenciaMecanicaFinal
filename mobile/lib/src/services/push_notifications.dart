@@ -5,6 +5,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 
+import '../app_config.dart';
 import '../models.dart';
 import '../repositories.dart';
 
@@ -41,16 +42,22 @@ class PushNotificationsService {
       return;
     }
 
-    try {
-      final externalId = _buildExternalId(currentUser);
-      await OneSignal.login(externalId);
-      await OneSignal.User.addTags({
-        'user_id': currentUser.id,
-        'role': currentUser.role,
-        'tenant_id': currentUser.tenantId ?? 'global',
-      });
-    } catch (error) {
-      debugPrint('No se pudo asociar usuario en OneSignal: $error');
+    if (AppConfig.oneSignalAppId.isNotEmpty) {
+      try {
+        final externalId = _buildExternalId(currentUser);
+        await OneSignal.login(externalId);
+        await OneSignal.User.addTags({
+          'user_id': currentUser.id,
+          'role': currentUser.role,
+          'tenant_id': currentUser.tenantId ?? 'global',
+        });
+      } catch (error) {
+        debugPrint('No se pudo asociar usuario en OneSignal: $error');
+      }
+    } else {
+      debugPrint(
+        'OneSignal pendiente: ejecuta con --dart-define=ONESIGNAL_APP_ID=tu_app_id.',
+      );
     }
 
     try {
@@ -103,6 +110,10 @@ class PushNotificationsService {
 
   static Future<void> logout() async {
     if (kIsWeb) {
+      return;
+    }
+
+    if (AppConfig.oneSignalAppId.isEmpty) {
       return;
     }
 

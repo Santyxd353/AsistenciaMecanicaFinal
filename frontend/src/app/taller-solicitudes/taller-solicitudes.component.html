@@ -183,6 +183,36 @@
           </div>
         </div>
 
+        <div class="taller-solicitudes-detalle-seccion" *ngIf="solicitudSeleccionada.vehiculo_id && solicitudSeleccionada.taller_id">
+          <span class="taller-solicitudes-detalle-label">Historial del vehiculo</span>
+          <p class="taller-solicitudes-subtexto">
+            Antecedentes de reparaciones de este auto, visibles para el taller y el mecanico asignado.
+          </p>
+          <div *ngIf="cargandoHistorialVehiculo" class="taller-solicitudes-vacio">
+            Cargando historial del vehiculo...
+          </div>
+          <div *ngIf="errorHistorialVehiculo" class="taller-solicitudes-alerta-error">
+            {{ errorHistorialVehiculo }}
+          </div>
+          <div *ngIf="!cargandoHistorialVehiculo && !errorHistorialVehiculo && historialVehiculo.length === 0" class="taller-solicitudes-vacio">
+            Este vehiculo todavia no tiene reparaciones registradas.
+          </div>
+          <article class="taller-solicitudes-historial-item" *ngFor="let item of historialVehiculo">
+            <div class="taller-solicitudes-historial-head">
+              <strong>{{ item.titulo || 'Atencion mecanica' }}</strong>
+              <span>{{ item.fecha_servicio | date:'dd/MM/yyyy HH:mm' }}</span>
+            </div>
+            <p>{{ item.diagnostico || item.acciones_realizadas || 'Sin detalle tecnico.' }}</p>
+            <small>
+              {{ item.taller_nombre || 'Taller no registrado' }}
+              <ng-container *ngIf="item.tecnico_nombre"> · {{ item.tecnico_nombre }}</ng-container>
+              <ng-container *ngIf="item.categoria"> · {{ item.categoria }}</ng-container>
+              <ng-container *ngIf="item.costo"> · Bs {{ item.costo | number:'1.2-2' }}</ng-container>
+              <ng-container *ngIf="item.estado_pago"> · {{ item.estado_pago }}</ng-container>
+            </small>
+          </article>
+        </div>
+
         <div class="taller-solicitudes-detalle-seccion">
           <span class="taller-solicitudes-detalle-label">Mapa del incidente</span>
           <app-mapa-geolocalizacion
@@ -279,6 +309,7 @@
                 min="1"
                 step="0.01"
                 placeholder="Ej. 120.00"
+                [disabled]="!puedeEditarCostoSolicitud"
               />
             </label>
             <div class="taller-solicitudes-detalle-card">
@@ -287,7 +318,12 @@
             </div>
           </div>
           <p class="taller-solicitudes-subtexto">
-            El cliente vera este monto en la pasarela QR cuando el servicio este en camino o finalizado.
+            <ng-container *ngIf="costoBloqueadoPorCotizacion; else costoEditable">
+              Este monto viene de la cotizacion aceptada por el cliente y no puede cambiarse.
+            </ng-container>
+            <ng-template #costoEditable>
+              El cliente vera este monto en la pasarela QR cuando el servicio este en camino o finalizado.
+            </ng-template>
           </p>
           <div *ngIf="errorCostoSolicitud" class="taller-solicitudes-alerta-error">
             {{ errorCostoSolicitud }}
@@ -299,7 +335,7 @@
             <button
               type="button"
               class="taller-solicitudes-boton-primario"
-              [disabled]="guardandoCostoSolicitud"
+              [disabled]="guardandoCostoSolicitud || !puedeEditarCostoSolicitud"
               (click)="guardarCostoSolicitud()"
             >
               {{ guardandoCostoSolicitud ? 'Guardando...' : 'Guardar monto' }}

@@ -37,6 +37,7 @@ from app.models.domain import (
     TipoNotificacion,
     TipoEvidencia,
     Vehiculo,
+    VehiculoHistorialReparacion,
 )
 from app.models.user import User, UserRole
 from app.services.ai import analyze_incident, summarize_audio_file
@@ -527,6 +528,29 @@ def notificar_servicio_terminado(
     )
 
 
+def notificar_pago_confirmado_taller(
+    session: Session,
+    solicitud: Solicitud,
+) -> None:
+    if not solicitud.taller_id:
+        return
+
+    taller = session.get(Taller, solicitud.taller_id)
+    if not taller or taller.propietario_id is None:
+        return
+
+    monto = solicitud.precio_cobrado or 0
+    crear_notificacion(
+        session,
+        destinatario_id=taller.propietario_id,
+        tipo=TipoNotificacion.SERVICIO_CONCLUIDO_PAGO,
+        titulo="Pago confirmado",
+        mensaje=f"Cliente pago Bs {monto:.2f} por la solicitud #{solicitud.id}.",
+        solicitud_id=solicitud.id,
+        accion_url="/taller/solicitudes",
+    )
+
+
 def notificar_cancelacion_a_mecanico(
     session: Session,
     solicitud: Solicitud,
@@ -618,6 +642,58 @@ def request_vehicle(session: Session, solicitud: Solicitud) -> Optional[Vehiculo
     return session.get(Vehiculo, solicitud.vehiculo_id)
 
 
+def registrar_historial_vehiculo_desde_solicitud(
+    session: Session,
+    solicitud: Solicitud,
+    *,
+    tecnico: Optional[Tecnico] = None,
+    observaciones: Optional[str] = None,
+) -> None:
+    vehiculo = request_vehicle(session, solicitud)
+    if not vehiculo or vehiculo.id is None:
+        return
+
+    existente = None
+    if solicitud.id is not None:
+        existente = session.exec(
+            select(VehiculoHistorialReparacion)
+            .where(VehiculoHistorialReparacion.solicitud_id == solicitud.id)
+            .where(VehiculoHistorialReparacion.vehiculo_id == vehiculo.id)
+        ).first()
+
+    tecnico_actual = tecnico
+    if tecnico_actual is None and solicitud.tecnico_id:
+        tecnico_actual = session.get(Tecnico, solicitud.tecnico_id)
+
+    titulo = solicitud.clasificacion_ia or "Atencion de auxilio vehicular"
+    diagnostico = solicitud.resumen_ia or solicitud.descripcion
+    acciones = (
+        "Servicio marcado como finalizado por el mecanico asignado. "
+        "Usar esta ficha como antecedente tecnico del vehiculo."
+    )
+
+    item = existente or VehiculoHistorialReparacion(
+        vehiculo_id=vehiculo.id,
+        solicitud_id=solicitud.id,
+        tenant_id=solicitud.tenant_id,
+        fecha_servicio=solicitud.fecha_finalizado or datetime.utcnow(),
+    )
+    item.taller_id = solicitud.taller_id
+    item.tecnico_id = solicitud.tecnico_id or (tecnico_actual.id if tecnico_actual else None)
+    item.tenant_id = solicitud.tenant_id
+    item.titulo = titulo
+    item.diagnostico = diagnostico
+    item.acciones_realizadas = acciones
+    item.categoria = solicitud.clasificacion_ia
+    item.prioridad = solicitud.prioridad_ia
+    item.costo = solicitud.precio_cobrado
+    item.estado_pago = solicitud.estado_pago or "pendiente"
+    item.observaciones = observaciones
+    item.fecha_servicio = solicitud.fecha_finalizado or item.fecha_servicio or datetime.utcnow()
+    item.fecha_actualizacion = datetime.utcnow()
+    session.add(item)
+
+
 def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRead:
     data = SolicitudRead.model_validate(solicitud)
     taller_nombre = None
@@ -645,8 +721,10 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
         tecnico = session.get(Tecnico, solicitud.tecnico_id)
         if tecnico:
             tecnico_nombre = tecnico.nombre
-            tecnico_latitud = tecnico.latitud
-            tecnico_longitud = tecnico.longitud
+            # Tracking live: preferimos la posicion actualizada por los pings
+            # del mecanico. Si aun no existe, usamos la ubicacion base.
+            tecnico_latitud = tecnico.latitud_actual if tecnico.latitud_actual is not None else tecnico.latitud
+            tecnico_longitud = tecnico.longitud_actual if tecnico.longitud_actual is not None else tecnico.longitud
             if tecnico_latitud is not None and tecnico_longitud is not None:
                 distancia_tecnico_km = round(
                     haversine_km(solicitud.latitud, solicitud.longitud, tecnico_latitud, tecnico_longitud),
@@ -905,7 +983,6 @@ def crear_solicitud(
     if cliente_sync_id:
         existing_statement = (
             select(Solicitud)
-            .where(Solicitud.tenant_id == current_user.tenant_id)
             .where(Solicitud.cliente_sync_id == cliente_sync_id)
         )
         if current_user.role == UserRole.DRIVER:
@@ -1039,7 +1116,7 @@ def listar_solicitudes(
             select(Solicitud)
             .join(Vehiculo)
             .where(Vehiculo.propietario_id == current_user.id)
-            .where(Solicitud.tenant_id == current_user.tenant_id)
+            .order_by(Solicitud.fecha_creacion.desc())
             .offset(skip)
             .limit(limit)
         ).all()
@@ -1148,7 +1225,6 @@ def listar_reportes_cliente(
         select(Solicitud)
         .join(Vehiculo)
         .where(Vehiculo.propietario_id == current_user.id)
-        .where(Solicitud.tenant_id == current_user.tenant_id)
         .order_by(Solicitud.fecha_creacion.desc())
         .offset(skip)
         .limit(limit)
@@ -1247,6 +1323,17 @@ def actualizar_mi_asignacion_estado(
         session.add(tecnico)
     elif nuevo_estado == EstadoSolicitud.FINALIZADO:
         solicitud.fecha_finalizado = datetime.utcnow()  # KPI: cumplimiento SLA
+        if not solicitud.precio_cobrado or not solicitud.comision_plataforma:
+            solicitud.precio_cobrado, solicitud.comision_plataforma = estimate_pricing(
+                solicitud.clasificacion_ia,
+                solicitud.prioridad_ia,
+            )
+        registrar_historial_vehiculo_desde_solicitud(
+            session,
+            solicitud,
+            tecnico=tecnico,
+            observaciones="Ficha creada automaticamente al finalizar la atencion.",
+        )
         notificar_servicio_terminado(session, solicitud, tecnico)
     elif nuevo_estado == EstadoSolicitud.CANCELADO:
         notificar_cancelacion_mecanico_a_taller_y_conductor(session, solicitud, tecnico)
@@ -1804,6 +1891,13 @@ def actualizar_estado_solicitud(
         elif nuevo_estado in {EstadoSolicitud.LLEGADA, EstadoSolicitud.TECNICO_LLEGO} and assigned_tecnico:
             notificar_llegada_mecanico(session, solicitud, assigned_tecnico)
         elif nuevo_estado in {EstadoSolicitud.RESUELTA, EstadoSolicitud.FINALIZADO}:
+            solicitud.fecha_finalizado = solicitud.fecha_finalizado or datetime.utcnow()
+            registrar_historial_vehiculo_desde_solicitud(
+                session,
+                solicitud,
+                tecnico=assigned_tecnico,
+                observaciones="Ficha creada automaticamente al cerrar el servicio.",
+            )
             notificar_servicio_terminado(session, solicitud, assigned_tecnico)
         elif nuevo_estado in {EstadoSolicitud.CANCELADA, EstadoSolicitud.CANCELADO}:
             if current_user.role == UserRole.WORKSHOP and taller:
@@ -1918,6 +2012,11 @@ def actualizar_costo_solicitud(
         raise HTTPException(status_code=400, detail="No se puede cobrar una solicitud cancelada")
     if solicitud.estado_pago == "pagado":
         raise HTTPException(status_code=400, detail="No se puede modificar un servicio ya pagado")
+    if solicitud.cotizacion_seleccionada_id:
+        raise HTTPException(
+            status_code=400,
+            detail="El monto ya fue acordado en una cotizacion aceptada y no puede cambiarse.",
+        )
 
     monto = round(float(payload.monto), 2)
     if monto <= 0:
@@ -1961,7 +2060,9 @@ def pagar_solicitud(
             solicitud.prioridad_ia,
         )
 
-    monto = payload.monto if payload.monto is not None else solicitud.precio_cobrado
+    monto = solicitud.precio_cobrado if solicitud.cotizacion_seleccionada_id else (
+        payload.monto if payload.monto is not None else solicitud.precio_cobrado
+    )
     if monto is None or monto <= 0:
         raise HTTPException(status_code=400, detail="Monto de pago invalido")
 
@@ -1981,6 +2082,12 @@ def pagar_solicitud(
             referencia=f"SIM-{solicitud.id}-{int(solicitud.fecha_pago.timestamp())}",
         )
     )
+    registrar_historial_vehiculo_desde_solicitud(
+        session,
+        solicitud,
+        observaciones="Pago confirmado por el cliente; comprobante registrado en el historial.",
+    )
+    notificar_pago_confirmado_taller(session, solicitud)
     session.add(solicitud)
     registrar_auditoria(
         session,

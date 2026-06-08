@@ -887,6 +887,16 @@ class AppController extends ChangeNotifier {
     return preview;
   }
 
+  Future<List<VehicleRepairHistory>> fetchVehicleHistory(int vehicleId) async {
+    if (!isAuthenticated) {
+      throw ApiException('Debes iniciar sesion para ver el historial.');
+    }
+    return ApiClient(
+      baseUrl: _baseUrl,
+      token: _accessToken,
+    ).fetchVehicleHistory(vehicleId);
+  }
+
   List<Cotizacion> cotizacionesFor(int requestId) {
     return List.unmodifiable(_cotizacionesByRequest[requestId] ?? const []);
   }
@@ -1021,9 +1031,11 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> sendCurrentMechanicLocation(EmergencyRequest request) async {
+  Future<Position> sendCurrentMechanicLocation(EmergencyRequest request) async {
     if (!isAuthenticated || _currentUser?.role != 'tecnico') {
-      return;
+      throw ApiException(
+        'Solo el mecanico asignado puede compartir ubicacion.',
+      );
     }
 
     var permission = await Geolocator.checkPermission();
@@ -1049,6 +1061,8 @@ class AppController extends ChangeNotifier {
       velocidadKmh: position.speed.isFinite ? position.speed * 3.6 : null,
       rumboGrados: position.heading.isFinite ? position.heading : null,
     );
+
+    return position;
   }
 
   LocalRequestMeta? metaFor(int requestId) {

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, select
+from sqlmodel import Session, or_, select
 
 import re
 
@@ -261,7 +261,15 @@ def login_worker(payload: LoginWorkerPayload, db: Session = Depends(get_session)
     if not taller or not taller.activo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Taller no encontrado o inactivo.")
 
-    user = db.exec(select(User).where(User.username == payload.username.strip())).first()
+    identifier = payload.username.strip().lower()
+    user = db.exec(
+        select(User).where(
+            or_(
+                User.username == payload.username.strip(),
+                User.email == identifier,
+            )
+        )
+    ).first()
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

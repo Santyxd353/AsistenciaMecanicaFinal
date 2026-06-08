@@ -1,8 +1,6 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { ActivatedRoute, RouterModule } from '@angular/router';
-import { forkJoin } from 'rxjs';
-
 import {
   MechanicProfile,
   MechanicProfileService,
@@ -154,6 +152,7 @@ import {
 export class MechanicProfileComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly service = inject(MechanicProfileService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   profile: MechanicProfile | null = null;
   ratings: MechanicRating[] = [];
@@ -172,19 +171,51 @@ export class MechanicProfileComponent implements OnInit {
       this.loading = false;
       return;
     }
-    // Lanzamos perfil + ratings en paralelo para una sola pasada de loading.
-    forkJoin({
-      profile: this.service.getProfile(id),
-      ratings: this.service.listRatings(id, 0, 20),
-    }).subscribe({
-      next: ({ profile, ratings }) => {
-        this.profile = profile;
-        this.ratings = ratings;
+    const fallbackTimer = window.setTimeout(() => {
+      if (!this.loading) {
+        return;
+      }
+      this.error = 'No se pudo cargar el perfil. Verifica tu sesion e intenta nuevamente.';
+      this.loading = false;
+      this.cdr.detectChanges();
+    }, 10000);
+    // Lanzamos perfil + ratings en paralelo. Si una de las llamadas falla,
+    // forkJoin emite error → quedamos sin perfil ni ratings. Cargamos cada
+    // una por separado para que un fallo parcial (p. ej. ratings 500) no
+    // bloquee el render del perfil principal.
+    this.service.getProfile(id).subscribe({
+      next: (profile) => {
+        window.clearTimeout(fallbackTimer);
+        this.profile = {
+          ...profile,
+          especialidades: Array.isArray(profile.especialidades) ? profile.especialidades : [],
+          calificacion_promedio: Number(profile.calificacion_promedio || 0),
+          total_calificaciones: Number(profile.total_calificaciones || 0),
+          total_servicios_finalizados: Number(profile.total_servicios_finalizados || 0),
+        };
         this.loading = false;
+        this.cdr.detectChanges();
       },
       error: (err) => {
-        this.error = err?.error?.detail || 'No se pudo cargar el perfil del mecánico.';
+        window.clearTimeout(fallbackTimer);
+        // eslint-disable-next-line no-console
+        console.error('[mechanic-profile] perfil error', err);
+        this.error =
+          err?.error?.detail ||
+          err?.message ||
+          `No se pudo cargar el perfil del mecánico (HTTP ${err?.status ?? '?'}).`;
         this.loading = false;
+        this.cdr.detectChanges();
+      },
+    });
+    this.service.listRatings(id, 0, 20).subscribe({
+      next: (ratings) => {
+        this.ratings = Array.isArray(ratings) ? ratings : [];
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        // eslint-disable-next-line no-console
+        console.warn('[mechanic-profile] ratings error', err);
       },
     });
   }

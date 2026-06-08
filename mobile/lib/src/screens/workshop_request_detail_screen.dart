@@ -1,11 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_controller.dart';
 import '../models.dart';
 import '../repositories.dart';
+import '../widgets/vehicle_history_card.dart';
 
 class WorkshopRequestDetailScreen extends StatefulWidget {
   const WorkshopRequestDetailScreen({super.key, required this.requestId});
@@ -172,6 +178,18 @@ class _WorkshopRequestDetailScreenState
               ),
             ),
             const SizedBox(height: 14),
+            if (request.vehiculoId != null) ...[
+              VehicleHistoryCard(
+                vehicleId: request.vehiculoId!,
+                title: 'Historia clinica del vehiculo',
+              ),
+              const SizedBox(height: 14),
+            ],
+            if (controller.currentUser?.role == 'tecnico' &&
+                request.serviceInProgress) ...[
+              _MechanicTrackingMapCard(request: request),
+              const SizedBox(height: 14),
+            ],
             _SectionCard(
               title: 'Cobro del servicio',
               child: Column(
@@ -384,6 +402,276 @@ class _WorkshopRequestDetailScreenState
       'https://www.google.com/maps/dir/?api=1&destination=${request.latitud},${request.longitud}&travelmode=driving',
     );
     await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
+
+class _MechanicTrackingMapCard extends StatefulWidget {
+  const _MechanicTrackingMapCard({required this.request});
+
+  final EmergencyRequest request;
+
+  @override
+  State<_MechanicTrackingMapCard> createState() =>
+      _MechanicTrackingMapCardState();
+}
+
+class _MechanicTrackingMapCardState extends State<_MechanicTrackingMapCard> {
+  final MapController _mapController = MapController();
+  StreamSubscription<Position>? _positionSub;
+  Position? _lastPosition;
+  String? _errorText;
+  bool _sending = false;
+  bool _started = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startLocalTracking());
+  }
+
+  @override
+  void didUpdateWidget(covariant _MechanicTrackingMapCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.request.id != widget.request.id) {
+      _positionSub?.cancel();
+      _positionSub = null;
+      _lastPosition = null;
+      _errorText = null;
+      _started = false;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _startLocalTracking(),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _positionSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _startLocalTracking() async {
+    if (_started || !mounted) return;
+    _started = true;
+
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          setState(() {
+            _errorText =
+                'Activa el permiso de ubicacion para ver tu ruta en vivo.';
+          });
+        }
+        return;
+      }
+
+      final current = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+      _setPosition(current);
+
+      _positionSub =
+          Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 5,
+            ),
+          ).listen(
+            _setPosition,
+            onError: (Object error) {
+              if (!mounted) return;
+              setState(() {
+                _errorText = 'No se pudo actualizar GPS: $error';
+              });
+            },
+          );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _errorText = error.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  void _setPosition(Position position) {
+    if (!mounted) return;
+    setState(() {
+      _lastPosition = position;
+      _errorText = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final center = _centerFor(position);
+      _mapController.move(center, 13);
+    });
+  }
+
+  LatLng _centerFor(Position position) {
+    return LatLng(
+      (position.latitude + widget.request.latitud) / 2,
+      (position.longitude + widget.request.longitud) / 2,
+    );
+  }
+
+  Future<void> _shareNow(AppController controller) async {
+    setState(() {
+      _sending = true;
+      _errorText = null;
+    });
+    try {
+      final position = await controller.sendCurrentMechanicLocation(
+        widget.request,
+      );
+      _setPosition(position);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ubicacion enviada al cliente.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _errorText = error.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _sending = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<AppController>();
+    final destination = LatLng(widget.request.latitud, widget.request.longitud);
+    final mechanic = _lastPosition == null
+        ? null
+        : LatLng(_lastPosition!.latitude, _lastPosition!.longitude);
+    final center = mechanic == null
+        ? destination
+        : LatLng(
+            (mechanic.latitude + destination.latitude) / 2,
+            (mechanic.longitude + destination.longitude) / 2,
+          );
+
+    return _SectionCard(
+      title: 'Ruta al cliente',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: SizedBox(
+              height: 260,
+              child: FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(initialCenter: center, initialZoom: 13),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.rutasos.mobile',
+                  ),
+                  if (mechanic != null)
+                    PolylineLayer(
+                      polylines: [
+                        Polyline(
+                          points: [mechanic, destination],
+                          strokeWidth: 5,
+                          color: const Color(0xFF8D5524),
+                        ),
+                      ],
+                    ),
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: destination,
+                        width: 46,
+                        height: 46,
+                        child: const Icon(
+                          Icons.location_pin,
+                          color: Color(0xFFB3261E),
+                          size: 42,
+                        ),
+                      ),
+                      if (mechanic != null)
+                        Marker(
+                          point: mechanic,
+                          width: 46,
+                          height: 46,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.18),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.engineering,
+                              color: Color(0xFF2E7D32),
+                              size: 30,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  mechanic == null
+                      ? 'Esperando GPS del mecanico.'
+                      : 'Ubicacion activa. El cliente recibe el movimiento en tiempo real.',
+                  style: const TextStyle(
+                    color: Color(0xFF6F655B),
+                    height: 1.35,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              FilledButton.icon(
+                onPressed: _sending ? null : () => _shareNow(controller),
+                icon: _sending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.near_me_outlined),
+                label: Text(_sending ? 'Enviando' : 'Compartir'),
+              ),
+            ],
+          ),
+          if (_errorText != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _errorText!,
+              style: const TextStyle(
+                color: Color(0xFFB3261E),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 

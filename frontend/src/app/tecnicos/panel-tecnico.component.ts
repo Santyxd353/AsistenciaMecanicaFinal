@@ -4,6 +4,7 @@ import { Component, OnInit } from '@angular/core';
 import { AuthService } from '../core/auth.service';
 import { Solicitud, SolicitudService } from '../core/incident.service';
 import { Tecnico, TecnicoService } from '../core/tecnico.service';
+import { VehicleRepairHistory, VehicleService } from '../core/vehicle.service';
 
 @Component({
   selector: 'app-panel-tecnico',
@@ -21,11 +22,16 @@ export class PanelTecnicoComponent implements OnInit {
   errorAsignaciones = '';
   actualizandoDisponibilidad = false;
   actualizandoSolicitudId: number | null = null;
+  historialPorVehiculo: Record<number, VehicleRepairHistory[]> = {};
+  historialAbiertoSolicitudId: number | null = null;
+  historialCargandoSolicitudId: number | null = null;
+  historialError = '';
 
   constructor(
     private authService: AuthService,
     private tecnicoService: TecnicoService,
-    private solicitudService: SolicitudService
+    private solicitudService: SolicitudService,
+    private vehicleService: VehicleService
   ) {}
 
   ngOnInit(): void {
@@ -118,6 +124,36 @@ export class PanelTecnicoComponent implements OnInit {
       error: (error) => {
         this.errorAsignaciones = error?.error?.detail || 'No se pudo actualizar el estado de la asignación.';
         this.actualizandoSolicitudId = null;
+      }
+    });
+  }
+
+  toggleHistorialVehiculo(asignacion: Solicitud): void {
+    if (!asignacion.vehiculo_id) {
+      this.historialError = 'La solicitud no tiene vehiculo asociado.';
+      return;
+    }
+    if (this.historialAbiertoSolicitudId === asignacion.id) {
+      this.historialAbiertoSolicitudId = null;
+      this.historialError = '';
+      return;
+    }
+
+    this.historialAbiertoSolicitudId = asignacion.id;
+    this.historialError = '';
+    if (this.historialPorVehiculo[asignacion.vehiculo_id]) {
+      return;
+    }
+
+    this.historialCargandoSolicitudId = asignacion.id;
+    this.vehicleService.getVehicleHistory(asignacion.vehiculo_id).subscribe({
+      next: (items) => {
+        this.historialPorVehiculo[asignacion.vehiculo_id!] = Array.isArray(items) ? items : [];
+        this.historialCargandoSolicitudId = null;
+      },
+      error: (error) => {
+        this.historialError = error?.error?.detail || 'No se pudo cargar el historial del vehiculo.';
+        this.historialCargandoSolicitudId = null;
       }
     });
   }

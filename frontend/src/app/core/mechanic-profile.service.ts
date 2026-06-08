@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { timeout } from 'rxjs/operators';
 
 import { Especialidad } from './especialidad.service';
 
@@ -41,14 +42,14 @@ export class MechanicProfileService {
 
   /** Datos públicos del mecánico (sin CI, dirección, email). */
   getProfile(id: number): Observable<MechanicProfile> {
-    return this.http.get<MechanicProfile>(`${this.apiUrl}/${id}/perfil`);
+    return this.http.get<MechanicProfile>(`${this.apiUrl}/${id}/perfil`).pipe(timeout(8000));
   }
 
   /** Listado paginado de calificaciones recibidas. */
   listRatings(id: number, skip = 0, limit = 20): Observable<MechanicRating[]> {
     return this.http.get<MechanicRating[]>(
       `${this.apiUrl}/${id}/calificaciones?skip=${skip}&limit=${limit}`,
-    );
+    ).pipe(timeout(8000));
   }
 
   /** El cliente califica al mecánico por una solicitud finalizada concreta. */

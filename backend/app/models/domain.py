@@ -303,6 +303,61 @@ class VehiculoUpdate(SQLModel):
     color: Optional[str] = None
 
 
+class VehiculoHistorialReparacionBase(SQLModel):
+    """Historia clinica del vehiculo.
+
+    Cada servicio finalizado deja una ficha tecnica ligada al auto. Taller y
+    mecanico asignados pueden verla antes/durante la atencion para detectar
+    fallas repetidas; el cliente ve el historial de sus propios vehiculos.
+    """
+
+    vehiculo_id: int = Field(foreign_key="vehiculo.id", index=True)
+    solicitud_id: Optional[int] = Field(default=None, foreign_key="solicitud.id", index=True)
+    taller_id: Optional[int] = Field(default=None, foreign_key="taller.id", index=True)
+    tecnico_id: Optional[int] = Field(default=None, foreign_key="tecnico.id", index=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="tenant.id", index=True)
+    titulo: str = Field(default="Atencion mecanica")
+    diagnostico: Optional[str] = None
+    acciones_realizadas: Optional[str] = None
+    categoria: Optional[str] = Field(default=None, index=True)
+    prioridad: Optional[str] = None
+    costo: Optional[float] = None
+    estado_pago: Optional[str] = Field(default="pendiente", index=True)
+    kilometraje: Optional[int] = None
+    observaciones: Optional[str] = None
+    fecha_servicio: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class VehiculoHistorialReparacion(VehiculoHistorialReparacionBase, table=True):
+    __tablename__ = "vehiculo_historial_reparacion"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    fecha_creacion: datetime = Field(default_factory=datetime.utcnow, index=True)
+    fecha_actualizacion: datetime = Field(default_factory=datetime.utcnow)
+
+
+class VehiculoHistorialCreate(SQLModel):
+    solicitud_id: Optional[int] = None
+    titulo: str = "Atencion mecanica"
+    diagnostico: Optional[str] = None
+    acciones_realizadas: Optional[str] = None
+    categoria: Optional[str] = None
+    prioridad: Optional[str] = None
+    costo: Optional[float] = None
+    estado_pago: Optional[str] = "pendiente"
+    kilometraje: Optional[int] = None
+    observaciones: Optional[str] = None
+
+
+class VehiculoHistorialRead(VehiculoHistorialReparacionBase):
+    id: int
+    fecha_creacion: datetime
+    fecha_actualizacion: datetime
+    taller_nombre: Optional[str] = None
+    tecnico_nombre: Optional[str] = None
+    solicitud_estado: Optional[str] = None
+
+
 class EspecialidadBase(SQLModel):
     nombre: str = Field(index=True, unique=True)
 

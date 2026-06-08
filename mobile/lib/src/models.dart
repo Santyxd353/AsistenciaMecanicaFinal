@@ -559,6 +559,80 @@ class WorkshopStats {
   }
 }
 
+class VehicleRepairHistory {
+  const VehicleRepairHistory({
+    required this.id,
+    required this.vehicleId,
+    required this.title,
+    required this.serviceDate,
+    this.requestId,
+    this.workshopId,
+    this.technicianId,
+    this.workshopName,
+    this.technicianName,
+    this.diagnosis,
+    this.actions,
+    this.category,
+    this.priority,
+    this.cost,
+    this.paymentStatus,
+    this.mileage,
+    this.notes,
+    this.requestStatus,
+  });
+
+  final int id;
+  final int vehicleId;
+  final int? requestId;
+  final int? workshopId;
+  final int? technicianId;
+  final String title;
+  final String? diagnosis;
+  final String? actions;
+  final String? category;
+  final String? priority;
+  final double? cost;
+  final String? paymentStatus;
+  final int? mileage;
+  final String? notes;
+  final DateTime serviceDate;
+  final String? workshopName;
+  final String? technicianName;
+  final String? requestStatus;
+
+  factory VehicleRepairHistory.fromApi(Map<String, dynamic> json) {
+    double? readDouble(dynamic value) {
+      if (value == null) return null;
+      if (value is int) return value.toDouble();
+      if (value is double) return value;
+      return double.tryParse(value.toString());
+    }
+
+    return VehicleRepairHistory(
+      id: json['id'] as int? ?? 0,
+      vehicleId: json['vehiculo_id'] as int? ?? 0,
+      requestId: json['solicitud_id'] as int?,
+      workshopId: json['taller_id'] as int?,
+      technicianId: json['tecnico_id'] as int?,
+      title: json['titulo'] as String? ?? 'Atencion mecanica',
+      diagnosis: json['diagnostico'] as String?,
+      actions: json['acciones_realizadas'] as String?,
+      category: json['categoria'] as String?,
+      priority: json['prioridad'] as String?,
+      cost: readDouble(json['costo']),
+      paymentStatus: json['estado_pago'] as String?,
+      mileage: json['kilometraje'] as int?,
+      notes: json['observaciones'] as String?,
+      serviceDate:
+          DateTime.tryParse(json['fecha_servicio']?.toString() ?? '') ??
+          DateTime.now(),
+      workshopName: json['taller_nombre'] as String?,
+      technicianName: json['tecnico_nombre'] as String?,
+      requestStatus: json['solicitud_estado'] as String?,
+    );
+  }
+}
+
 class EmergencyRequest {
   const EmergencyRequest({
     required this.id,

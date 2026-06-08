@@ -21,6 +21,9 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   const publicAuthPaths = [
     '/api/v1/auth/login',
+    '/api/v1/auth/login/worker',
+    '/api/v1/auth/login/admin',
+    '/api/v1/auth/login/client',
     '/api/v1/auth/register/client',
     '/api/v1/auth/register/workshop',
     '/api/v1/auth/forgot-password',
@@ -36,9 +39,19 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(authedReq).pipe(
     catchError((err: unknown) => {
-      if (err instanceof HttpErrorResponse && err.status === 401 && !isPublic) {
-        // Sesión inválida. No queremos un loop si el propio /login también
-        // devuelve 401, por eso lo excluimos vía `isPublic`.
+      // Solo redirigimos cuando el 401 corresponde a una "sesión expirada":
+      //   * había un token en localStorage (el usuario CREÍA estar logueado)
+      //   * y la request NO era pública.
+      // Si el usuario está anónimo (sin token), el 401 lo maneja la pantalla
+      // que disparó la request — redirigir al /login bloquea flujos públicos
+      // como `/planes` → `/checkout` → `/onboarding/taller`, que solo se
+      // autentica al final del registro del taller.
+      if (
+        err instanceof HttpErrorResponse &&
+        err.status === 401 &&
+        !isPublic &&
+        token
+      ) {
         localStorage.removeItem('token');
         localStorage.removeItem('role');
         localStorage.removeItem('currentUser');

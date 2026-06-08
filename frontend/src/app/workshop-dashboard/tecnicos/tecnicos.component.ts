@@ -68,7 +68,8 @@ export class TecnicosComponent implements OnInit {
     nombre: string;
     email: string;
     username: string;
-    password: string;
+    password: string | null;
+    recuperadaLocalmente?: boolean;
   } | null = null;
   credencialesCopiado = '';
 
@@ -381,6 +382,10 @@ export class TecnicosComponent implements OnInit {
               password: res.password_temporal,
             };
             this.credencialesCopiado = '';
+            // Persistimos en localStorage para que el operador pueda volver
+            // a verlas (botón "Ver credenciales" en la card del mecánico) si
+            // recargó la página o cerró el diálogo sin copiar.
+            this.persistirCredenciales(res.id, this.credencialesDialog);
           }
           setTimeout(() => this.cargar(), 0);
         },
@@ -590,6 +595,94 @@ export class TecnicosComponent implements OnInit {
     this.credencialesCopiado = '';
   }
 
+  /**
+   * Persistencia local de las credenciales generadas. Clave
+   * `tecnico-creds-<id>`. NO se reenvían al backend ni se sincronizan entre
+   * dispositivos; viven hasta que el operador haga "Olvidar credenciales" o
+   * limpie el storage del navegador.
+   *
+   * Decisión: aceptamos guardar el password en claro en localStorage del
+   * operador porque (a) es un password TEMPORAL que el mecánico debe cambiar
+   * en su primer login y (b) la alternativa de no poder recuperarlas obliga
+   * a borrar y recrear al mecánico cada vez que se pierde el copy-paste.
+   */
+  private credencialesKey(id: number): string {
+    return `tecnico-creds-${id}`;
+  }
+
+  private persistirCredenciales(
+    id: number,
+    data: { nombre: string; email: string; username: string; password: string | null },
+  ): void {
+    try {
+      localStorage.setItem(this.credencialesKey(id), JSON.stringify(data));
+    } catch {
+      // Cuota o modo privado: silenciamos, el operador ya las ve en pantalla.
+    }
+  }
+
+  tieneCredencialesGuardadas(id: number): boolean {
+    try {
+      return !!localStorage.getItem(this.credencialesKey(id));
+    } catch {
+      return false;
+    }
+  }
+
+  puedeVerCredenciales(tecnico: Tecnico): boolean {
+    return !!tecnico.id_usuario || this.tieneCredencialesGuardadas(tecnico.id);
+  }
+
+  mostrarCredenciales(tecnico: Tecnico): void {
+    try {
+      const raw = localStorage.getItem(this.credencialesKey(tecnico.id));
+      if (raw) {
+        this.credencialesDialog = {
+          ...JSON.parse(raw),
+          recuperadaLocalmente: true,
+        };
+        this.credencialesCopiado = '';
+        return;
+      }
+    } catch (err) {
+      console.warn('[tecnicos] credenciales locales corruptas', err);
+      localStorage.removeItem(this.credencialesKey(tecnico.id));
+    }
+
+    this.credencialesDialog = {
+      nombre: tecnico.nombre,
+      email: tecnico.usuario_email || tecnico.email || 'No disponible',
+      username: tecnico.usuario_username || `Usuario vinculado #${tecnico.id_usuario}`,
+      password: null,
+      recuperadaLocalmente: false,
+    };
+    this.credencialesCopiado = '';
+  }
+
+  mostrarCredencialesGuardadas(id: number): void {
+    try {
+      const raw = localStorage.getItem(this.credencialesKey(id));
+      if (!raw) return;
+      this.credencialesDialog = JSON.parse(raw);
+      this.credencialesCopiado = '';
+    } catch (err) {
+      // Si el JSON quedó corrupto, lo quitamos para no insistir.
+      console.warn('[tecnicos] credenciales locales corruptas', err);
+      localStorage.removeItem(this.credencialesKey(id));
+    }
+  }
+
+  olvidarCredenciales(id: number): void {
+    try {
+      localStorage.removeItem(this.credencialesKey(id));
+    } catch {
+      /* noop */
+    }
+    if (this.credencialesDialog) {
+      this.credencialesDialog = null;
+    }
+  }
+
   /** Copia el conjunto de credenciales al clipboard del operador. */
   async copiarCredenciales(): Promise<void> {
     const c = this.credencialesDialog;
@@ -598,7 +691,7 @@ export class TecnicosComponent implements OnInit {
       `Mecánico: ${c.nombre}\n` +
       `Correo (login): ${c.email}\n` +
       `Usuario: ${c.username}\n` +
-      `Contraseña temporal: ${c.password}`;
+      `Contraseña temporal: ${c.password || 'No disponible. Restablece o genera una nueva.'}`;
     try {
       await navigator.clipboard.writeText(text);
       this.credencialesCopiado = 'Credenciales copiadas al portapapeles.';
@@ -619,4 +712,3 @@ export class TecnicosComponent implements OnInit {
     return fallback;
   }
 }
-

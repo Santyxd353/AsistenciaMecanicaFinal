@@ -3,6 +3,7 @@ import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { Subscription, forkJoin } from 'rxjs';
+import { finalize, timeout } from 'rxjs/operators';
 
 import { Solicitud, SolicitudService } from '../core/incident.service';
 import {
@@ -13,6 +14,7 @@ import { Tecnico, TecnicoService } from '../core/tecnico.service';
 import { Taller, WorkshopProfileService } from '../core/workshop-profile.service';
 import { RealtimeEvent, RealtimeService } from '../core/realtime.service';
 import { CotizacionService } from '../core/cotizacion.service';
+import { VehicleRepairHistory, VehicleService } from '../core/vehicle.service';
 
 @Component({
   selector: 'app-taller-solicitudes',
@@ -40,6 +42,10 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
   guardandoCotizacion = false;
   errorCotizacion = '';
   mensajeCotizacion = '';
+  cotizacionesEnviadasIds = new Set<number>();
+  cargandoHistorialVehiculo = false;
+  errorHistorialVehiculo = '';
+  historialVehiculo: VehicleRepairHistory[] = [];
   alertaRealtime = '';
   montoCobro: number | null = null;
   cotizacionDraft = {
@@ -73,6 +79,7 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
     private workshopProfileService: WorkshopProfileService,
     private realtimeService: RealtimeService,
     private cotizacionService: CotizacionService,
+    private vehicleService: VehicleService,
     private cdr: ChangeDetectorRef
   ) {}
 
@@ -282,6 +289,7 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
     };
     this.tecnicoSeleccionadoId = solicitud.tecnico_id ?? null;
     this.solicitudSeleccionada = solicitud;
+    this.cargarHistorialVehiculo(solicitud);
     this.conectarSolicitudRealtime(solicitud);
   }
 
@@ -298,6 +306,9 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
     this.errorCotizacion = '';
     this.mensajeCotizacion = '';
     this.guardandoCotizacion = false;
+    this.cargandoHistorialVehiculo = false;
+    this.errorHistorialVehiculo = '';
+    this.historialVehiculo = [];
     this.montoCobro = null;
     this.tecnicoSeleccionadoId = null;
     this.solicitudSeleccionada = null;
@@ -312,8 +323,23 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
     return `Bs ${(Number(this.montoCobro) * 0.10).toFixed(2)}`;
   }
 
+  get costoBloqueadoPorCotizacion(): boolean {
+    return !!this.solicitudSeleccionada?.cotizacion_seleccionada_id;
+  }
+
+  get puedeEditarCostoSolicitud(): boolean {
+    return !!this.solicitudSeleccionada
+      && !this.costoBloqueadoPorCotizacion
+      && this.solicitudSeleccionada.estado_pago !== 'pagado';
+  }
+
   guardarCostoSolicitud(): void {
     if (!this.solicitudSeleccionada) {
+      return;
+    }
+    if (!this.puedeEditarCostoSolicitud) {
+      this.errorCostoSolicitud = 'El monto acordado en la cotizacion no puede cambiarse.';
+      this.mensajeCostoSolicitud = '';
       return;
     }
 
@@ -345,7 +371,8 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
 
   get puedeCotizarSolicitud(): boolean {
     return !!this.solicitudSeleccionada
-      && ['pendiente', 'buscando_taller'].includes(this.solicitudSeleccionada.estado);
+      && ['pendiente', 'buscando_taller'].includes(this.solicitudSeleccionada.estado)
+      && !this.cotizacionesEnviadasIds.has(this.solicitudSeleccionada.id);
   }
 
   enviarCotizacion(): void {
@@ -365,14 +392,21 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
     this.guardandoCotizacion = true;
     this.errorCotizacion = '';
     this.mensajeCotizacion = '';
-    this.cotizacionService.crear(this.solicitudSeleccionada.id, {
+    const solicitudId = this.solicitudSeleccionada.id;
+    this.cotizacionService.crear(solicitudId, {
       costo_estimado: costo,
       eta_llegada_minutos: eta,
       tiempo_reparacion_horas: horas,
       descripcion: this.cotizacionDraft.descripcion.trim(),
       incluye_repuestos: this.cotizacionDraft.incluye_repuestos,
       garantia_dias: Number(this.cotizacionDraft.garantia_dias) || 0,
-    }).subscribe({
+    }).pipe(
+      timeout(12000),
+      finalize(() => {
+        this.guardandoCotizacion = false;
+        this.cdr.detectChanges();
+      }),
+    ).subscribe({
       next: () => {
         this.guardandoCotizacion = false;
         this.mensajeCotizacion = 'Cotizacion enviada al cliente.';
@@ -398,6 +432,7 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
         this.tecnicoSeleccionadoId = null;
         this.vistaActiva = 'mis-solicitudes';
         this.aceptandoSolicitud = false;
+        this.cargarHistorialVehiculo(solicitudActualizada);
         this.cargarSolicitudes();
       },
       error: (error) => {
@@ -443,6 +478,7 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
         this.solicitudSeleccionada = solicitudActualizada;
         this.tecnicoSeleccionadoId = solicitudActualizada.tecnico_id ?? null;
         this.asignandoTecnico = false;
+        this.cargarHistorialVehiculo(solicitudActualizada);
         this.cargarSolicitudes();
         this.cargarTecnicos();
       },
@@ -654,6 +690,27 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
       this.solicitudSeleccionada = { ...this.solicitudSeleccionada, ...patch };
     }
     this.cdr.detectChanges();
+  }
+
+  private cargarHistorialVehiculo(solicitud: Solicitud): void {
+    this.historialVehiculo = [];
+    this.errorHistorialVehiculo = '';
+    if (!solicitud.vehiculo_id || !solicitud.taller_id) {
+      return;
+    }
+    this.cargandoHistorialVehiculo = true;
+    this.vehicleService.getVehicleHistory(solicitud.vehiculo_id).subscribe({
+      next: (items) => {
+        this.historialVehiculo = Array.isArray(items) ? items : [];
+        this.cargandoHistorialVehiculo = false;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        this.errorHistorialVehiculo = error?.error?.detail || 'No se pudo cargar el historial del vehiculo.';
+        this.cargandoHistorialVehiculo = false;
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   private mostrarAlertaRealtime(message: string): void {

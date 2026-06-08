@@ -25,9 +25,11 @@ from app.models.domain import (
     Cotizacion,
     CotizacionCreate,
     CotizacionRead,
+    EstadoCandidato,
     EstadoCotizacion,
     EstadoSolicitud,
     Solicitud,
+    SolicitudCandidato,
     Taller,
     TipoNotificacion,
     Vehiculo,
@@ -71,6 +73,37 @@ def _read(session: Session, cotizacion: Cotizacion) -> CotizacionRead:
     })
 
 
+def _taller_puede_cotizar_solicitud(
+    session: Session,
+    taller: Taller,
+    solicitud: Solicitud,
+) -> bool:
+    """Permite cotizar solicitudes de marketplace antes de asignar tenant.
+
+    En el flujo SaaS, el cliente puede vivir en un tenant distinto al taller.
+    La solicitud se transfiere al tenant del taller recien cuando el cliente
+    selecciona una cotizacion o el taller acepta la asistencia.
+    """
+    if solicitud.taller_id is not None:
+        return solicitud.taller_id == taller.id
+
+    if solicitud.estado not in {EstadoSolicitud.PENDIENTE, EstadoSolicitud.BUSCANDO_TALLER}:
+        return False
+
+    candidatos = session.exec(
+        select(SolicitudCandidato)
+        .where(SolicitudCandidato.solicitud_id == solicitud.id)
+    ).all()
+    if candidatos:
+        return any(
+            item.taller_id == taller.id
+            and item.estado not in {EstadoCandidato.RECHAZADO, EstadoCandidato.EXPIRADO}
+            for item in candidatos
+        )
+
+    return solicitud.tenant_id == taller.tenant_id or solicitud.taller_id is None
+
+
 @router.post(
     "/solicitudes/{solicitud_id}",
     response_model=CotizacionRead,
@@ -87,10 +120,10 @@ def crear_cotizacion(
     solicitud = session.get(Solicitud, solicitud_id)
     if not solicitud:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada.")
-    if solicitud.tenant_id != taller.tenant_id:
+    if not _taller_puede_cotizar_solicitud(session, taller, solicitud):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="No puedes cotizar solicitudes de otro tenant.",
+            detail="Este taller no puede cotizar esta solicitud.",
         )
     if solicitud.estado not in {EstadoSolicitud.PENDIENTE, EstadoSolicitud.BUSCANDO_TALLER}:
         raise HTTPException(
@@ -187,7 +220,12 @@ def listar_cotizaciones(
             raise HTTPException(status_code=403, detail="No tienes acceso a esta solicitud.")
     elif current_user.role == UserRole.WORKSHOP:
         taller = _taller_del_usuario(session, current_user)
-        if taller.tenant_id != solicitud.tenant_id:
+        cotizacion_propia = session.exec(
+            select(Cotizacion)
+            .where(Cotizacion.solicitud_id == solicitud_id)
+            .where(Cotizacion.taller_id == taller.id)
+        ).first()
+        if not cotizacion_propia and not _taller_puede_cotizar_solicitud(session, taller, solicitud):
             raise HTTPException(status_code=403, detail="Solicitud fuera de tu tenant.")
 
     cotizaciones = session.exec(
@@ -242,6 +280,8 @@ def seleccionar_cotizacion(
     estado_anterior = solicitud.estado
     taller = session.get(Taller, cotizacion.taller_id)
     solicitud.taller_id = cotizacion.taller_id
+    if taller:
+        solicitud.tenant_id = taller.tenant_id
     solicitud.estado = EstadoSolicitud.ASIGNADA
     solicitud.cotizacion_seleccionada_id = cotizacion.id
     solicitud.precio_cobrado = cotizacion.costo_estimado

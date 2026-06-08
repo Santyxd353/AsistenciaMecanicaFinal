@@ -2,6 +2,7 @@
 import { Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
+import { finalize, timeout } from 'rxjs';
 
 import { AuthService } from '../core/auth.service';
 import { PageTransitionService } from '../core/page-transition.service';
@@ -31,7 +32,7 @@ import { PublicWorkshop, PublicWorkshopsService } from '../core/public-workshops
 
         <form (ngSubmit)="submit()" #form="ngForm">
           <div class="selected" *ngIf="selected">Taller seleccionado: <strong>{{ selected.nombre_comercial }}</strong></div>
-          <label>Usuario
+          <label>Usuario o correo
             <input name="username" [(ngModel)]="username" required [disabled]="!selected">
           </label>
           <label>Contrasena
@@ -112,14 +113,19 @@ export class LoginWorkersComponent {
     if (!this.selected) return;
     this.loading = true;
     this.error = '';
-    this.auth.loginWorker(this.selected.id, this.username.trim(), this.password).subscribe({
+    this.auth.loginWorker(this.selected.id, this.username.trim(), this.password).pipe(
+      timeout(10000),
+      finalize(() => this.loading = false),
+    ).subscribe({
       next: () => {
-        this.loading = false;
         this.pageTransition.navigate('/tecnico');
       },
       error: (err) => {
-        this.loading = false;
-        this.error = err?.error?.detail || 'No se pudo iniciar sesión.';
+        if (err?.name === 'TimeoutError') {
+          this.error = 'El servidor tardó demasiado. Intenta nuevamente.';
+          return;
+        }
+        this.error = err?.error?.detail || 'Usuario/correo o contraseña incorrectos.';
       },
     });
   }

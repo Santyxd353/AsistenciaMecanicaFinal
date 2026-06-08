@@ -266,7 +266,7 @@ class ApiClient {
             'nombre_contacto': nombreContacto.trim(),
           }),
         )
-        .timeout(const Duration(seconds: 45));
+        .timeout(const Duration(seconds: 12));
     return PlanCheckout.fromApi(_decodeObject(response));
   }
 
@@ -474,6 +474,16 @@ class ApiClient {
     }
     final response = await request.send().timeout(const Duration(seconds: 45));
     return VehiclePhotoPreview.fromApi(await _decodeObjectFromStream(response));
+  }
+
+  Future<List<VehicleRepairHistory>> fetchVehicleHistory(int vehicleId) async {
+    final response = await http
+        .get(
+          _uri('/api/v1/vehiculos/$vehicleId/historial'),
+          headers: _headers(),
+        )
+        .timeout(const Duration(seconds: 12));
+    return _decodeList(response).map(VehicleRepairHistory.fromApi).toList();
   }
 
   Future<List<EmergencyRequest>> fetchRequests() async {
