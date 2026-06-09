@@ -138,6 +138,14 @@ export class AuthService {
     );
   }
 
+  uploadProfilePhoto(file: File): Observable<AuthUser> {
+    const formData = new FormData();
+    formData.append('foto', file);
+    return this.http.post<AuthUser>(`${this.apiUrl}/me/foto`, formData).pipe(
+      tap((user) => this.persistUser(user))
+    );
+  }
+
   logout() {
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');

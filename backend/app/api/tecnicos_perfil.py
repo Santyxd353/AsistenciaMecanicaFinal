@@ -119,9 +119,11 @@ def perfil_publico_tecnico(
     # Foto pública: si el mecánico tiene un usuario interno con foto_url, la
     # exponemos; en otro caso queda None y el front muestra un avatar genérico.
     foto_url = None
+    telefono = None
     if tecnico.id_usuario:
         usuario = session.get(User, tecnico.id_usuario)
         foto_url = getattr(usuario, "foto_url", None)
+        telefono = getattr(usuario, "telefono", None)
 
     finalizadas = session.exec(
         select(Solicitud)
@@ -133,6 +135,7 @@ def perfil_publico_tecnico(
         id=tecnico.id or 0,
         nombre=tecnico.nombre,
         foto_url=foto_url,
+        telefono=telefono,
         taller_id=tecnico.taller_id,
         taller_nombre=taller.nombre_comercial if taller else None,
         disponible=tecnico.disponible,

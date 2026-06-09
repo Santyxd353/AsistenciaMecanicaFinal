@@ -24,6 +24,9 @@ class AppController extends ChangeNotifier {
   List<AppNotification> _notifications = const [];
   List<SaaSPlan> _plans = const [];
   List<PublicWorkshop> _publicWorkshops = const [];
+  List<CatalogItem> _workshopSpecialties = const [];
+  List<CatalogItem> _vehicleTypesCatalog = const [];
+  List<OfflineEmergency> _offlineEmergencies = const [];
   final Map<int, List<Cotizacion>> _cotizacionesByRequest = {};
   WorkshopProfile? _workshopProfile;
   WorkshopStats? _workshopStats;
@@ -31,6 +34,8 @@ class AppController extends ChangeNotifier {
   ConnectivityService? _connectivity;
   OfflineQueueService? _offlineQueue;
   RealtimeService? _realtime;
+  StreamSubscription<OfflineFlushResult>? _offlineFlushSubscription;
+  int? _pendingNotificationRequestId;
 
   /// Timer activo del modo "técnico transmitiendo ubicación". Solo uno a la vez:
   /// si el técnico recibe una nueva asignación se reusa el ciclo.
@@ -42,13 +47,16 @@ class AppController extends ChangeNotifier {
   String get baseUrl => _baseUrl;
   String? get accessToken => _accessToken;
   ApiClient get apiClient => ApiClient(baseUrl: _baseUrl, token: _accessToken);
+  int? get pendingNotificationRequestId => _pendingNotificationRequestId;
 
   /// Servicio de conectividad (online/offline). Singleton perezoso.
   ConnectivityService get connectivity {
     _connectivity ??= ConnectivityService()
       ..isOnline$.listen((online) {
         if (online) {
-          offlineQueue.flush();
+          unawaited(_flushOfflineQueue());
+        } else {
+          unawaited(_refreshOfflineEmergencies());
         }
       });
     return _connectivity!;
@@ -56,8 +64,16 @@ class AppController extends ChangeNotifier {
 
   /// Cola offline persistida en SQLite. Singleton perezoso.
   OfflineQueueService get offlineQueue {
-    _offlineQueue ??= OfflineQueueService(() => apiClient);
-    return _offlineQueue!;
+    final existing = _offlineQueue;
+    if (existing != null) {
+      return existing;
+    }
+    final queue = OfflineQueueService(() => apiClient);
+    _offlineQueue = queue;
+    _offlineFlushSubscription = queue.events$.listen((result) {
+      unawaited(_handleOfflineFlushResult(result));
+    });
+    return queue;
   }
 
   /// Cliente WebSocket. Reconstruido si cambia el token.
@@ -83,14 +99,14 @@ class AppController extends ChangeNotifier {
     // Asegura el listener montado.
     connectivity;
     if (!connectivity.currentOnline) {
-      await offlineQueue.enqueue(payload);
+      await _enqueueOfflineEmergency(payload);
       return null;
     }
     try {
       return await apiClient.createRequestRaw(payload);
     } catch (e) {
       // Si falla la red en el ultimo segundo, encola.
-      await offlineQueue.enqueue(payload);
+      await _enqueueOfflineEmergency(payload);
       return null;
     }
   }
@@ -109,6 +125,17 @@ class AppController extends ChangeNotifier {
   List<SaaSPlan> get plans => List.unmodifiable(_plans);
   List<PublicWorkshop> get publicWorkshops =>
       List.unmodifiable(_publicWorkshops);
+  List<CatalogItem> get workshopSpecialties =>
+      List.unmodifiable(_workshopSpecialties);
+  List<CatalogItem> get vehicleTypesCatalog =>
+      List.unmodifiable(_vehicleTypesCatalog);
+  List<OfflineEmergency> get offlineEmergencies =>
+      List.unmodifiable(_offlineEmergencies);
+  int get offlinePendingCount => _offlineEmergencies
+      .where((item) => item.isPending || item.isSyncing)
+      .length;
+  int get offlineErrorCount =>
+      _offlineEmergencies.where((item) => item.isError).length;
   WorkshopProfile? get workshopProfile => _workshopProfile;
   WorkshopStats? get workshopStats => _workshopStats;
   bool get hasWorkshopProfile => _workshopProfile != null;
@@ -196,8 +223,9 @@ class AppController extends ChangeNotifier {
     // connectivity sólo dispara cuando hay un cambio online↔offline; un cold
     // start ya online no le llega, así que lo forzamos acá.
     connectivity; // monta el listener si aún no estaba
-    if (connectivity.currentOnline) {
-      unawaited(offlineQueue.flush());
+    await _refreshOfflineEmergencies(notify: false);
+    if (connectivity.currentOnline && isAuthenticated) {
+      unawaited(syncOfflineEmergencies());
     }
 
     _initialized = true;
@@ -312,6 +340,17 @@ class AppController extends ChangeNotifier {
     });
   }
 
+  Future<void> loadWorkshopCatalogs() async {
+    final api = ApiClient(baseUrl: _baseUrl, token: _accessToken);
+    final results = await Future.wait([
+      api.fetchWorkshopSpecialties(),
+      api.fetchVehicleTypesCatalog(),
+    ]);
+    _workshopSpecialties = results[0];
+    _vehicleTypesCatalog = results[1];
+    notifyListeners();
+  }
+
   Future<PlanPayment> simulatePlanPurchase({
     required SaaSPlan plan,
     required String email,
@@ -406,7 +445,33 @@ class AppController extends ChangeNotifier {
     required String username,
     required String email,
     required String fullName,
+    String? telefono,
+    String? fotoUrl,
+    String? contactoEmergencia,
   }) async {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    await _executeWithLoading(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final storage = LocalRepository(prefs);
+      final updated = await ApiClient(baseUrl: _baseUrl, token: _accessToken)
+          .updateMe(
+            username: username,
+            email: email,
+            fullName: fullName,
+            telefono: telefono,
+            fotoUrl: fotoUrl,
+            contactoEmergencia: contactoEmergencia,
+          );
+      _currentUser = updated;
+      await storage.saveSession(token: _accessToken!, user: updated);
+      notifyListeners();
+    });
+  }
+
+  Future<void> uploadProfilePhoto(String imagePath) async {
     if (!isAuthenticated) {
       return;
     }
@@ -417,7 +482,7 @@ class AppController extends ChangeNotifier {
       final updated = await ApiClient(
         baseUrl: _baseUrl,
         token: _accessToken,
-      ).updateMe(username: username, email: email, fullName: fullName);
+      ).uploadProfilePhoto(imagePath);
       _currentUser = updated;
       await storage.saveSession(token: _accessToken!, user: updated);
       notifyListeners();
@@ -437,11 +502,19 @@ class AppController extends ChangeNotifier {
     _technicians = const [];
     _notifications = const [];
     _publicWorkshops = const [];
+    _offlineEmergencies = const [];
     _cotizacionesByRequest.clear();
     _workshopProfile = null;
     _workshopStats = null;
+    _pendingNotificationRequestId = null;
     await storage.clearSession();
     notifyListeners();
+  }
+
+  int? consumePendingNotificationRequestId() {
+    final requestId = _pendingNotificationRequestId;
+    _pendingNotificationRequestId = null;
+    return requestId;
   }
 
   Future<void> addVehicle({
@@ -538,6 +611,8 @@ class AppController extends ChangeNotifier {
     String? sitioWeb,
     double? latitud,
     double? longitud,
+    required List<int> especialidadIds,
+    required List<int> tipoVehiculoIds,
     bool? notificacionesNuevasAsignaciones,
     bool? notificacionesPush,
     bool? notificacionesRecordatorios,
@@ -573,6 +648,8 @@ class AppController extends ChangeNotifier {
           sitioWeb: _normalizeOptional(sitioWeb),
           latitud: latitud,
           longitud: longitud,
+          especialidadIds: especialidadIds,
+          tipoVehiculoIds: tipoVehiculoIds,
         );
       } else {
         _workshopProfile = await api.updateWorkshop({
@@ -586,6 +663,8 @@ class AppController extends ChangeNotifier {
           'sitio_web': _normalizeOptional(sitioWeb),
           'latitud': latitud,
           'longitud': longitud,
+          'especialidad_ids': especialidadIds,
+          'tipo_vehiculo_ids': tipoVehiculoIds,
           if (notificacionesNuevasAsignaciones != null)
             'notificaciones_nuevas_asignaciones':
                 notificacionesNuevasAsignaciones,
@@ -708,7 +787,7 @@ class AppController extends ChangeNotifier {
     });
   }
 
-  Future<EmergencyRequest> submitEmergency({
+  Future<EmergencyRequest?> submitEmergency({
     required Vehicle vehicle,
     String? incidentType,
     required String description,
@@ -735,69 +814,82 @@ class AppController extends ChangeNotifier {
     // OFFLINE: si no hay conexión, encolamos y avisamos al caller.
     // Backend dedupea por `cliente_sync_id` cuando se haga el flush.
     if (!connectivity.currentOnline) {
-      await offlineQueue.enqueue({
+      await _enqueueOfflineEmergency({
         'descripcion': composedDescriptionPreview,
         'latitud': latitud,
         'longitud': longitud,
         if (vehicle.remoteId != null) 'vehiculo_id': vehicle.remoteId,
       });
-      throw ApiException(
-        'Sin conexion. Emergencia guardada localmente; se enviara automaticamente al volver online.',
-      );
+      return null;
     }
 
     late EmergencyRequest created;
-    await _executeWithLoading(() async {
-      final prefs = await SharedPreferences.getInstance();
-      final storage = LocalRepository(prefs);
-      final composedDescription = [
-        composedDescriptionPreview,
-        if (imagePaths.isNotEmpty || (audioPath?.isNotEmpty ?? false))
-          'Adjuntos capturados desde Flutter: ${imagePaths.length} foto(s)${audioPath != null ? " y 1 audio" : ""}.',
-      ].join('. ');
+    try {
+      await _executeWithLoading(() async {
+        final prefs = await SharedPreferences.getInstance();
+        final storage = LocalRepository(prefs);
+        final composedDescription = [
+          composedDescriptionPreview,
+          if (imagePaths.isNotEmpty || (audioPath?.isNotEmpty ?? false))
+            'Adjuntos capturados desde Flutter: ${imagePaths.length} foto(s)${audioPath != null ? " y 1 audio" : ""}.',
+        ].join('. ');
 
-      final api = ApiClient(baseUrl: _baseUrl, token: _accessToken);
-      created = await api.createRequest(
-        descripcion: composedDescription,
-        latitud: latitud,
-        longitud: longitud,
-        vehiculoId: vehicle.remoteId,
-        incidentType: selectedIncidentType,
-        extraNotes: extraNotes.trim(),
-        imagePaths: imagePaths,
-        audioPath: audioPath,
-      );
-      if (imagePaths.isNotEmpty) {
-        created = await api.uploadRequestImages(
-          requestId: created.id,
+        final api = ApiClient(baseUrl: _baseUrl, token: _accessToken);
+        created = await api.createRequest(
+          descripcion: composedDescription,
+          latitud: latitud,
+          longitud: longitud,
+          vehiculoId: vehicle.remoteId,
+          incidentType: selectedIncidentType,
+          extraNotes: extraNotes.trim(),
           imagePaths: imagePaths,
-        );
-      }
-      if (audioPath != null && audioPath.isNotEmpty) {
-        created = await api.uploadRequestAudio(
-          requestId: created.id,
           audioPath: audioPath,
         );
+        if (imagePaths.isNotEmpty) {
+          created = await api.uploadRequestImages(
+            requestId: created.id,
+            imagePaths: imagePaths,
+          );
+        }
+        if (audioPath != null && audioPath.isNotEmpty) {
+          created = await api.uploadRequestAudio(
+            requestId: created.id,
+            audioPath: audioPath,
+          );
+        }
+
+        final meta = LocalRequestMeta(
+          requestId: created.id,
+          vehicleLabel: vehicle.label,
+          issueType: selectedIncidentType ?? '',
+          imagePaths: imagePaths,
+          audioPath: audioPath,
+          extraNotes: extraNotes.trim(),
+        );
+
+        _requestMetas = [
+          meta,
+          ..._requestMetas.where((item) => item.requestId != created.id),
+        ];
+        await storage.saveRequestMetas(_requestMetas);
+        await _refreshRemoteData(storage);
+      });
+    } catch (error) {
+      if (_isNetworkLikeError(error)) {
+        await _enqueueOfflineEmergency({
+          'descripcion': composedDescriptionPreview,
+          'latitud': latitud,
+          'longitud': longitud,
+          if (vehicle.remoteId != null) 'vehiculo_id': vehicle.remoteId,
+        });
+        return null;
       }
-
-      final meta = LocalRequestMeta(
-        requestId: created.id,
-        vehicleLabel: vehicle.label,
-        issueType: selectedIncidentType ?? '',
-        imagePaths: imagePaths,
-        audioPath: audioPath,
-        extraNotes: extraNotes.trim(),
-      );
-
-      _requestMetas = [
-        meta,
-        ..._requestMetas.where((item) => item.requestId != created.id),
-      ];
-      await storage.saveRequestMetas(_requestMetas);
-      await _refreshRemoteData(storage);
-    });
+      rethrow;
+    }
     return created;
   }
+
+  Future<void> syncOfflineEmergencies() => _flushOfflineQueue();
 
   Future<EmergencyRequest> submitQuoteRequest({
     required Vehicle vehicle,
@@ -978,22 +1070,21 @@ class AppController extends ChangeNotifier {
       return;
     }
 
-    await _executeWithLoading(() async {
-      final prefs = await SharedPreferences.getInstance();
-      final storage = LocalRepository(prefs);
-      final updated = await ApiClient(
-        baseUrl: _baseUrl,
-        token: _accessToken,
-      ).updateRequestCost(requestId, amount: amount);
-      _replaceRequest(updated);
-      _pushNotification(
-        title: 'Cobro actualizado',
-        message:
-            'La solicitud #${updated.id} tiene monto Bs ${amount.toStringAsFixed(2)}.',
-        requestId: updated.id,
-      );
-      await _refreshRemoteData(storage);
-    });
+    final prefs = await SharedPreferences.getInstance();
+    final storage = LocalRepository(prefs);
+    final updated = await ApiClient(
+      baseUrl: _baseUrl,
+      token: _accessToken,
+    ).updateRequestCost(requestId, amount: amount);
+    _replaceRequest(updated);
+    _pushNotification(
+      title: 'Cobro actualizado',
+      message:
+          'La solicitud #${updated.id} tiene monto Bs ${amount.toStringAsFixed(2)}.',
+      requestId: updated.id,
+    );
+    await _refreshRemoteData(storage);
+    notifyListeners();
   }
 
   Future<VehiclePhotoPreview> previewVehicleFromPhotos(
@@ -1053,18 +1144,16 @@ class AppController extends ChangeNotifier {
     if (!isAuthenticated || !isWorkshopLike) {
       return;
     }
-    await _executeWithLoading(() async {
-      await ApiClient(baseUrl: _baseUrl, token: _accessToken).createCotizacion(
-        requestId: request.id,
-        costoEstimado: costoEstimado,
-        tiempoReparacionHoras: tiempoReparacionHoras,
-        etaLlegadaMinutos: etaLlegadaMinutos,
-        descripcion: descripcion,
-        incluyeRepuestos: incluyeRepuestos,
-        garantiaDias: garantiaDias,
-      );
-      await loadCotizaciones(request.id);
-    });
+    await ApiClient(baseUrl: _baseUrl, token: _accessToken).createCotizacion(
+      requestId: request.id,
+      costoEstimado: costoEstimado,
+      tiempoReparacionHoras: tiempoReparacionHoras,
+      etaLlegadaMinutos: etaLlegadaMinutos,
+      descripcion: descripcion,
+      incluyeRepuestos: incluyeRepuestos,
+      garantiaDias: garantiaDias,
+    );
+    await loadCotizaciones(request.id);
   }
 
   Future<void> selectCotizacion(Cotizacion cotizacion) async {
@@ -1336,6 +1425,10 @@ class AppController extends ChangeNotifier {
     _currentUser = auth.user;
     await storage.saveSession(token: auth.accessToken, user: auth.user);
     await _registerPushNotifications();
+    await _refreshOfflineEmergencies(notify: false);
+    if (connectivity.currentOnline) {
+      unawaited(syncOfflineEmergencies());
+    }
   }
 
   Future<void> _registerPushNotifications() async {
@@ -1364,6 +1457,20 @@ class AppController extends ChangeNotifier {
               LocalRepository(prefs).saveNotifications(_notifications);
             });
           },
+      onTapRequest: (requestId) {
+        _pendingNotificationRequestId = requestId;
+        _pushNotification(
+          title: 'Solicitud abierta',
+          message: 'Abriendo solicitud #$requestId.',
+          requestId: requestId,
+        );
+        notifyListeners();
+        unawaited(
+          SharedPreferences.getInstance().then((prefs) async {
+            await _refreshRemoteData(LocalRepository(prefs));
+          }),
+        );
+      },
     );
   }
 
@@ -1488,6 +1595,64 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _enqueueOfflineEmergency(Map<String, dynamic> payload) async {
+    await offlineQueue.enqueue(payload);
+    await _refreshOfflineEmergencies(notify: false);
+    _pushNotification(
+      title: 'Emergencia guardada sin internet',
+      message: 'Se enviara automaticamente cuando vuelva la conexion.',
+    );
+    notifyListeners();
+  }
+
+  Future<void> _refreshOfflineEmergencies({bool notify = true}) async {
+    _offlineEmergencies = await offlineQueue.visibleEmergencies();
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  Future<void> _handleOfflineFlushResult(OfflineFlushResult result) async {
+    await _refreshOfflineEmergencies(notify: false);
+    if (result.synced > 0 && isAuthenticated) {
+      final prefs = await SharedPreferences.getInstance();
+      await _refreshRemoteData(LocalRepository(prefs));
+    }
+    notifyListeners();
+  }
+
+  Future<void> _flushOfflineQueue() async {
+    final result = await offlineQueue.flush();
+    await _refreshOfflineEmergencies(notify: false);
+    if (result.synced > 0 && isAuthenticated) {
+      final prefs = await SharedPreferences.getInstance();
+      await _refreshRemoteData(LocalRepository(prefs));
+      _pushNotification(
+        title: 'Emergencia sincronizada',
+        message: 'Se enviaron ${result.synced} emergencia(s) pendientes.',
+      );
+    }
+    if (result.failed > 0) {
+      _pushNotification(
+        title: 'Error de sincronizacion',
+        message:
+            result.lastError ?? 'No se pudieron enviar algunas emergencias.',
+      );
+    }
+    notifyListeners();
+  }
+
+  bool _isNetworkLikeError(Object error) {
+    final text = error.toString().toLowerCase();
+    return error is TimeoutException ||
+        text.contains('socket') ||
+        text.contains('timeout') ||
+        text.contains('connection') ||
+        text.contains('network') ||
+        text.contains('failed host lookup') ||
+        text.contains('xmlhttprequest');
+  }
+
   void _buildNotifications(
     Map<int, EmergencyRequest> previous,
     List<EmergencyRequest> current,
@@ -1586,6 +1751,16 @@ class AppController extends ChangeNotifier {
   void _setLoading(bool value) {
     _loading = value;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _offlineFlushSubscription?.cancel();
+    _connectivity?.dispose();
+    _offlineQueue?.dispose();
+    _realtime?.dispose();
+    _trackingTimer?.cancel();
+    super.dispose();
   }
 
   String? _normalizeOptional(String? value) {

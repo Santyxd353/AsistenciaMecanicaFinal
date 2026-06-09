@@ -189,12 +189,15 @@ def actualizar_mi_taller(
     # Actualizar solo los campos proporcionados
     update_data = taller_update.model_dump(exclude_unset=True)
     especialidad_ids = update_data.pop("especialidad_ids", None)
+    tipo_vehiculo_ids = update_data.pop("tipo_vehiculo_ids", None)
 
     for field, value in update_data.items():
         setattr(taller, field, value)
 
     if especialidad_ids is not None:
         taller.especialidades = _obtener_especialidades_taller(session, especialidad_ids)
+    if tipo_vehiculo_ids is not None:
+        taller.tipos_vehiculo = _obtener_tipos_vehiculo(session, tipo_vehiculo_ids)
 
     session.add(taller)
     session.commit()

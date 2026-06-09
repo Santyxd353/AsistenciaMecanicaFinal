@@ -16,6 +16,8 @@ typedef ForegroundPushHandler =
       int? requestId,
     });
 
+typedef PushTapHandler = void Function(int requestId);
+
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
@@ -29,18 +31,24 @@ class PushNotificationsService {
   PushNotificationsService._();
 
   static bool _initialized = false;
+  static bool _oneSignalClickListenerReady = false;
   static ForegroundPushHandler? _foregroundHandler;
+  static PushTapHandler? _tapHandler;
   static StreamSubscription<RemoteMessage>? _onMessageSubscription;
+  static StreamSubscription<RemoteMessage>? _onMessageOpenedSubscription;
 
   static Future<void> registerDevice({
     required String baseUrl,
     required String accessToken,
     required AppUser currentUser,
     ForegroundPushHandler? onForegroundMessage,
+    PushTapHandler? onTapRequest,
   }) async {
     if (kIsWeb || accessToken.isEmpty) {
       return;
     }
+
+    _tapHandler = onTapRequest;
 
     if (AppConfig.oneSignalAppId.isNotEmpty) {
       try {
@@ -51,6 +59,7 @@ class PushNotificationsService {
           'role': currentUser.role,
           'tenant_id': currentUser.tenantId ?? 'global',
         });
+        _ensureOneSignalClickListener();
       } catch (error) {
         debugPrint('No se pudo asociar usuario en OneSignal: $error');
       }
@@ -103,12 +112,58 @@ class PushNotificationsService {
           requestId: requestId,
         );
       });
+      _onMessageOpenedSubscription ??= FirebaseMessaging.onMessageOpenedApp
+          .listen((message) {
+            final requestId = _readRequestId(message.data);
+            if (requestId != null) {
+              _tapHandler?.call(requestId);
+            }
+          });
+
+      final initialMessage = await messaging.getInitialMessage();
+      if (initialMessage != null) {
+        final requestId = _readRequestId(initialMessage.data);
+        if (requestId != null) {
+          _tapHandler?.call(requestId);
+        }
+      }
     } catch (error) {
       debugPrint('FCM no configurado o no disponible: $error');
     }
   }
 
+  static void _ensureOneSignalClickListener() {
+    if (_oneSignalClickListenerReady) {
+      return;
+    }
+    _oneSignalClickListenerReady = true;
+    OneSignal.Notifications.addClickListener((event) {
+      final requestId = _readRequestId(
+        event.notification.additionalData ?? const <String, dynamic>{},
+      );
+      if (requestId != null) {
+        _tapHandler?.call(requestId);
+      }
+    });
+  }
+
+  static int? _readRequestId(Map<String, dynamic> data) {
+    final raw =
+        data['solicitud_id'] ??
+        data['request_id'] ??
+        data['solicitudId'] ??
+        data['id_solicitud'];
+    if (raw == null) {
+      return null;
+    }
+    if (raw is int) {
+      return raw;
+    }
+    return int.tryParse(raw.toString());
+  }
+
   static Future<void> logout() async {
+    _tapHandler = null;
     if (kIsWeb) {
       return;
     }

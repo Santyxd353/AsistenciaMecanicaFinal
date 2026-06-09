@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../app_controller.dart';
+import '../models.dart';
 import 'location_picker_screen.dart';
 
 typedef _WorkshopDay = String;
@@ -44,6 +45,8 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
   bool _notifReminders = true;
   bool _notifPayments = true;
   bool _weeklyReports = false;
+  List<int> _selectedSpecialtyIds = const [];
+  List<int> _selectedVehicleTypeIds = const [];
 
   List<_WorkshopDay> _generalDays = const [
     'Lunes',
@@ -61,6 +64,15 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
   TimeOfDay? _specialClose = const TimeOfDay(hour: 13, minute: 0);
   double? _selectedLat = -16.5;
   double? _selectedLng = -68.15;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AppController>().loadWorkshopCatalogs();
+    });
+  }
 
   @override
   void dispose() {
@@ -96,6 +108,8 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
       _phoneController.text = workshop?.telefono ?? '';
       _contactEmailController.text = workshop?.emailContacto ?? '';
       _specialtiesController.text = workshop?.especialidades ?? '';
+      _selectedSpecialtyIds = workshop?.especialidadIds ?? const [];
+      _selectedVehicleTypeIds = workshop?.tipoVehiculoIds ?? const [];
       _descriptionController.text = workshop?.descripcion ?? '';
       _siteController.text = workshop?.sitioWeb ?? '';
       _selectedLat = workshop?.latitud ?? -16.5;
@@ -210,10 +224,7 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
                   const SizedBox(height: 8),
                   const Text(
                     'Marca los dias generales del taller y agrega un horario especial si un dia atiende distinto.',
-                    style: TextStyle(
-                      color: Color(0xFF6F655B),
-                      height: 1.4,
-                    ),
+                    style: TextStyle(color: Color(0xFF6F655B), height: 1.4),
                   ),
                   const SizedBox(height: 12),
                   Wrap(
@@ -326,12 +337,40 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _specialtiesController,
-                    decoration: const InputDecoration(
-                      labelText: 'Especialidades',
-                      hintText: 'Grua, bateria, llantas',
-                    ),
+                  _CatalogSelector(
+                    title: 'Especialidades',
+                    subtitle:
+                        'Elige los servicios que atiende tu taller. Esto ayuda a asignarte solicitudes correctas.',
+                    items: controller.workshopSpecialties,
+                    selectedIds: _selectedSpecialtyIds,
+                    emptyText: 'Cargando especialidades...',
+                    onToggle: (id) => setState(() {
+                      _selectedSpecialtyIds = _toggleId(
+                        _selectedSpecialtyIds,
+                        id,
+                      );
+                      _specialtiesController.text = controller
+                          .workshopSpecialties
+                          .where(
+                            (item) => _selectedSpecialtyIds.contains(item.id),
+                          )
+                          .map((item) => item.nombre)
+                          .join(', ');
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+                  _CatalogSelector(
+                    title: 'Tipos de vehiculo',
+                    subtitle: 'Marca qué vehículos puede recibir el taller.',
+                    items: controller.vehicleTypesCatalog,
+                    selectedIds: _selectedVehicleTypeIds,
+                    emptyText: 'Cargando tipos de vehiculo...',
+                    onToggle: (id) => setState(() {
+                      _selectedVehicleTypeIds = _toggleId(
+                        _selectedVehicleTypeIds,
+                        id,
+                      );
+                    }),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -354,10 +393,7 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
                   const SizedBox(height: 8),
                   const Text(
                     'Selecciona la ubicacion exacta usando el mapa. Puedes usar tu ubicacion actual o mover el pin manualmente.',
-                    style: TextStyle(
-                      color: Color(0xFF6F655B),
-                      height: 1.4,
-                    ),
+                    style: TextStyle(color: Color(0xFF6F655B), height: 1.4),
                   ),
                   const SizedBox(height: 12),
                   DecoratedBox(
@@ -481,9 +517,9 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
 
   Future<void> _saveWorkshop() async {
     final controller = context.read<AppController>();
-    final validationMessage = _validateSchedule();
-    if (validationMessage != null) {
-      _showMessage(validationMessage);
+    final missingFields = _missingWorkshopFields();
+    if (missingFields.isNotEmpty) {
+      _showMissingFields(missingFields);
       return;
     }
 
@@ -499,6 +535,8 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
         sitioWeb: _siteController.text,
         latitud: _selectedLat,
         longitud: _selectedLng,
+        especialidadIds: _selectedSpecialtyIds,
+        tipoVehiculoIds: _selectedVehicleTypeIds,
         notificacionesNuevasAsignaciones: _notifAssignments,
         notificacionesPush: _notifPush,
         notificacionesRecordatorios: _notifReminders,
@@ -525,6 +563,80 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
           ..sort((a, b) => _days.indexOf(a).compareTo(_days.indexOf(b)));
       }
     });
+  }
+
+  List<int> _toggleId(List<int> ids, int id) {
+    if (ids.contains(id)) {
+      return ids.where((item) => item != id).toList();
+    }
+    return [...ids, id];
+  }
+
+  List<String> _missingWorkshopFields() {
+    final missing = <String>[];
+    if (_workshopNameController.text.trim().isEmpty) {
+      missing.add('Nombre comercial del taller');
+    }
+    if (_addressController.text.trim().isEmpty) {
+      missing.add('Direccion del taller');
+    }
+    if (_phoneController.text.trim().isEmpty) {
+      missing.add('Telefono de contacto');
+    }
+    final email = _contactEmailController.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      missing.add('Correo de contacto valido');
+    }
+    final scheduleError = _validateSchedule();
+    if (scheduleError != null) {
+      missing.add(scheduleError);
+    }
+    if (_selectedSpecialtyIds.isEmpty) {
+      missing.add('Al menos una especialidad');
+    }
+    if (_selectedVehicleTypeIds.isEmpty) {
+      missing.add('Al menos un tipo de vehiculo');
+    }
+    if (_selectedLat == null || _selectedLng == null) {
+      missing.add('Ubicacion del taller en el mapa');
+    }
+    return missing;
+  }
+
+  Future<void> _showMissingFields(List<String> fields) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Faltan datos del taller'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Completa estos campos antes de crear el taller:'),
+            const SizedBox(height: 12),
+            ...fields.map(
+              (field) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('• '),
+                    Expanded(child: Text(field)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _pickTime({
@@ -684,8 +796,10 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
       return fallback;
     }
 
-    final generalDaysMatch = RegExp(r'Dias generales:\s*([^|]+)', caseSensitive: false)
-        .firstMatch(text);
+    final generalDaysMatch = RegExp(
+      r'Dias generales:\s*([^|]+)',
+      caseSensitive: false,
+    ).firstMatch(text);
     final generalTimeMatch = RegExp(
       r'Horario general:\s*(\d{2}:\d{2})-(\d{2}:\d{2})',
       caseSensitive: false,
@@ -702,11 +816,11 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
     final generalDays = generalDaysMatch != null
         ? _parseDayList(generalDaysMatch.group(1)!)
         : legacyRangeMatch != null
-            ? _expandDayRange(
-                legacyRangeMatch.group(1)!,
-                legacyRangeMatch.group(2)!,
-              )
-            : _parseDayList(text);
+        ? _expandDayRange(
+            legacyRangeMatch.group(1)!,
+            legacyRangeMatch.group(2)!,
+          )
+        : _parseDayList(text);
 
     final generalOpen = _parseTime(
       generalTimeMatch?.group(1) ?? legacyRangeMatch?.group(3),
@@ -728,9 +842,7 @@ class _WorkshopAccountScreenState extends State<WorkshopAccountScreen> {
 
   List<_WorkshopDay> _parseDayList(String value) {
     return _days
-        .where(
-          (day) => RegExp(day, caseSensitive: false).hasMatch(value),
-        )
+        .where((day) => RegExp(day, caseSensitive: false).hasMatch(value))
         .toList();
   }
 
@@ -792,6 +904,71 @@ class _TimePickerField extends StatelessWidget {
       child: InputDecorator(
         decoration: InputDecoration(labelText: label),
         child: Text(value),
+      ),
+    );
+  }
+}
+
+class _CatalogSelector extends StatelessWidget {
+  const _CatalogSelector({
+    required this.title,
+    required this.subtitle,
+    required this.items,
+    required this.selectedIds,
+    required this.emptyText,
+    required this.onToggle,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<CatalogItem> items;
+  final List<int> selectedIds;
+  final String emptyText;
+  final ValueChanged<int> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFF0E5D7)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                color: Color(0xFF6F655B),
+                fontSize: 12,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (items.isEmpty)
+              Text(emptyText, style: const TextStyle(color: Color(0xFF8D5524)))
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: items.map((item) {
+                  final selected = selectedIds.contains(item.id);
+                  return FilterChip(
+                    selected: selected,
+                    label: Text(item.nombre),
+                    onSelected: (_) => onToggle(item.id),
+                    selectedColor: const Color(0xFFEAD8C2),
+                    checkmarkColor: const Color(0xFF322214),
+                  );
+                }).toList(),
+              ),
+          ],
+        ),
       ),
     );
   }

@@ -353,13 +353,18 @@ class ApiClient {
     final response = await http
         .get(_uri('/api/v1/auth/me'), headers: _headers())
         .timeout(const Duration(seconds: 12));
-    return AppUser.fromJson(_decodeObject(response));
+    final payload = _decodeObject(response);
+    payload['foto_url'] = resolveAssetUrl(payload['foto_url']?.toString());
+    return AppUser.fromJson(payload);
   }
 
   Future<AppUser> updateMe({
     required String username,
     required String email,
     required String fullName,
+    String? telefono,
+    String? fotoUrl,
+    String? contactoEmergencia,
   }) async {
     final response = await http
         .put(
@@ -369,10 +374,25 @@ class ApiClient {
             'username': username,
             'email': email,
             'full_name': fullName,
+            'telefono': telefono,
+            'foto_url': fotoUrl,
+            'contacto_emergencia': contactoEmergencia,
           }),
         )
         .timeout(const Duration(seconds: 12));
-    return AppUser.fromJson(_decodeObject(response));
+    final payload = _decodeObject(response);
+    payload['foto_url'] = resolveAssetUrl(payload['foto_url']?.toString());
+    return AppUser.fromJson(payload);
+  }
+
+  Future<AppUser> uploadProfilePhoto(String imagePath) async {
+    final request = http.MultipartRequest('POST', _uri('/api/v1/auth/me/foto'));
+    request.headers.addAll(_headers());
+    request.files.add(await http.MultipartFile.fromPath('foto', imagePath));
+    final response = await request.send().timeout(const Duration(seconds: 30));
+    final payload = await _decodeObjectFromStream(response);
+    payload['foto_url'] = resolveAssetUrl(payload['foto_url']?.toString());
+    return AppUser.fromJson(payload);
   }
 
   Future<List<Vehicle>> fetchVehicles(List<Vehicle> localVehicles) async {
@@ -550,6 +570,8 @@ class ApiClient {
     String? sitioWeb,
     double? latitud,
     double? longitud,
+    required List<int> especialidadIds,
+    required List<int> tipoVehiculoIds,
   }) async {
     final response = await http
         .post(
@@ -566,10 +588,26 @@ class ApiClient {
             'sitio_web': sitioWeb,
             'latitud': latitud,
             'longitud': longitud,
+            'especialidad_ids': especialidadIds,
+            'tipo_vehiculo_ids': tipoVehiculoIds,
           }),
         )
         .timeout(const Duration(seconds: 12));
     return WorkshopProfile.fromApi(_decodeObject(response));
+  }
+
+  Future<List<CatalogItem>> fetchWorkshopSpecialties() async {
+    final response = await http
+        .get(_uri('/api/v1/especialidades-taller/'), headers: _headers())
+        .timeout(const Duration(seconds: 12));
+    return _decodeList(response).map(CatalogItem.fromApi).toList();
+  }
+
+  Future<List<CatalogItem>> fetchVehicleTypesCatalog() async {
+    final response = await http
+        .get(_uri('/api/v1/tipos-vehiculo/'), headers: _headers())
+        .timeout(const Duration(seconds: 12));
+    return _decodeList(response).map(CatalogItem.fromApi).toList();
   }
 
   Future<WorkshopProfile> updateWorkshop(Map<String, dynamic> payload) async {

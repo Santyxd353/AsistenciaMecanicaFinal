@@ -60,9 +60,6 @@ def enviar_push_al_usuario(
         },
     }
 
-    if accion_url:
-        payload["url"] = accion_url
-
     try:
         response = requests.post(
             ONESIGNAL_API_URL,

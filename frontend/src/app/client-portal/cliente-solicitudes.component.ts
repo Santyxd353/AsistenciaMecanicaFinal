@@ -82,6 +82,22 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
           <div><span>Costo</span><strong>{{ r.precio_cobrado ? ('Bs ' + r.precio_cobrado) : 'Pendiente' }}</strong></div>
         </div>
 
+        <div class="mechanic-card" *ngIf="r.tecnico_id">
+          <div class="mechanic-avatar">
+            <img *ngIf="r.tecnico_foto_url" [src]="r.tecnico_foto_url" [alt]="r.tecnico_nombre || 'Mecanico'" />
+            <span *ngIf="!r.tecnico_foto_url">{{ initials(r.tecnico_nombre || 'M') }}</span>
+          </div>
+          <div class="mechanic-copy">
+            <p class="section-kicker">Mecanico asignado</p>
+            <strong>{{ r.tecnico_nombre || 'Mecanico' }}</strong>
+            <small>{{ r.tecnico_especialidad || 'Auxilio vehicular' }}</small>
+            <small *ngIf="r.tecnico_telefono">Tel. {{ r.tecnico_telefono }}</small>
+          </div>
+          <button class="btn-secondary" type="button" [disabled]="!r.tecnico_telefono" (click)="abrirContacto(r)">
+            Contactar
+          </button>
+        </div>
+
         <div class="cotizacion-block" *ngIf="isPending(r) && cotizacionesPorReporte[r.id]?.length">
           <p class="section-kicker">Cotizaciones disponibles</p>
           <div class="cotizacion-list">
@@ -170,6 +186,21 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
           </div>
         </div>
       </div>
+
+      <div class="rating-overlay" *ngIf="contactDialog" (click)="contactDialog = null">
+        <div class="rating-modal contact-modal" (click)="$event.stopPropagation()">
+          <header>
+            <p class="section-kicker">Contactar mecanico</p>
+            <h2>{{ contactDialog.nombre }}</h2>
+            <p class="rating-sub">{{ contactDialog.telefono }}</p>
+          </header>
+
+          <div class="contact-actions">
+            <button class="btn-primary" type="button" (click)="contactarWhatsApp()">WhatsApp</button>
+            <button class="btn-ghost" type="button" (click)="contactarTelefono()">Llamada normal</button>
+          </div>
+        </div>
+      </div>
     </div>
   `,
   styles: [`
@@ -233,6 +264,19 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
       display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: #8a6647;
     }
     .report-meta > div strong { font-size: 0.95rem; }
+    .mechanic-card {
+      display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center;
+      background: #fff8ef; border: 1px solid #eadcca; border-radius: 18px;
+      padding: 14px; margin: 12px 0;
+    }
+    .mechanic-avatar {
+      width: 64px; height: 64px; border-radius: 18px; overflow: hidden;
+      background: #5a3922; color: #fff8ef; display: flex; align-items: center;
+      justify-content: center; font-weight: 900;
+    }
+    .mechanic-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .mechanic-copy { display: grid; gap: 3px; }
+    .mechanic-copy small { color: #685a4b; }
     .cotizacion-block { padding: 12px; background: #fdf6ec; border-radius: 14px; margin-top: 8px; }
     .cotizacion-list { display: grid; gap: 10px; margin-top: 8px; }
     .cotizacion-card { background: #fff; border-radius: 12px; padding: 12px; border: 1px solid #eadcca; }
@@ -246,6 +290,11 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
       color: #fff8ef; border: none; font-weight: 800; cursor: pointer;
     }
     .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary {
+      background: #fff8ef; border: 1px solid #c19a6a; color: #5a3a22;
+      padding: 10px 16px; border-radius: 10px; cursor: pointer; font-weight: 800;
+    }
+    .btn-secondary:disabled { opacity: 0.45; cursor: not-allowed; }
     .panel-actions { margin-top: 10px; }
     .message { margin-top: 10px; font-size: 13px; }
     .message.success { color: #2e7d32; }
@@ -288,6 +337,7 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
                     border-radius: 10px; margin-top: 10px; }
     .rating-actions { display: flex; justify-content: flex-end; gap: 8px;
                       margin-top: 14px; }
+    .contact-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     @media (max-width: 760px) {
       .active-panel { grid-template-columns: 1fr; }
       .report-meta, .cotizacion-grid { grid-template-columns: repeat(2,1fr); }
@@ -329,6 +379,7 @@ export class ClienteSolicitudesComponent implements OnInit, OnDestroy {
     saving: boolean;
   } | null = null;
   ratingError = '';
+  contactDialog: { nombre: string; telefono: string } | null = null;
 
   ngOnInit(): void {
     if (!this.auth.isLoggedIn()) { this.router.navigate(['/login']); return; }
@@ -448,6 +499,43 @@ export class ClienteSolicitudesComponent implements OnInit, OnDestroy {
           error?.error?.detail || 'No se pudo enviar la calificación.';
       },
     });
+  }
+
+  abrirContacto(r: Solicitud): void {
+    const telefono = this.normalizarTelefono(r.tecnico_telefono || '');
+    if (!telefono) return;
+    this.contactDialog = {
+      nombre: r.tecnico_nombre || 'Mecanico',
+      telefono,
+    };
+  }
+
+  contactarWhatsApp(): void {
+    if (!this.contactDialog) return;
+    window.open(`https://wa.me/${this.contactDialog.telefono.replace(/^\+/, '')}`, '_blank');
+  }
+
+  contactarTelefono(): void {
+    if (!this.contactDialog) return;
+    window.location.href = `tel:${this.contactDialog.telefono}`;
+  }
+
+  normalizarTelefono(value: string): string {
+    const digits = (value || '').replace(/\D+/g, '');
+    if (!digits) return '';
+    if (digits.startsWith('591')) return `+${digits}`;
+    if (digits.length <= 8) return `+591${digits}`;
+    return `+${digits}`;
+  }
+
+  initials(value: string): string {
+    return (value || 'M')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join('')
+      .toUpperCase();
   }
 
   get solicitudEnCurso(): Solicitud | null {

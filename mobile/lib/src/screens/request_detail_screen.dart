@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../app_controller.dart';
 import '../models.dart';
@@ -158,6 +159,10 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
               ),
             ),
             const SizedBox(height: 14),
+            if (request.tecnicoId != null) ...[
+              _MechanicContactCard(request: request),
+              const SizedBox(height: 14),
+            ],
             if (request.vehiculoId != null) ...[
               VehicleHistoryCard(vehicleId: request.vehiculoId!),
               const SizedBox(height: 14),
@@ -500,6 +505,117 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
         ),
       );
     }
+  }
+}
+
+class _MechanicContactCard extends StatelessWidget {
+  const _MechanicContactCard({required this.request});
+
+  final EmergencyRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    final phone = _normalizePhone(request.tecnicoTelefono ?? '');
+    return _SectionCard(
+      title: 'Mecanico asignado',
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 30,
+            backgroundColor: const Color(0xFFFFE2CC),
+            backgroundImage: (request.tecnicoFotoUrl ?? '').trim().isEmpty
+                ? null
+                : NetworkImage(request.tecnicoFotoUrl!),
+            child: (request.tecnicoFotoUrl ?? '').trim().isEmpty
+                ? const Icon(Icons.engineering_outlined)
+                : null,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  request.tecnicoNombre ?? 'Mecanico',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  request.tecnicoEspecialidad ?? 'Auxilio vehicular',
+                  style: const TextStyle(color: Color(0xFF6F655B)),
+                ),
+                if (phone.isNotEmpty)
+                  Text(phone, style: const TextStyle(color: Color(0xFF8D5524))),
+              ],
+            ),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: phone.isEmpty
+                ? null
+                : () => _showContact(context, phone),
+            icon: const Icon(Icons.call_outlined),
+            label: const Text('Contactar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _normalizePhone(String value) {
+    final digits = value.replaceAll(RegExp(r'\D+'), '');
+    if (digits.isEmpty) return '';
+    if (digits.startsWith('591')) return '+$digits';
+    if (digits.length <= 8) return '+591$digits';
+    return '+$digits';
+  }
+
+  static Future<void> _showContact(BuildContext context, String phone) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Contactar mecanico',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+            ),
+            const SizedBox(height: 6),
+            Text(phone, style: const TextStyle(color: Color(0xFF6F655B))),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.of(sheetContext).pop();
+                launchUrl(
+                  Uri.parse('https://wa.me/${phone.replaceFirst('+', '')}'),
+                  mode: LaunchMode.externalApplication,
+                );
+              },
+              icon: const Icon(Icons.chat_outlined),
+              label: const Text('WhatsApp'),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.of(sheetContext).pop();
+                launchUrl(
+                  Uri.parse('tel:$phone'),
+                  mode: LaunchMode.externalApplication,
+                );
+              },
+              icon: const Icon(Icons.phone_outlined),
+              label: const Text('Llamada normal'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

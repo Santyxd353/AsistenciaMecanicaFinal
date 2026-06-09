@@ -229,9 +229,14 @@ class _WorkshopRequestDetailScreenState
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'Define el monto que debe pagar el cliente. El cliente vera el QR y confirmara el pago desde su cuenta.',
-                    style: TextStyle(color: Color(0xFF6F655B), height: 1.5),
+                  Text(
+                    request.hasAcceptedQuote
+                        ? 'El cliente ya acepto una cotizacion. Ese monto queda fijo y no puede modificarse.'
+                        : 'Define el monto que debe pagar el cliente. El cliente vera el QR y confirmara el pago desde su cuenta.',
+                    style: const TextStyle(
+                      color: Color(0xFF6F655B),
+                      height: 1.5,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Wrap(
@@ -239,10 +244,20 @@ class _WorkshopRequestDetailScreenState
                     runSpacing: 10,
                     children: [
                       FilledButton.tonalIcon(
-                        onPressed: () =>
-                            _showCostEditor(context, controller, request),
-                        icon: const Icon(Icons.edit_outlined),
-                        label: const Text('Editar monto'),
+                        onPressed: request.hasAcceptedQuote
+                            ? null
+                            : () =>
+                                  _showCostEditor(context, controller, request),
+                        icon: Icon(
+                          request.hasAcceptedQuote
+                              ? Icons.lock_outline
+                              : Icons.edit_outlined,
+                        ),
+                        label: Text(
+                          request.hasAcceptedQuote
+                              ? 'Monto fijado'
+                              : 'Editar monto',
+                        ),
                       ),
                       OutlinedButton.icon(
                         onPressed: request.paymentReady
@@ -322,64 +337,9 @@ class _WorkshopRequestDetailScreenState
     AppController controller,
     EmergencyRequest request,
   ) {
-    final amountController = TextEditingController(
-      text: request.precioCobrado?.toStringAsFixed(2) ?? '',
-    );
-    String? errorText;
-
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text('Monto de la solicitud #${request.id}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: amountController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: InputDecoration(
-                  labelText: 'Monto a cobrar (Bs)',
-                  errorText: errorText,
-                ),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Este monto sera visible para el cliente en la pasarela QR.',
-                style: TextStyle(color: Color(0xFF6F655B), fontSize: 12),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: controller.loading
-                  ? null
-                  : () async {
-                      final amount = double.tryParse(
-                        amountController.text.replaceAll(',', '.'),
-                      );
-                      if (amount == null || amount <= 0) {
-                        setState(() {
-                          errorText = 'Ingresa un monto valido.';
-                        });
-                        return;
-                      }
-                      await controller.updateRequestCost(request.id, amount);
-                      if (dialogContext.mounted) {
-                        Navigator.of(dialogContext).pop();
-                      }
-                    },
-              child: const Text('Guardar monto'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => _CostDialog(controller: controller, request: request),
     );
   }
 
@@ -402,6 +362,89 @@ class _WorkshopRequestDetailScreenState
       'https://www.google.com/maps/dir/?api=1&destination=${request.latitud},${request.longitud}&travelmode=driving',
     );
     await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
+
+class _CostDialog extends StatefulWidget {
+  const _CostDialog({required this.controller, required this.request});
+
+  final AppController controller;
+  final EmergencyRequest request;
+
+  @override
+  State<_CostDialog> createState() => _CostDialogState();
+}
+
+class _CostDialogState extends State<_CostDialog> {
+  late final TextEditingController _amountController;
+  String? _errorText;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _amountController = TextEditingController(
+      text: widget.request.precioCobrado?.toStringAsFixed(2) ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final amount = double.tryParse(_amountController.text.replaceAll(',', '.'));
+    if (amount == null || amount <= 0) {
+      setState(() => _errorText = 'Ingresa un monto valido.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _errorText = null;
+    });
+    try {
+      await widget.controller.updateRequestCost(widget.request.id, amount);
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _errorText = error.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _RutaDialogShell(
+      icon: Icons.payments_outlined,
+      eyebrow: 'COBRO DEL SERVICIO',
+      title: 'Monto de la solicitud #${widget.request.id}',
+      subtitle:
+          'Define el monto final que el cliente vera antes de confirmar el pago.',
+      errorText: _errorText,
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _submit,
+          child: Text(_saving ? 'Guardando...' : 'Guardar monto'),
+        ),
+      ],
+      child: _DialogTextField(
+        controller: _amountController,
+        label: 'Monto a cobrar',
+        suffixText: 'Bs',
+        icon: Icons.attach_money,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      ),
+    );
   }
 }
 
@@ -675,6 +718,396 @@ class _MechanicTrackingMapCardState extends State<_MechanicTrackingMapCard> {
   }
 }
 
+class _QuoteDialog extends StatefulWidget {
+  const _QuoteDialog({required this.controller, required this.request});
+
+  final AppController controller;
+  final EmergencyRequest request;
+
+  @override
+  State<_QuoteDialog> createState() => _QuoteDialogState();
+}
+
+class _QuoteDialogState extends State<_QuoteDialog> {
+  final _amountController = TextEditingController();
+  final _etaController = TextEditingController(text: '20');
+  final _hoursController = TextEditingController(text: '1');
+  final _warrantyController = TextEditingController(text: '7');
+  final _descriptionController = TextEditingController();
+  bool _includesParts = false;
+  bool _sending = false;
+  String? _errorText;
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _etaController.dispose();
+    _hoursController.dispose();
+    _warrantyController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final amount = double.tryParse(_amountController.text.replaceAll(',', '.'));
+    final eta = int.tryParse(_etaController.text);
+    final hours = double.tryParse(_hoursController.text.replaceAll(',', '.'));
+    final warranty = int.tryParse(_warrantyController.text) ?? 0;
+
+    if (amount == null ||
+        amount <= 0 ||
+        eta == null ||
+        eta <= 0 ||
+        hours == null ||
+        hours <= 0) {
+      setState(() => _errorText = 'Completa costo, llegada y horas.');
+      return;
+    }
+
+    setState(() {
+      _sending = true;
+      _errorText = null;
+    });
+
+    try {
+      await widget.controller.createCotizacion(
+        request: widget.request,
+        costoEstimado: amount,
+        tiempoReparacionHoras: hours,
+        etaLlegadaMinutos: eta,
+        descripcion: _descriptionController.text,
+        incluyeRepuestos: _includesParts,
+        garantiaDias: warranty,
+      );
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        _errorText = error.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _RutaDialogShell(
+      icon: Icons.request_quote_outlined,
+      eyebrow: 'COTIZACION AL CLIENTE',
+      title: 'Cotizar solicitud #${widget.request.id}',
+      subtitle:
+          'Envia una propuesta clara. El cliente vera el costo, la llegada estimada y la garantia antes de elegir taller.',
+      errorText: _errorText,
+      actions: [
+        TextButton(
+          onPressed: _sending ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: _sending ? null : _submit,
+          icon: _sending
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.send_outlined),
+          label: Text(_sending ? 'Enviando...' : 'Enviar cotizacion'),
+        ),
+      ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _DialogTextField(
+                  controller: _amountController,
+                  label: 'Costo',
+                  suffixText: 'Bs',
+                  icon: Icons.payments_outlined,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _DialogTextField(
+                  controller: _etaController,
+                  label: 'Llegada',
+                  suffixText: 'min',
+                  icon: Icons.schedule_outlined,
+                  keyboardType: TextInputType.number,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _DialogTextField(
+                  controller: _hoursController,
+                  label: 'Reparacion',
+                  suffixText: 'h',
+                  icon: Icons.build_outlined,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _DialogTextField(
+                  controller: _warrantyController,
+                  label: 'Garantia',
+                  suffixText: 'dias',
+                  icon: Icons.verified_outlined,
+                  keyboardType: TextInputType.number,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _DialogTextField(
+            controller: _descriptionController,
+            label: 'Detalle para el cliente',
+            icon: Icons.notes_outlined,
+            minLines: 3,
+            maxLines: 4,
+            keyboardType: TextInputType.multiline,
+          ),
+          const SizedBox(height: 12),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8EF),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFE8D6C3)),
+            ),
+            child: SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+              value: _includesParts,
+              activeThumbColor: const Color(0xFF8D5524),
+              title: const Text(
+                'Incluye repuestos',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: const Text(
+                'Activalo si el precio ya contempla piezas o insumos.',
+              ),
+              onChanged: _sending
+                  ? null
+                  : (value) => setState(() => _includesParts = value),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RutaDialogShell extends StatelessWidget {
+  const _RutaDialogShell({
+    required this.icon,
+    required this.eyebrow,
+    required this.title,
+    required this.subtitle,
+    required this.child,
+    required this.actions,
+    this.errorText,
+  });
+
+  final IconData icon;
+  final String eyebrow;
+  final String title;
+  final String subtitle;
+  final Widget child;
+  final List<Widget> actions;
+  final String? errorText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+      backgroundColor: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF8EF),
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(color: const Color(0xFFE0C9B4)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.22),
+                blurRadius: 34,
+                offset: const Offset(0, 18),
+              ),
+            ],
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF3A2416),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(11),
+                        child: Icon(icon, color: Colors.white, size: 22),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            eyebrow,
+                            style: const TextStyle(
+                              color: Color(0xFF9A5F2B),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.8,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              color: Color(0xFF2B211B),
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Color(0xFF725E4F),
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                child,
+                if (errorText != null) ...[
+                  const SizedBox(height: 12),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFE9E6),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFFFB8AE)),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.error_outline,
+                            color: Color(0xFFB3261E),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              errorText!,
+                              style: const TextStyle(
+                                color: Color(0xFF9A1B16),
+                                fontWeight: FontWeight.w700,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: actions
+                      .map(
+                        (action) => Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: action,
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DialogTextField extends StatelessWidget {
+  const _DialogTextField({
+    required this.controller,
+    required this.label,
+    required this.icon,
+    this.suffixText,
+    this.keyboardType,
+    this.minLines,
+    this.maxLines = 1,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final IconData icon;
+  final String? suffixText;
+  final TextInputType? keyboardType;
+  final int? minLines;
+  final int? maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      minLines: minLines,
+      maxLines: maxLines,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        suffixText: suffixText,
+        filled: true,
+        fillColor: const Color(0xFFFFFCF7),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: Color(0xFFE1C9B2)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: Color(0xFFE1C9B2)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: Color(0xFF8D5524), width: 1.7),
+        ),
+      ),
+    );
+  }
+}
+
 class _ActionPanel extends StatelessWidget {
   const _ActionPanel({
     required this.request,
@@ -799,133 +1232,10 @@ class _ActionPanel extends StatelessWidget {
     BuildContext context,
     AppController controller,
   ) async {
-    final amountController = TextEditingController();
-    final etaController = TextEditingController(text: '20');
-    final hoursController = TextEditingController(text: '1');
-    final warrantyController = TextEditingController(text: '7');
-    final descriptionController = TextEditingController();
-    bool includesParts = false;
-    String? errorText;
-
     final submitted = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text('Cotizar solicitud #${request.id}'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: amountController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: 'Costo estimado (Bs)',
-                    errorText: errorText,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: etaController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Llegada estimada (min)',
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: hoursController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Tiempo de reparacion (horas)',
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: warrantyController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Garantia (dias)',
-                  ),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: includesParts,
-                  title: const Text('Incluye repuestos'),
-                  onChanged: (value) => setState(() => includesParts = value),
-                ),
-                TextField(
-                  controller: descriptionController,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Mensaje al cliente',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final amount = double.tryParse(
-                  amountController.text.replaceAll(',', '.'),
-                );
-                final eta = int.tryParse(etaController.text);
-                final hours = double.tryParse(
-                  hoursController.text.replaceAll(',', '.'),
-                );
-                final warranty = int.tryParse(warrantyController.text) ?? 0;
-                if (amount == null ||
-                    amount <= 0 ||
-                    eta == null ||
-                    eta <= 0 ||
-                    hours == null ||
-                    hours <= 0) {
-                  setState(() => errorText = 'Completa costo, ETA y horas.');
-                  return;
-                }
-                try {
-                  await controller.createCotizacion(
-                    request: request,
-                    costoEstimado: amount,
-                    tiempoReparacionHoras: hours,
-                    etaLlegadaMinutos: eta,
-                    descripcion: descriptionController.text,
-                    incluyeRepuestos: includesParts,
-                    garantiaDias: warranty,
-                  );
-                  if (dialogContext.mounted) {
-                    Navigator.of(dialogContext).pop(true);
-                  }
-                } catch (error) {
-                  setState(() {
-                    errorText = error.toString().replaceFirst(
-                      'Exception: ',
-                      '',
-                    );
-                  });
-                }
-              },
-              child: const Text('Enviar'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => _QuoteDialog(controller: controller, request: request),
     );
-
-    amountController.dispose();
-    etaController.dispose();
-    hoursController.dispose();
-    warrantyController.dispose();
-    descriptionController.dispose();
 
     if (submitted == true && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

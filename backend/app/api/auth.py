@@ -1,7 +1,7 @@
 import os
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
@@ -35,6 +35,7 @@ from app.models.user import (
     UserUpdate,
 )
 from app.services.password_reset_delivery import send_password_reset_email
+from app.services.storage import save_upload_file
 
 router = APIRouter()
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:4200").rstrip("/")
@@ -401,6 +402,12 @@ def update_me(
         current_user.email = payload.email.strip().lower()
     if payload.full_name is not None:
         current_user.full_name = payload.full_name.strip() or None
+    if payload.telefono is not None:
+        current_user.telefono = payload.telefono.strip() or None
+    if payload.foto_url is not None:
+        current_user.foto_url = payload.foto_url.strip() or None
+    if payload.contacto_emergencia is not None:
+        current_user.contacto_emergencia = payload.contacto_emergencia.strip() or None
 
     db.add(current_user)
     try:
@@ -412,5 +419,27 @@ def update_me(
             detail="No se pudo actualizar el perfil. Verifica usuario y correo.",
         ) from exc
 
+    db.refresh(current_user)
+    return UserRead.model_validate(current_user)
+
+
+@router.post("/me/foto", response_model=UserRead)
+async def upload_me_foto(
+    foto: UploadFile = File(...),
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    if not foto.content_type or not foto.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debes subir una imagen valida.",
+        )
+    current_user.foto_url = await save_upload_file(
+        upload=foto,
+        category="profile",
+        prefix=f"user-{current_user.id}",
+    )
+    db.add(current_user)
+    db.commit()
     db.refresh(current_user)
     return UserRead.model_validate(current_user)

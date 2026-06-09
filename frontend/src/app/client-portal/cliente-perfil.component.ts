@@ -24,9 +24,14 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
         <section class="panel panel-photo">
           <p class="section-kicker">Foto de perfil</p>
           <div class="photo-wrapper">
-            <img *ngIf="profileForm.value.foto_url" [src]="profileForm.value.foto_url" alt="foto perfil" />
-            <div *ngIf="!profileForm.value.foto_url" class="photo-placeholder">&#128100;</div>
+            <img *ngIf="photoPreview || profileForm.value.foto_url" [src]="photoPreview || profileForm.value.foto_url" alt="foto perfil" />
+            <div *ngIf="!photoPreview && !profileForm.value.foto_url" class="photo-placeholder">&#128100;</div>
           </div>
+          <label class="photo-upload">
+            <input type="file" accept="image/*" (change)="selectPhoto($event)" />
+            <span>{{ uploadingPhoto ? 'Subiendo foto...' : 'Cambiar foto' }}</span>
+          </label>
+          <small class="photo-help">Sube una foto clara para identificar tu cuenta.</small>
           <label class="field field-wide">
             <span>URL de la foto</span>
             <input type="text" [formControl]="$any(profileForm.controls['foto_url'])" placeholder="https://..." />
@@ -133,6 +138,16 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
     .photo-wrapper img { width: 100%; height: 100%; object-fit: cover; }
     .photo-placeholder { font-size: 64px; opacity: 0.5; }
     .panel-photo small { color: #685a4b; font-size: 12px; }
+    .panel-photo .field + small { display: none; }
+    .photo-help { display: block; }
+    .panel-photo .field { display: none; }
+    .photo-upload {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 10px 16px; border-radius: 999px; cursor: pointer;
+      background: #5a3922; color: #fff8ef; font-weight: 800;
+      margin-bottom: 10px;
+    }
+    .photo-upload input { display: none; }
     .form-layout { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; }
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field-wide { grid-column: 1 / -1; }
@@ -178,6 +193,8 @@ export class ClientePerfilComponent implements OnInit {
   profileForm: FormGroup;
   vehicles: Vehicle[] = [];
   saving = false;
+  uploadingPhoto = false;
+  photoPreview = '';
   msg = '';
   err = '';
 
@@ -223,6 +240,32 @@ export class ClientePerfilComponent implements OnInit {
       error: (error) => {
         this.saving = false;
         this.err = error?.error?.detail || 'No se pudo guardar el perfil.';
+      },
+    });
+  }
+
+  selectPhoto(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    if (this.photoPreview) {
+      URL.revokeObjectURL(this.photoPreview);
+    }
+    this.photoPreview = URL.createObjectURL(file);
+    this.uploadingPhoto = true;
+    this.err = '';
+    this.msg = '';
+
+    this.auth.uploadProfilePhoto(file).pipe(timeout(15000)).subscribe({
+      next: (user) => {
+        this.uploadingPhoto = false;
+        this.profileForm.patchValue({ foto_url: user.foto_url || '' });
+        this.msg = 'Foto de perfil actualizada.';
+      },
+      error: (error) => {
+        this.uploadingPhoto = false;
+        this.err = error?.error?.detail || 'No se pudo subir la foto.';
       },
     });
   }

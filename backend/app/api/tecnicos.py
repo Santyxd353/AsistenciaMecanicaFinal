@@ -20,6 +20,7 @@ router = APIRouter()
 class TecnicoIn(BaseModel):
     nombre: str
     email: str
+    telefono: str | None = None
     ci: str | None = None
     direccion: str | None = None
     especialidad_ids: list[int] = []
@@ -218,6 +219,8 @@ def _tecnico_read(
         ],
         usuario_username=usuario.username if usuario else None,
         usuario_email=usuario.email if usuario else None,
+        usuario_telefono=usuario.telefono if usuario else None,
+        usuario_foto_url=usuario.foto_url if usuario else None,
         password_temporal=password_temporal,
     )
 
@@ -324,6 +327,7 @@ def crear_tecnico(
         username=username,
         email=email_normalizado,
         full_name=tecnico_in.nombre,
+        telefono=tecnico_in.telefono.strip() if tecnico_in.telefono else None,
         role=UserRole.TECNICO,
         is_active=tecnico_in.activo,
         tenant_id=taller.tenant_id,
@@ -439,6 +443,7 @@ def actualizar_disponibilidad(
 
 class TecnicoUpdate(BaseModel):
     nombre: str | None = None
+    telefono: str | None = None
     ci: str | None = None
     direccion: str | None = None
     especialidad_ids: list[int] | None = None
@@ -501,6 +506,7 @@ def actualizar_tecnico(
         raise HTTPException(status_code=403, detail="Sin permisos")
 
     update_data = data.model_dump(exclude_unset=True)
+    telefono_usuario = update_data.pop("telefono", None)
     especialidad_ids = update_data.pop("especialidad_ids", None)
 
     for key, value in update_data.items():
@@ -513,6 +519,10 @@ def actualizar_tecnico(
         usuario = session.get(User, tecnico.id_usuario)
         if usuario:
             usuario.is_active = tecnico.activo
+            if tecnico.nombre:
+                usuario.full_name = tecnico.nombre
+            if telefono_usuario is not None:
+                usuario.telefono = telefono_usuario.strip() or None
             session.add(usuario)
 
     session.add(tecnico)

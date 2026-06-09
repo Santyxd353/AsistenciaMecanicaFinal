@@ -158,24 +158,34 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
                                 runSpacing: 10,
                                 children: [
                                   FilledButton.tonalIcon(
-                                    onPressed: _toggleAudioRecording,
+                                    onPressed: _transcribingAudio
+                                        ? null
+                                        : _toggleAudioRecording,
                                     icon: Icon(
                                       _recordingAudio
                                           ? Icons.stop_circle_outlined
                                           : Icons.mic_none_outlined,
                                     ),
                                     label: Text(
-                                      _recordingAudio ? 'Detener audio' : 'Comando por voz',
+                                      _transcribingAudio
+                                          ? 'Transcribiendo...'
+                                          : _recordingAudio
+                                          ? 'Detener audio'
+                                          : 'Comando por voz',
                                     ),
                                   ),
                                   FilledButton.tonalIcon(
                                     onPressed: _pickImagesFromGallery,
-                                    icon: const Icon(Icons.photo_library_outlined),
+                                    icon: const Icon(
+                                      Icons.photo_library_outlined,
+                                    ),
                                     label: const Text('Galería'),
                                   ),
                                   FilledButton.tonalIcon(
                                     onPressed: _pickImageFromCamera,
-                                    icon: const Icon(Icons.photo_camera_outlined),
+                                    icon: const Icon(
+                                      Icons.photo_camera_outlined,
+                                    ),
                                     label: const Text('Cámara'),
                                   ),
                                 ],
@@ -185,11 +195,25 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
                                 Padding(
                                   padding: const EdgeInsets.only(bottom: 8),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      const Text('Fotos adjuntas:', style: TextStyle(fontWeight: FontWeight.w800)),
+                                      const Text(
+                                        'Fotos adjuntas:',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
                                       const SizedBox(height: 6),
-                                      ..._imagePaths.map((p) => Text(p.split(RegExp(r'[\\/]')).last, style: const TextStyle(color: Color(0xFF6F655B), fontSize: 12))),
+                                      ..._imagePaths.map(
+                                        (p) => Text(
+                                          p.split(RegExp(r'[\\/]')).last,
+                                          style: const TextStyle(
+                                            color: Color(0xFF6F655B),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -317,7 +341,8 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
     }
 
     final dir = await getTemporaryDirectory();
-    final path = '${dir.path}/cotizacion-${DateTime.now().millisecondsSinceEpoch}.m4a';
+    final path =
+        '${dir.path}/cotizacion-${DateTime.now().millisecondsSinceEpoch}.m4a';
     await _audioRecorder.start(
       const RecordConfig(encoder: AudioEncoder.aacLc),
       path: path,
@@ -332,7 +357,9 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
 
     setState(() => _transcribingAudio = true);
     try {
-      final text = await context.read<AppController>().transcribeEmergencyAudio(audioPath);
+      final text = await context.read<AppController>().transcribeEmergencyAudio(
+        audioPath,
+      );
       if (!mounted) return;
       final currentDescription = _descriptionController.text.trim();
       final nextDescription = currentDescription.isEmpty
@@ -343,12 +370,16 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
         selection: TextSelection.collapsed(offset: nextDescription.length),
       );
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Audio transcrito. Revisa el texto antes de enviar.')),
+        const SnackBar(
+          content: Text('Audio transcrito. Revisa el texto antes de enviar.'),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
       );
     } finally {
       if (mounted) setState(() => _transcribingAudio = false);
@@ -465,6 +496,7 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
         messageKey: 'request_sent',
         descripcion: _descriptionController.text,
       );
+      if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => RequestDetailScreen(requestId: request.id),
@@ -500,7 +532,9 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
       if (!mounted) return;
       final fallback =
           'Su cotización fue enviada. Pronto tendrá una notificación sobre su cotización.';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(fallback)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(fallback)));
     }
   }
 
@@ -515,7 +549,10 @@ class _QuoteRequestScreenState extends State<QuoteRequestScreen> {
 
   Future<void> _pickImageFromCamera() async {
     final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.camera, imageQuality: 85);
+    final image = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85,
+    );
     if (image == null) return;
     setState(() {
       _imagePaths = [..._imagePaths, image.path];

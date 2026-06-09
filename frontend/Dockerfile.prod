@@ -1,0 +1,34 @@
+FROM node:22-alpine AS build
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build -- --configuration production
+
+# En desarrollo la web apunta a http://localhost:8000. En produccion Caddy
+# publica frontend y backend bajo el mismo dominio, por lo que las llamadas
+# deben ser relativas: /api/v1/..., /uploads/...
+RUN find /app/dist/frontend/browser -type f \( -name "*.js" -o -name "*.html" \) \
+    -exec sed -i \
+      -e 's|http://localhost:8000||g' \
+      -e 's|http://127.0.0.1:8000||g' \
+      {} +
+
+# Mantiene PWA en app-worker.js y deja ngsw-worker.js como safety worker.
+RUN cp /app/dist/frontend/browser/ngsw-worker.js /app/dist/frontend/browser/app-worker.js \
+    && cp /app/dist/frontend/browser/safety-worker.js /app/dist/frontend/browser/ngsw-worker.js
+
+FROM node:22-alpine
+
+WORKDIR /app
+
+RUN npm install -g serve
+
+COPY --from=build /app/dist/frontend/browser ./dist
+
+EXPOSE 4200
+
+CMD ["sh", "-c", "serve -s dist -l tcp://0.0.0.0:${PORT:-4200}"]

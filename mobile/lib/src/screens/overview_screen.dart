@@ -7,6 +7,7 @@ import 'package:record/record.dart';
 
 import '../app_controller.dart';
 import '../models.dart';
+import '../services/offline_queue_service.dart';
 import 'request_detail_screen.dart';
 
 class OverviewScreen extends StatefulWidget {
@@ -50,9 +51,12 @@ class _OverviewScreenState extends State<OverviewScreen> {
     final visibleRequests = _visibleRequests(requests);
     final incidentOptions = _incidentOptions(requests);
     final searchSummary = _searchSummary(visibleRequests);
+    final offlineRequests = controller.offlineEmergencies;
     final notifications = controller.notifications.take(4).toList();
-    final activeCount = controller.activeRequests.length;
-    final closedCount = requests.length - activeCount;
+    final activeCount =
+        controller.activeRequests.length + offlineRequests.length;
+    final closedCount = requests.length - controller.activeRequests.length;
+    final totalCount = requests.length + offlineRequests.length;
 
     return DecoratedBox(
       decoration: const BoxDecoration(
@@ -89,8 +93,8 @@ class _OverviewScreenState extends State<OverviewScreen> {
                   Expanded(
                     child: _MetricCard(
                       title: 'Seguimiento',
-                      value: requests.length.toString(),
-                      caption: 'Solicitudes creadas',
+                      value: totalCount.toString(),
+                      caption: 'Solicitudes enviadas o pendientes',
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -131,9 +135,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                       : Icons.manage_search_outlined,
                 ),
                 label: Text(
-                  _showHistorySearch
-                      ? 'Ocultar buscador'
-                      : 'Buscar historial',
+                  _showHistorySearch ? 'Ocultar buscador' : 'Buscar historial',
                 ),
               ),
               if (_showHistorySearch) ...[
@@ -170,7 +172,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                   padding: EdgeInsets.symmetric(vertical: 24),
                   child: Center(child: CircularProgressIndicator()),
                 )
-              else if (requests.isEmpty)
+              else if (requests.isEmpty && offlineRequests.isEmpty)
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(22),
@@ -198,7 +200,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                     ),
                   ),
                 )
-              else if (visibleRequests.isEmpty)
+              else if (visibleRequests.isEmpty && offlineRequests.isEmpty)
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(22),
@@ -220,7 +222,18 @@ class _OverviewScreenState extends State<OverviewScreen> {
                     ),
                   ),
                 )
-              else
+              else ...[
+                ...offlineRequests.map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _OfflineRequestCard(
+                      item: item,
+                      vehicleLabel: _offlineVehicleLabel(controller, item),
+                      canRetry: controller.connectivity.currentOnline,
+                      onRetry: controller.syncOfflineEmergencies,
+                    ),
+                  ),
+                ),
                 ...visibleRequests.map(
                   (request) => Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -240,6 +253,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                     ),
                   ),
                 ),
+              ],
               if (notifications.isNotEmpty) ...[
                 const SizedBox(height: 20),
                 Text(
@@ -265,7 +279,9 @@ class _OverviewScreenState extends State<OverviewScreen> {
 
   List<EmergencyRequest> _visibleRequests(List<EmergencyRequest> requests) {
     final sorted = requests.toList()
-      ..sort((left, right) => right.fechaCreacion.compareTo(left.fechaCreacion));
+      ..sort(
+        (left, right) => right.fechaCreacion.compareTo(left.fechaCreacion),
+      );
     if (!_showHistorySearch) {
       return sorted.take(1).toList();
     }
@@ -591,7 +607,10 @@ class _OverviewScreenState extends State<OverviewScreen> {
     for (final word in removable) {
       cleaned = cleaned.replaceAll(word, ' ');
     }
-    return cleaned.split(RegExp(r'\s+')).where((word) => word.isNotEmpty).join(' ');
+    return cleaned
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .join(' ');
   }
 
   Future<void> _playSearchResultAudio({
@@ -638,7 +657,11 @@ class _OverviewScreenState extends State<OverviewScreen> {
     }
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final start = DateTime(range.start.year, range.start.month, range.start.day);
+    final start = DateTime(
+      range.start.year,
+      range.start.month,
+      range.start.day,
+    );
     final end = DateTime(range.end.year, range.end.month, range.end.day);
     if (start == today && end == today) {
       return 'hoy';
@@ -652,6 +675,19 @@ class _OverviewScreenState extends State<OverviewScreen> {
     }
     return null;
   }
+}
+
+String _offlineVehicleLabel(AppController controller, OfflineEmergency item) {
+  final vehicleId = item.vehiculoId;
+  if (vehicleId == null) {
+    return 'Vehiculo pendiente';
+  }
+  for (final vehicle in controller.vehicles) {
+    if (vehicle.remoteId == vehicleId) {
+      return vehicle.label;
+    }
+  }
+  return 'Vehiculo #$vehicleId';
 }
 
 class _HeroCard extends StatelessWidget {
@@ -884,10 +920,8 @@ class _HistorySearchCard extends StatelessWidget {
                   child: Text('Todas las incidencias'),
                 ),
                 ...uniqueIncidentOptions.map(
-                  (item) => DropdownMenuItem<String>(
-                    value: item,
-                    child: Text(item),
-                  ),
+                  (item) =>
+                      DropdownMenuItem<String>(value: item, child: Text(item)),
                 ),
               ],
               onChanged: onIncidentChanged,
@@ -1052,6 +1086,125 @@ class _SetupWarning extends StatelessWidget {
                 label: const Text('Registrar vehiculo'),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OfflineRequestCard extends StatelessWidget {
+  const _OfflineRequestCard({
+    required this.item,
+    required this.vehicleLabel,
+    required this.canRetry,
+    required this.onRetry,
+  });
+
+  final OfflineEmergency item;
+  final String vehicleLabel;
+  final bool canRetry;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final formatter = DateFormat('dd/MM - HH:mm');
+    final statusColor = item.isError
+        ? const Color(0xFFB42318)
+        : item.isSyncing
+        ? const Color(0xFF175CD3)
+        : const Color(0xFFC65A16);
+    final statusLabel = item.isError
+        ? 'Error de sincronizacion'
+        : item.isSyncing
+        ? 'Sincronizando'
+        : 'Pendiente de sincronizacion';
+
+    return Card(
+      color: const Color(0xFFFFF7ED),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    vehicleLabel,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    child: Text(
+                      statusLabel,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              item.title,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Color(0xFF5F554B), height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _MiniMetaChip(
+                  icon: Icons.schedule,
+                  label: formatter.format(item.createdAt.toLocal()),
+                ),
+                if (item.latitud != null && item.longitud != null)
+                  _MiniMetaChip(
+                    icon: Icons.location_on_outlined,
+                    label:
+                        '${item.latitud!.toStringAsFixed(4)}, ${item.longitud!.toStringAsFixed(4)}',
+                  ),
+                _MiniMetaChip(
+                  icon: Icons.repeat,
+                  label: '${item.attempts} intento(s)',
+                ),
+              ],
+            ),
+            if (item.lastError != null && item.lastError!.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                  item.lastError!.replaceFirst('Exception: ', ''),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFB42318),
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: canRetry ? onRetry : null,
+              icon: Icon(item.isError ? Icons.refresh : Icons.cloud_upload),
+              label: Text(item.isError ? 'Reintentar ahora' : 'Sincronizar'),
+            ),
           ],
         ),
       ),

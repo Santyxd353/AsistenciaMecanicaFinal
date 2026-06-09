@@ -59,6 +59,26 @@ def ensure_legacy_schema():
         "ALTER TABLE tecnico ADD COLUMN IF NOT EXISTS tenant_id INTEGER NULL",
         "ALTER TABLE vehiculo ADD COLUMN IF NOT EXISTS tenant_id INTEGER NULL",
         "ALTER TABLE solicitud ADD COLUMN IF NOT EXISTS tenant_id INTEGER NULL",
+        # Igual que `tecnico.taller_id`, algunas BDs legacy crearon
+        # `solicitud.taller_id` apuntando a `user(id)`. La solicitud debe
+        # vincularse al taller operativo, no al usuario propietario.
+        "ALTER TABLE solicitud DROP CONSTRAINT IF EXISTS solicitud_taller_id_fkey",
+        "UPDATE solicitud SET taller_id = NULL WHERE taller_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM taller WHERE taller.id = solicitud.taller_id)",
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'solicitud_taller_id_fkey'
+                  AND conrelid = 'solicitud'::regclass
+            ) THEN
+                ALTER TABLE solicitud
+                ADD CONSTRAINT solicitud_taller_id_fkey
+                FOREIGN KEY (taller_id) REFERENCES taller(id);
+            END IF;
+        END $$;
+        """,
         "ALTER TABLE pago ADD COLUMN IF NOT EXISTS tenant_id INTEGER NULL",
         "ALTER TABLE calificacion_servicio ADD COLUMN IF NOT EXISTS tenant_id INTEGER NULL",
         "ALTER TABLE chat_mensaje ADD COLUMN IF NOT EXISTS tenant_id INTEGER NULL",
@@ -86,6 +106,26 @@ def ensure_legacy_schema():
         "ALTER TABLE tecnico ADD COLUMN IF NOT EXISTS id_usuario INTEGER NULL",
         "ALTER TABLE tecnico ADD COLUMN IF NOT EXISTS calificacion_promedio DOUBLE PRECISION DEFAULT 0.0",
         "ALTER TABLE tecnico ADD COLUMN IF NOT EXISTS total_calificaciones INTEGER DEFAULT 0",
+        # BDs legacy quedaron con `tecnico.taller_id` apuntando por error a
+        # `user(id)`. El modelo correcto es `taller(id)`, y el seed de ciclo 4
+        # necesita insertar técnicos vinculados a talleres reales.
+        "ALTER TABLE tecnico DROP CONSTRAINT IF EXISTS tecnico_taller_id_fkey",
+        "UPDATE tecnico SET taller_id = NULL WHERE taller_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM taller WHERE taller.id = tecnico.taller_id)",
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'tecnico_taller_id_fkey'
+                  AND conrelid = 'tecnico'::regclass
+            ) THEN
+                ALTER TABLE tecnico
+                ADD CONSTRAINT tecnico_taller_id_fkey
+                FOREIGN KEY (taller_id) REFERENCES taller(id);
+            END IF;
+        END $$;
+        """,
         # Columna legacy `tecnico.especialidad` (string libre) ya no existe en
         # el modelo Python: las especialidades se manejan via tabla pivote
         # `tecnicos_especialidades`. La columna quedó en BD con NOT NULL y
@@ -217,7 +257,7 @@ def backfill_vehicle_history():
         s.id,
         s.taller_id,
         s.tecnico_id,
-        s.tenant_id,
+        v.tenant_id,
         COALESCE(s.clasificacion_ia, 'Atencion de auxilio vehicular'),
         COALESCE(s.resumen_ia, s.descripcion),
         'Servicio historico migrado automaticamente al expediente del vehiculo.',
@@ -229,6 +269,7 @@ def backfill_vehicle_history():
         NOW(),
         NOW()
     FROM solicitud s
+    JOIN vehiculo v ON v.id = s.vehiculo_id
     WHERE s.vehiculo_id IS NOT NULL
       AND LOWER(s.estado::text) IN ('finalizado', 'resuelta')
       AND NOT EXISTS (
@@ -237,6 +278,71 @@ def backfill_vehicle_history():
           WHERE h.solicitud_id = s.id
             AND h.vehiculo_id = s.vehiculo_id
       )
+    """
+    with engine.begin() as connection:
+        connection.execute(text(statement))
+
+
+def normalize_vehicle_history_tenant():
+    """Corrige expedientes existentes para que hereden el tenant del vehiculo."""
+    with engine.begin() as connection:
+        connection.execute(text("""
+            UPDATE vehiculo_historial_reparacion h
+            SET tenant_id = v.tenant_id
+            FROM vehiculo v
+            WHERE v.id = h.vehiculo_id
+              AND h.tenant_id IS DISTINCT FROM v.tenant_id
+        """))
+
+
+def seed_demo_vehicle_history():
+    """Llena la historia clinica demo del Toyota Corolla de Santiago."""
+    statement = """
+    WITH target_vehicle AS (
+        SELECT v.id AS vehiculo_id, v.tenant_id
+        FROM vehiculo v
+        JOIN "user" u ON u.id = v.propietario_id
+        WHERE u.email = 'santiago.ss375@gmail.com'
+          AND v.placa = 'AEAA34'
+        LIMIT 1
+    ),
+    demo_rows AS (
+        SELECT * FROM (VALUES
+            ('revision-bateria-2025-10', 'Bateria descargada', 'Bateria con baja retencion de carga y bornes sulfatados.', 'Limpieza de bornes, prueba de alternador y carga completa de bateria.', 'bateria', 'Media', 120.00, 'pagado', 68400, 'Primera alerta de descarga lenta.', NOW() - INTERVAL '8 months'),
+            ('pinchazo-2025-11', 'Pinchazo en llanta delantera', 'Llanta delantera derecha con perforacion por objeto metalico.', 'Parche interno, revision de presion y balanceo rapido.', 'llanta', 'Media', 90.00, 'pagado', 70120, 'Revisar desgaste si se repite en el mismo eje.', NOW() - INTERVAL '7 months'),
+            ('frenos-2026-01', 'Revision de frenos', 'Pastillas delanteras con desgaste irregular y ruido al frenar.', 'Cambio de pastillas delanteras, limpieza de discos y prueba de ruta.', 'frenos', 'Alta', 260.00, 'pagado', 72450, 'Vigilar vibracion al frenar en bajadas.', NOW() - INTERVAL '5 months'),
+            ('motor-2026-02', 'Falla de motor leve', 'Motor con jaloneo intermitente; scanner indica mezcla pobre.', 'Limpieza de cuerpo de aceleracion, revision de bujias y ajuste de sensor.', 'motor', 'Alta', 340.00, 'pagado', 73980, 'Si vuelve el jaloneo, revisar inyectores.', NOW() - INTERVAL '4 months'),
+            ('mantenimiento-2026-03', 'Mantenimiento preventivo', 'Servicio preventivo por kilometraje.', 'Cambio de aceite, filtro de aceite, filtro de aire y revision general.', 'mantenimiento', 'Baja', 210.00, 'pagado', 75200, 'Vehiculo estable luego del servicio.', NOW() - INTERVAL '3 months'),
+            ('pinchazo-2026-05', 'Pinchazo recurrente', 'Nueva perdida de presion en llanta delantera derecha.', 'Cambio de valvula, sellado de aro y revision de neumatico.', 'llanta', 'Media', 110.00, 'pagado', 77610, 'Falla recurrente en llanta delantera derecha; sugerir cambio de neumatico.', NOW() - INTERVAL '1 month')
+        ) AS d(clave, titulo, diagnostico, acciones_realizadas, categoria, prioridad, costo, estado_pago, kilometraje, observaciones, fecha_servicio)
+    )
+    INSERT INTO vehiculo_historial_reparacion (
+        vehiculo_id, tenant_id, titulo, diagnostico, acciones_realizadas,
+        categoria, prioridad, costo, estado_pago, kilometraje, observaciones,
+        fecha_servicio, fecha_creacion, fecha_actualizacion
+    )
+    SELECT
+        tv.vehiculo_id,
+        tv.tenant_id,
+        d.titulo,
+        d.diagnostico,
+        d.acciones_realizadas,
+        d.categoria,
+        d.prioridad,
+        d.costo,
+        d.estado_pago,
+        d.kilometraje,
+        'DEMO:' || d.clave || ' - ' || d.observaciones,
+        d.fecha_servicio,
+        NOW(),
+        NOW()
+    FROM target_vehicle tv
+    CROSS JOIN demo_rows d
+    WHERE NOT EXISTS (
+        SELECT 1 FROM vehiculo_historial_reparacion h
+        WHERE h.vehiculo_id = tv.vehiculo_id
+          AND h.observaciones LIKE 'DEMO:' || d.clave || '%'
+    )
     """
     with engine.begin() as connection:
         connection.execute(text(statement))
@@ -456,6 +562,8 @@ def init_db():
 
     seed_default_tenant()
     backfill_vehicle_history()
+    normalize_vehicle_history_tenant()
+    seed_demo_vehicle_history()
     seed_saas_plans()
     seed_default_subscriptions()
     seed_default_specialties()

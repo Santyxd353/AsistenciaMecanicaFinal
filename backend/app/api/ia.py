@@ -252,12 +252,11 @@ def asistente_voz_endpoint(
             text = f"No se encontraron solicitudes con incidencias de {specialty}{date_suffix}."
 
     result = synthesize_speech(text, prefix=message_key)
-    if result.error:
-        raise HTTPException(status_code=500, detail=result.error)
     return {
         "text": result.text,
         "url": result.relative_url,
         "source": result.source,
+        "error": result.error,
         "especialidad_detectada": detected_specialty or None,
         "clasificacion": analysis.clasificacion if analysis else None,
     }

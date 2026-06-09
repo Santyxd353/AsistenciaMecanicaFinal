@@ -7,6 +7,9 @@ class AppUser {
     required this.role,
     required this.isActive,
     this.tenantId,
+    this.telefono,
+    this.fotoUrl,
+    this.contactoEmergencia,
   });
 
   final int id;
@@ -16,6 +19,9 @@ class AppUser {
   final String role;
   final bool isActive;
   final int? tenantId;
+  final String? telefono;
+  final String? fotoUrl;
+  final String? contactoEmergencia;
 
   bool get isDriver => role == 'driver';
   bool get isGlobalAdmin => role == 'admin' && tenantId == null;
@@ -33,6 +39,9 @@ class AppUser {
       'role': role,
       'is_active': isActive,
       'tenant_id': tenantId,
+      'telefono': telefono,
+      'foto_url': fotoUrl,
+      'contacto_emergencia': contactoEmergencia,
     };
   }
 
@@ -45,6 +54,9 @@ class AppUser {
       role: json['role'] as String? ?? 'driver',
       isActive: json['is_active'] as bool? ?? true,
       tenantId: json['tenant_id'] as int?,
+      telefono: json['telefono'] as String?,
+      fotoUrl: json['foto_url'] as String?,
+      contactoEmergencia: json['contacto_emergencia'] as String?,
     );
   }
 }
@@ -436,6 +448,9 @@ class WorkshopProfile {
     this.notificacionesRecordatorios = true,
     this.notificacionesPagos = true,
     this.reportesSemanales = false,
+    this.especialidadIds = const [],
+    this.tipoVehiculoIds = const [],
+    this.tiposVehiculo = const [],
   });
 
   final int id;
@@ -457,6 +472,9 @@ class WorkshopProfile {
   final bool notificacionesRecordatorios;
   final bool notificacionesPagos;
   final bool reportesSemanales;
+  final List<int> especialidadIds;
+  final List<int> tipoVehiculoIds;
+  final List<CatalogItem> tiposVehiculo;
 
   List<String> get specialtyTags => especialidades
       .split(',')
@@ -475,13 +493,32 @@ class WorkshopProfile {
       return double.tryParse(value?.toString() ?? '') ?? 0;
     }
 
+    final rawEspecialidades = json['especialidades'];
+    final especialidadItems = rawEspecialidades is List
+        ? rawEspecialidades
+              .whereType<Map<String, dynamic>>()
+              .map(CatalogItem.fromApi)
+              .toList()
+        : <CatalogItem>[];
+    final especialidadesTexto = rawEspecialidades is String
+        ? rawEspecialidades
+        : especialidadItems.map((item) => item.nombre).join(', ');
+
+    final rawTipos = json['tipos_vehiculo'];
+    final tipoItems = rawTipos is List
+        ? rawTipos
+              .whereType<Map<String, dynamic>>()
+              .map(CatalogItem.fromApi)
+              .toList()
+        : <CatalogItem>[];
+
     return WorkshopProfile(
       id: json['id'] as int,
       nombreComercial: json['nombre_comercial'] as String? ?? '',
       direccion: json['direccion'] as String? ?? '',
       telefono: json['telefono'] as String? ?? '',
       horarioAtencion: json['horario_atencion'] as String? ?? '',
-      especialidades: json['especialidades'] as String? ?? '',
+      especialidades: especialidadesTexto,
       emailContacto: json['email_contacto'] as String?,
       descripcion: json['descripcion'] as String?,
       sitioWeb: json['sitio_web'] as String?,
@@ -498,6 +535,23 @@ class WorkshopProfile {
           json['notificaciones_recordatorios'] as bool? ?? true,
       notificacionesPagos: json['notificaciones_pagos'] as bool? ?? true,
       reportesSemanales: json['reportes_semanales'] as bool? ?? false,
+      especialidadIds: especialidadItems.map((item) => item.id).toList(),
+      tipoVehiculoIds: tipoItems.map((item) => item.id).toList(),
+      tiposVehiculo: tipoItems,
+    );
+  }
+}
+
+class CatalogItem {
+  const CatalogItem({required this.id, required this.nombre});
+
+  final int id;
+  final String nombre;
+
+  factory CatalogItem.fromApi(Map<String, dynamic> json) {
+    return CatalogItem(
+      id: json['id'] as int,
+      nombre: json['nombre'] as String? ?? '',
     );
   }
 }
@@ -644,6 +698,7 @@ class EmergencyRequest {
     this.vehiculoId,
     this.tallerId,
     this.tecnicoId,
+    this.cotizacionSeleccionadaId,
     this.precioCobrado,
     this.comisionPlataforma,
     this.clasificacionIa,
@@ -656,6 +711,8 @@ class EmergencyRequest {
     this.tallerNombre,
     this.tecnicoNombre,
     this.tecnicoEspecialidad,
+    this.tecnicoTelefono,
+    this.tecnicoFotoUrl,
     this.vehiculoPlaca,
     this.vehiculoDescripcion,
     this.audioUrl,
@@ -672,6 +729,7 @@ class EmergencyRequest {
   final int? vehiculoId;
   final int? tallerId;
   final int? tecnicoId;
+  final int? cotizacionSeleccionadaId;
   final double? precioCobrado;
   final double? comisionPlataforma;
   final String? clasificacionIa;
@@ -684,6 +742,8 @@ class EmergencyRequest {
   final String? tallerNombre;
   final String? tecnicoNombre;
   final String? tecnicoEspecialidad;
+  final String? tecnicoTelefono;
+  final String? tecnicoFotoUrl;
   final String? vehiculoPlaca;
   final String? vehiculoDescripcion;
   final String? audioUrl;
@@ -696,6 +756,7 @@ class EmergencyRequest {
       estado == 'cancelado' ||
       estado == 'cancelada';
   bool get canBeCancelled => !isClosed;
+  bool get hasAcceptedQuote => cotizacionSeleccionadaId != null;
   bool get canBePaid =>
       !isClosed &&
       precioCobrado != null &&
@@ -781,6 +842,7 @@ class EmergencyRequest {
       vehiculoId: json['vehiculo_id'] as int?,
       tallerId: json['taller_id'] as int?,
       tecnicoId: json['tecnico_id'] as int?,
+      cotizacionSeleccionadaId: json['cotizacion_seleccionada_id'] as int?,
       precioCobrado: readNullableDouble('precio_cobrado'),
       comisionPlataforma: readNullableDouble('comision_plataforma'),
       clasificacionIa: json['clasificacion_ia'] as String?,
@@ -795,6 +857,8 @@ class EmergencyRequest {
       tallerNombre: json['taller_nombre'] as String?,
       tecnicoNombre: json['tecnico_nombre'] as String?,
       tecnicoEspecialidad: json['tecnico_especialidad'] as String?,
+      tecnicoTelefono: json['tecnico_telefono'] as String?,
+      tecnicoFotoUrl: json['tecnico_foto_url'] as String?,
       vehiculoPlaca: json['vehiculo_placa'] as String?,
       vehiculoDescripcion: json['vehiculo_descripcion'] as String?,
       audioUrl: json['audio_url'] as String?,

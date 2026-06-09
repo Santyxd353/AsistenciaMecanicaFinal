@@ -55,11 +55,12 @@ export class RealtimeService implements OnDestroy {
   readonly status$ = this.statusSubject.asObservable();
 
   private get wsBaseUrl(): string {
-    // Resolución: si está corriendo en HTTPS usamos wss://, sino ws://.
-    // Asumimos que el backend está en :8000 del mismo host. En producción
-    // se debería leer desde environment.
+    // Local: Angular corre en 4200 y FastAPI en 8000.
+    // Produccion: Nginx publica frontend y backend bajo el mismo dominio.
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${window.location.hostname}:8000/api/v1/ws`;
+    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    const host = isLocal ? `${window.location.hostname}:8000` : window.location.host;
+    return `${protocol}//${host}/api/v1/ws`;
   }
 
   private buildUrl(kind: RoomKind, id: number, token: string): string {

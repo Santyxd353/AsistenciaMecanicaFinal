@@ -26,6 +26,8 @@ export interface Solicitud {
   taller_longitud?: number;
   tecnico_nombre?: string;
   tecnico_especialidad?: string;
+  tecnico_telefono?: string;
+  tecnico_foto_url?: string;
   tecnico_latitud?: number;
   tecnico_longitud?: number;
   distancia_tecnico_km?: number;
@@ -129,5 +131,11 @@ export class SolicitudService {
 
   pagarSolicitud(solicitudId: number, monto?: number): Observable<Solicitud> {
     return this.http.post<Solicitud>(`${this.apiUrl}${solicitudId}/pago`, monto ? { monto } : {});
+  }
+
+  uploadAudio(solicitudId: number, audioBlob: Blob): Observable<Solicitud> {
+    const formData = new FormData();
+    formData.append('audio', audioBlob, `audio_${Date.now()}.webm`);
+    return this.http.post<Solicitud>(`${this.apiUrl}${solicitudId}/audio`, formData);
   }
 }

@@ -281,6 +281,7 @@ def listar_historial_vehiculo(
     historial = session.exec(
         select(VehiculoHistorialReparacion)
         .where(VehiculoHistorialReparacion.vehiculo_id == vehiculo.id)
+        .where(VehiculoHistorialReparacion.tenant_id == vehiculo.tenant_id)
         .order_by(VehiculoHistorialReparacion.fecha_servicio.desc())
     ).all()
     return [_historial_read(session, item) for item in historial]
@@ -324,7 +325,7 @@ def crear_historial_vehiculo(
         solicitud_id=payload.solicitud_id,
         taller_id=taller_id,
         tecnico_id=tecnico_id,
-        tenant_id=current_user.tenant_id or vehiculo.tenant_id,
+        tenant_id=vehiculo.tenant_id,
         titulo=(payload.titulo or "Atencion mecanica").strip(),
         diagnostico=(payload.diagnostico or "").strip() or None,
         acciones_realizadas=(payload.acciones_realizadas or "").strip() or None,

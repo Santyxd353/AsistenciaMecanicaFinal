@@ -486,6 +486,8 @@ class TecnicoRead(TecnicoBase):
     especialidades: List[EspecialidadRead] = Field(default_factory=list)
     usuario_username: Optional[str] = None
     usuario_email: Optional[str] = None
+    usuario_telefono: Optional[str] = None
+    usuario_foto_url: Optional[str] = None
     password_temporal: Optional[str] = None
 
 
@@ -497,6 +499,7 @@ class TecnicoPerfilPublicoRead(SQLModel):
     id: int
     nombre: str
     foto_url: Optional[str] = None
+    telefono: Optional[str] = None
     taller_id: Optional[int] = None
     taller_nombre: Optional[str] = None
     disponible: bool = True
@@ -600,6 +603,8 @@ class SolicitudRead(SolicitudBase):
     taller_longitud: Optional[float] = None
     tecnico_nombre: Optional[str] = None
     tecnico_especialidad: Optional[str] = None
+    tecnico_telefono: Optional[str] = None
+    tecnico_foto_url: Optional[str] = None
     tecnico_latitud: Optional[float] = None
     tecnico_longitud: Optional[float] = None
     distancia_tecnico_km: Optional[float] = None

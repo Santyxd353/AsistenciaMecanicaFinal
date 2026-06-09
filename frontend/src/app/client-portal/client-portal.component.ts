@@ -88,6 +88,23 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
               </label>
             </div>
 
+            <div class="audio-record-box" style="margin-bottom: 16px; padding: 12px; background: #fff8ef; border: 1px dashed #d7b99f; border-radius: 12px;">
+              <p style="margin-top: 0; color: #6d5c4d; font-weight: bold; margin-bottom: 8px;">Mensaje de voz (Opcional)</p>
+              
+              <div *ngIf="!audioBlob && !isRecording" style="display: flex; gap: 10px;">
+                <button type="button" class="btn-primary" (click)="startRecording()" style="padding: 6px 12px; font-size: 0.9rem;">🎤 Grabar Audio</button>
+              </div>
+              
+              <div *ngIf="isRecording" style="display: flex; gap: 10px; align-items: center;">
+                <span style="color: #d32f2f; font-weight: bold; animation: pulse 1.5s infinite;">🔴 Grabando...</span>
+                <button type="button" class="btn-secondary" (click)="stopRecording()" style="padding: 6px 12px; font-size: 0.9rem;">⏹️ Detener</button>
+              </div>
+
+              <div *ngIf="audioBlob && !isRecording" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <audio [src]="audioUrl" controls style="max-width: 100%; height: 40px;"></audio>
+                <button type="button" class="btn-secondary" (click)="clearRecording()" style="padding: 6px 12px; font-size: 0.9rem;">🗑️ Borrar</button>
+              </div>
+            </div>
             <div class="report-side-actions">
               <button class="btn-side btn-side-light" type="button" (click)="useCurrentLocation()">Usar ubicación actual</button>
               <button class="btn-side btn-side-map" type="button" (click)="openMapPicker()">
@@ -1501,6 +1518,11 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
   selectedLat: number | null = null;
   selectedLng: number | null = null;
   mapPickerOpen = false;
+  audioBlob: Blob | null = null;
+  audioUrl = '';
+  isRecording = false;
+  private mediaRecorder: MediaRecorder | null = null;
+  private audioChunks: BlobPart[] = [];
   private mapInstance: L.Map | null = null;
   private reportRealtimeSubs = new Map<number, Subscription>();
   private flushedSub?: Subscription;
@@ -1557,7 +1579,6 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
     return this.reports.filter((report) => this.canOpenGateway(report));
   }
 
-  /** Reports que aún esperan que el cliente elija taller (vía cotización). */
   get pendingReports(): Solicitud[] {
     return this.reports.filter(
       (report) => report.id > 0 && ['pendiente', 'buscando_taller'].includes(report.estado),
@@ -1584,10 +1605,6 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
 
     this.loadProfile();
     this.loadVehicles();
-
-    // Al reconectar, la cola offline sincroniza en segundo plano. Recargamos
-    // los reports para reemplazar las entradas `pendiente_sync` (id falso) por
-    // las solicitudes reales del backend y enganchar realtime al id correcto.
     this.flushedSub = this.offlineQueue.flushed$.subscribe((result) => {
       if (result.synced > 0) {
         this.reportMessage = `Sincronizadas ${result.synced} emergencia(s) pendientes.`;
@@ -1598,6 +1615,7 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     this.destroyMapPicker();
+    this.clearRecording();
     this.reportRealtimeSubs.forEach((sub) => sub.unsubscribe());
     this.reportRealtimeSubs.clear();
     this.flushedSub?.unsubscribe();
@@ -1625,7 +1643,7 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
         this.loadReports();
       },
       error: () => {
-        this.vehicleError = 'No se pudieron cargar tus vehículos.';
+        this.vehicleError = 'No se pudieron cargar tus vehiculos.';
         this.reports = [];
       }
     });
@@ -1648,15 +1666,13 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
         this.reloadCotizaciones();
       },
       error: () => {
-        this.reportError = 'No se pudo cargar el estado de cobros.';
+        this.reportError = 'No se pudo cargar el estado de tus solicitudes.';
       }
     });
   }
 
-  /** Carga las cotizaciones de todos los reports que aún esperan elección. */
   reloadCotizaciones(): void {
     const activos = new Set(this.pendingReports.map((report) => report.id));
-    // Limpiar cache de reports que ya no están pendientes.
     Object.keys(this.cotizacionesPorReporte).forEach((key) => {
       if (!activos.has(Number(key))) {
         delete this.cotizacionesPorReporte[Number(key)];
@@ -1693,8 +1709,7 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
       },
       error: (error) => {
         this.selectingCotizacionId = null;
-        this.cotizacionError = error?.error?.detail || 'No se pudo seleccionar la cotización.';
-        // Recargar por si la oferta expiró o ya fue tomada.
+        this.cotizacionError = error?.error?.detail || 'No se pudo seleccionar la cotizacion.';
         this.loadCotizaciones(reportId);
       },
     });
@@ -1709,7 +1724,6 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
     this.profileError = '';
     this.profileMessage = '';
     this.savingProfile = true;
-
     this.authService.updateProfile(this.profileForm.getRawValue()).pipe(
       timeout(10000),
       finalize(() => {
@@ -1735,7 +1749,6 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
     this.vehicleError = '';
     this.vehicleMessage = '';
     this.savingVehicle = true;
-
     this.vehicleService.createVehicle(this.vehicleForm.getRawValue()).pipe(
       timeout(10000),
       finalize(() => {
@@ -1754,7 +1767,7 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
         this.loadReports();
       },
       error: (error) => {
-        this.vehicleError = error?.error?.detail || 'No se pudo registrar el vehículo.';
+        this.vehicleError = error?.error?.detail || 'No se pudo registrar el vehiculo.';
       }
     });
   }
@@ -1773,7 +1786,6 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
     this.reportError = '';
     this.reportMessage = '';
     this.savingReport = true;
-
     this.solicitudService.createSolicitud({
       vehiculo_id: this.reportForm.value.vehiculo_id,
       descripcion: this.reportForm.value.descripcion,
@@ -1787,11 +1799,9 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
     ).subscribe({
       next: (report) => {
         this.reports = [report, ...this.reports].sort((left, right) => right.id - left.id);
-        if (report.estado === 'pendiente_sync') {
-          this.reportMessage = 'Sin conexion: solicitud guardada y pendiente de sincronizacion.';
-        } else {
-          this.reportMessage = 'Solicitud creada correctamente.';
-        }
+        this.reportMessage = report.estado === 'pendiente_sync'
+          ? 'Sin conexion: solicitud guardada y pendiente de sincronizacion.'
+          : 'Solicitud creada correctamente.';
         this.connectReportsRealtime();
         this.reportForm.reset({
           vehiculo_id: this.vehicles[0]?.id ?? null,
@@ -1799,6 +1809,7 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
         });
         this.selectedLat = null;
         this.selectedLng = null;
+        this.clearRecording();
       },
       error: (error) => {
         this.reportError = error?.error?.detail || 'No se pudo crear la solicitud.';
@@ -1811,6 +1822,46 @@ export class ClientPortalComponent implements OnInit, OnDestroy {
     this.vehiclePhotoFiles = Array.from(input.files ?? []).slice(0, 4);
     this.vehiclePreview = null;
     this.vehicleError = '';
+  }
+
+  async startRecording() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      this.reportError = 'Tu navegador no permite grabar audio.';
+      return;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    this.audioChunks = [];
+    this.mediaRecorder = new MediaRecorder(stream);
+    this.mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        this.audioChunks.push(event.data);
+      }
+    };
+    this.mediaRecorder.onstop = () => {
+      this.audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+      this.audioUrl = URL.createObjectURL(this.audioBlob);
+      stream.getTracks().forEach((track) => track.stop());
+    };
+    this.isRecording = true;
+    this.mediaRecorder.start();
+  }
+
+  stopRecording() {
+    if (this.mediaRecorder && this.isRecording) {
+      this.mediaRecorder.stop();
+    }
+    this.isRecording = false;
+  }
+
+  clearRecording() {
+    if (this.audioUrl) {
+      URL.revokeObjectURL(this.audioUrl);
+    }
+    this.audioBlob = null;
+    this.audioUrl = '';
+    this.audioChunks = [];
+    this.isRecording = false;
+    this.mediaRecorder = null;
   }
 
   analyzeVehiclePhotos() {

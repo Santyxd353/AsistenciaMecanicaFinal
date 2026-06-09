@@ -685,12 +685,12 @@ def registrar_historial_vehiculo_desde_solicitud(
     item = existente or VehiculoHistorialReparacion(
         vehiculo_id=vehiculo.id,
         solicitud_id=solicitud.id,
-        tenant_id=solicitud.tenant_id,
+        tenant_id=vehiculo.tenant_id,
         fecha_servicio=solicitud.fecha_finalizado or datetime.utcnow(),
     )
     item.taller_id = solicitud.taller_id
     item.tecnico_id = solicitud.tecnico_id or (tecnico_actual.id if tecnico_actual else None)
-    item.tenant_id = solicitud.tenant_id
+    item.tenant_id = vehiculo.tenant_id
     item.titulo = titulo
     item.diagnostico = diagnostico
     item.acciones_realizadas = acciones
@@ -711,6 +711,8 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
     taller_longitud = None
     tecnico_nombre = None
     tecnico_especialidad = None
+    tecnico_telefono = None
+    tecnico_foto_url = None
     tecnico_latitud = None
     tecnico_longitud = None
     distancia_tecnico_km = None
@@ -731,6 +733,11 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
         tecnico = session.get(Tecnico, solicitud.tecnico_id)
         if tecnico:
             tecnico_nombre = tecnico.nombre
+            if tecnico.id_usuario:
+                tecnico_usuario = session.get(User, tecnico.id_usuario)
+                if tecnico_usuario:
+                    tecnico_telefono = tecnico_usuario.telefono
+                    tecnico_foto_url = tecnico_usuario.foto_url
             # Tracking live: preferimos la posicion actualizada por los pings
             # del mecanico. Si aun no existe, usamos la ubicacion base.
             tecnico_latitud = tecnico.latitud_actual if tecnico.latitud_actual is not None else tecnico.latitud
@@ -790,6 +797,8 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
             "taller_longitud": taller_longitud,
             "tecnico_nombre": tecnico_nombre,
             "tecnico_especialidad": tecnico_especialidad,
+            "tecnico_telefono": tecnico_telefono,
+            "tecnico_foto_url": tecnico_foto_url,
             "tecnico_latitud": tecnico_latitud,
             "tecnico_longitud": tecnico_longitud,
             "distancia_tecnico_km": distancia_tecnico_km,

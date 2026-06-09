@@ -690,7 +690,11 @@ class _ReportScreenState extends State<ReportScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Solicitud #${request.id} enviada correctamente.'),
+          content: Text(
+            request == null
+                ? 'Sin conexion. La emergencia quedo pendiente y se enviara automaticamente.'
+                : 'Solicitud #${request.id} enviada correctamente.',
+          ),
         ),
       );
       await _playAssistantVoice(

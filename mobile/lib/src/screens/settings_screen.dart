@@ -38,6 +38,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _nameController = TextEditingController();
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _emergencyPhoneController = TextEditingController();
   bool _loadedFromState = false;
 
   @override
@@ -45,6 +47,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _nameController.dispose();
     _usernameController.dispose();
     _emailController.dispose();
+    _phoneController.dispose();
+    _emergencyPhoneController.dispose();
     super.dispose();
   }
 
@@ -57,6 +61,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _nameController.text = user?.fullName ?? '';
       _usernameController.text = user?.username ?? '';
       _emailController.text = user?.email ?? '';
+      _phoneController.text = user?.telefono ?? '';
+      _emergencyPhoneController.text = user?.contactoEmergencia ?? '';
       _loadedFromState = true;
     }
 
@@ -105,6 +111,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  Center(
+                    child: Column(
+                      children: [
+                        CircleAvatar(
+                          radius: 42,
+                          backgroundColor: const Color(0xFFFFE2CC),
+                          backgroundImage: _profileImageProvider(user),
+                          child: _profileImageProvider(user) == null
+                              ? const Icon(
+                                  Icons.person_outline,
+                                  size: 38,
+                                  color: Color(0xFF8D5524),
+                                )
+                              : null,
+                        ),
+                        const SizedBox(height: 10),
+                        FilledButton.tonalIcon(
+                          onPressed: controller.loading
+                              ? null
+                              : _pickProfilePhoto,
+                          icon: const Icon(Icons.photo_camera_outlined),
+                          label: const Text('Cambiar foto'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   TextFormField(
                     controller: _nameController,
                     decoration: InputDecoration(
@@ -123,6 +156,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     decoration: const InputDecoration(labelText: 'Correo'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'Telefono',
+                      hintText: '+591 70000000',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _emergencyPhoneController,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'Contacto de emergencia',
+                      hintText: '+591 70000000',
+                    ),
                   ),
                   const SizedBox(height: 16),
                   FilledButton(
@@ -225,6 +276,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         username: _usernameController.text.trim(),
         email: _emailController.text.trim(),
         fullName: _nameController.text.trim(),
+        telefono: _phoneController.text.trim(),
+        contactoEmergencia: _emergencyPhoneController.text.trim(),
       );
       if (!mounted) {
         return;
@@ -239,6 +292,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _logout() async {
     await context.read<AppController>().logout();
+  }
+
+  Future<void> _pickProfilePhoto() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 82,
+      maxWidth: 1200,
+    );
+    if (picked == null || !mounted) return;
+    try {
+      await context.read<AppController>().uploadProfilePhoto(picked.path);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Foto de perfil actualizada.')),
+      );
+    } catch (error) {
+      _showMessage(error.toString());
+    }
   }
 
   Future<void> _showVehicleDialog() async {
@@ -291,6 +362,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     if (vehicle.photoUrl != null && vehicle.photoUrl!.isNotEmpty) {
       return NetworkImage(vehicle.photoUrl!);
+    }
+    return null;
+  }
+
+  ImageProvider<Object>? _profileImageProvider(AppUser? user) {
+    final fotoUrl = user?.fotoUrl;
+    if (fotoUrl != null && fotoUrl.isNotEmpty) {
+      return NetworkImage(fotoUrl);
     }
     return null;
   }

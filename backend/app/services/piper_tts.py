@@ -7,6 +7,7 @@ en el volumen de uploads y luego queda cacheada para ejecuciones offline.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,9 +28,44 @@ PIPER_AUTO_DOWNLOAD = os.getenv("PIPER_AUTO_DOWNLOAD", "true").lower() in {
     "yes",
     "si",
 }
-PIPER_VOICE_BASE_URL = os.getenv(
-    "PIPER_VOICE_BASE_URL",
-    "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/es/es_ES/carlfm/x_low",
+
+
+def _quality_folder(quality: str) -> str:
+    aliases = {
+        "x_low": "x_low",
+        "x-low": "x_low",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+    }
+    return aliases.get(quality, quality)
+
+
+def _derive_voice_base_url(voice_name: str) -> str:
+    """Construye la URL oficial de Piper desde el nombre de voz.
+
+    Ejemplos:
+    * es_ES-carlfm-x_low -> .../es/es_ES/carlfm/x_low
+    * es_MX-ald-medium  -> .../es/es_MX/ald/medium
+
+    Esto evita que al cambiar PIPER_VOICE_NAME se siga intentando descargar
+    desde la carpeta de la voz anterior.
+    """
+    parts = voice_name.split("-")
+    if len(parts) < 3 or "_" not in parts[0]:
+        return "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/es/es_ES/carlfm/x_low"
+    locale = parts[0]
+    speaker = parts[1]
+    quality = _quality_folder("-".join(parts[2:]))
+    language = locale.split("_", 1)[0]
+    return (
+        "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/"
+        f"{language}/{locale}/{speaker}/{quality}"
+    )
+
+
+PIPER_VOICE_BASE_URL = os.getenv("PIPER_VOICE_BASE_URL") or _derive_voice_base_url(
+    PIPER_VOICE_NAME
 )
 
 
@@ -53,6 +89,13 @@ def ensure_piper_voice() -> tuple[Path | None, str | None]:
     PIPER_VOICE_DIR.mkdir(parents=True, exist_ok=True)
     model_path = _voice_model_path()
     config_path = _voice_config_path()
+
+    if shutil.which(PIPER_BINARY) is None:
+        return None, (
+            f"Piper no esta instalado en el contenedor o no existe el binario '{PIPER_BINARY}'. "
+            "Reconstruye la imagen backend para instalar piper-tts."
+        )
+
     if model_path.exists() and config_path.exists():
         return model_path, None
 

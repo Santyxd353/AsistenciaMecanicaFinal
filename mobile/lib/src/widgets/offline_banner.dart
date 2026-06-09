@@ -6,9 +6,7 @@ import 'package:provider/provider.dart';
 import '../app_controller.dart';
 import '../services/offline_queue_service.dart';
 
-/// Banner discreto que muestra estado de conectividad + pendientes en cola.
-/// Verde-marrón translucido cuando online + 0 pendientes (no se muestra).
-/// Naranja cuando hay pendientes. Rojo cuando offline.
+/// Banner simple para mostrar conexion y emergencias offline pendientes.
 class OfflineBanner extends StatefulWidget {
   const OfflineBanner({super.key});
 
@@ -21,6 +19,7 @@ class _OfflineBannerState extends State<OfflineBanner> {
   StreamSubscription<OfflineFlushResult>? _flushSub;
   bool _online = true;
   int _pending = 0;
+  int _failed = 0;
 
   @override
   void initState() {
@@ -32,26 +31,35 @@ class _OfflineBannerState extends State<OfflineBanner> {
     if (!mounted) return;
     final ctrl = context.read<AppController>();
     _online = ctrl.connectivity.currentOnline;
-    _pending = await ctrl.offlineQueue.pendingCount();
+    await _refreshCounts(ctrl);
     if (!mounted) return;
     setState(() {});
-    _connSub = ctrl.connectivity.isOnline$.listen((v) async {
+
+    _connSub = ctrl.connectivity.isOnline$.listen((online) async {
       if (!mounted) return;
-      final pendings = await ctrl.offlineQueue.pendingCount();
-      setState(() {
-        _online = v;
-        _pending = pendings;
-      });
+      await _refreshCounts(ctrl);
+      setState(() => _online = online);
     });
-    _flushSub = ctrl.offlineQueue.events$.listen((r) async {
+
+    _flushSub = ctrl.offlineQueue.events$.listen((result) async {
       if (!mounted) return;
-      setState(() => _pending = r.pending);
-      if (r.synced > 0) {
+      await _refreshCounts(ctrl);
+      if (!mounted) return;
+      setState(() {});
+      if (result.synced > 0) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(content: Text('Sincronizadas ${r.synced} emergencia(s).')),
+          SnackBar(
+            content: Text('Sincronizadas ${result.synced} emergencia(s).'),
+          ),
         );
       }
     });
+  }
+
+  Future<void> _refreshCounts(AppController ctrl) async {
+    final items = await ctrl.offlineQueue.visibleEmergencies();
+    _pending = items.where((item) => item.isPending || item.isSyncing).length;
+    _failed = items.where((item) => item.isError).length;
   }
 
   @override
@@ -63,16 +71,28 @@ class _OfflineBannerState extends State<OfflineBanner> {
 
   @override
   Widget build(BuildContext context) {
-    if (_online && _pending == 0) return const SizedBox.shrink();
-    final color = !_online
+    if (_online && _pending == 0 && _failed == 0) {
+      return const SizedBox.shrink();
+    }
+
+    final color = _failed > 0
+        ? Colors.red.shade700
+        : !_online
         ? Colors.red.shade700
         : Colors.orange.shade700;
-    final icon = !_online ? Icons.cloud_off : Icons.sync;
-    final text = !_online
+    final icon = _failed > 0
+        ? Icons.error_outline
+        : !_online
+        ? Icons.cloud_off
+        : Icons.sync;
+    final text = _failed > 0
+        ? '$_failed emergencia(s) con error. Reintenta desde Inicio.'
+        : !_online
         ? (_pending > 0
-            ? 'Sin conexión. $_pending emergencia(s) pendiente(s) de sincronización.'
-            : 'Sin conexión. Las emergencias se guardarán localmente.')
-        : '$_pending pendiente(s) de sincronización…';
+              ? 'Sin conexion. $_pending emergencia(s) pendiente(s) de sincronizacion.'
+              : 'Sin conexion. Las emergencias se guardaran localmente.')
+        : '$_pending pendiente(s) de sincronizacion...';
+
     return Material(
       color: color,
       child: SafeArea(

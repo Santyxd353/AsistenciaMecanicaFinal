@@ -6,10 +6,12 @@ import 'screens/auth_screen.dart';
 import 'screens/overview_screen.dart';
 import 'screens/quote_request_screen.dart';
 import 'screens/report_screen.dart';
+import 'screens/request_detail_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/vehicle_registration_screen.dart';
 import 'screens/workshop_account_screen.dart';
 import 'screens/workshop_home_screen.dart';
+import 'screens/workshop_request_detail_screen.dart';
 import 'screens/workshop_requests_screen.dart';
 import 'screens/workshop_team_screen.dart';
 import 'screens/kpi_screen.dart';
@@ -68,6 +70,8 @@ class _AppShellState extends State<AppShell> {
       _currentIndex = 0;
       return const AuthScreen();
     }
+
+    _openPendingNotificationRequest(controller);
 
     if (controller.isGlobalAdmin) {
       _currentIndex = 0;
@@ -170,6 +174,28 @@ class _AppShellState extends State<AppShell> {
         ],
       ),
     );
+  }
+
+  void _openPendingNotificationRequest(AppController controller) {
+    final requestId = controller.pendingNotificationRequestId;
+    if (requestId == null) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final consumed = controller.consumePendingNotificationRequestId();
+      if (consumed == null) {
+        return;
+      }
+      final user = controller.currentUser;
+      final page = user?.isDriver == true
+          ? RequestDetailScreen(requestId: consumed)
+          : WorkshopRequestDetailScreen(requestId: consumed);
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    });
   }
 }
 

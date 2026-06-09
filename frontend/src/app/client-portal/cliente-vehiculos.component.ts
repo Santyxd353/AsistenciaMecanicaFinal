@@ -42,12 +42,26 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
               <p class="history-empty" *ngIf="historyLoadingId !== v.id && !historyError && !(histories[v.id]?.length)">
                 Este vehiculo todavia no tiene reparaciones registradas.
               </p>
+              <div class="history-summary" *ngIf="histories[v.id]?.length">
+                <div><span>Total reparaciones</span><strong>{{ histories[v.id].length }}</strong></div>
+                <div><span>Costo acumulado</span><strong>Bs {{ totalHistoryCost(histories[v.id]) | number:'1.2-2' }}</strong></div>
+                <div><span>Ultima atencion</span><strong>{{ histories[v.id][0].fecha_servicio | date:'dd/MM/yyyy' }}</strong></div>
+              </div>
+              <div class="history-alert" *ngFor="let alert of recurrentAlerts(histories[v.id] || [])">
+                {{ alert }}
+              </div>
               <article class="history-item" *ngFor="let h of histories[v.id] || []">
                 <div>
                   <strong>{{ h.titulo || 'Atencion mecanica' }}</strong>
                   <span>{{ h.fecha_servicio | date:'dd/MM/yyyy HH:mm' }}</span>
                 </div>
-                <p>{{ h.diagnostico || h.acciones_realizadas || 'Sin detalle tecnico.' }}</p>
+                <div class="history-tags">
+                  <span *ngIf="h.categoria">{{ h.categoria }}</span>
+                  <span *ngIf="h.prioridad">{{ h.prioridad }}</span>
+                  <span *ngIf="h.kilometraje">{{ h.kilometraje | number }} km</span>
+                </div>
+                <p>{{ h.diagnostico || 'Sin diagnostico registrado.' }}</p>
+                <p class="history-actions">{{ h.acciones_realizadas || 'Sin acciones registradas.' }}</p>
                 <small>
                   {{ h.taller_nombre || 'Taller no registrado' }}
                   <ng-container *ngIf="h.tecnico_nombre"> · {{ h.tecnico_nombre }}</ng-container>
@@ -163,6 +177,19 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
       border-top: 1px dashed #eadcca;
     }
     .history-empty { margin: 0; color: #8a6647; }
+    .history-summary {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+      background: #fffaf2; border: 1px solid #eadcca; border-radius: 16px; padding: 12px;
+    }
+    .history-summary span {
+      display: block; font-size: 10px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.12em; color: #8a6647;
+    }
+    .history-summary strong { font-size: 1.15rem; }
+    .history-alert {
+      background: #fff1d8; border: 1px solid #e0b980; color: #6b3f15;
+      border-radius: 14px; padding: 10px 12px; font-weight: 800;
+    }
     .history-item {
       background: #fff; border: 1px solid #eadcca; border-radius: 14px;
       padding: 12px; box-shadow: 0 10px 22px rgba(64,37,18,0.06);
@@ -170,6 +197,12 @@ import { ClienteNavbarComponent } from './cliente-navbar.component';
     .history-item > div { display: flex; justify-content: space-between; gap: 10px; }
     .history-item > div span { color: #8a6647; font-size: 12px; }
     .history-item p { margin: 8px 0; color: #4f3b2a; }
+    .history-actions { color: #6b513c !important; font-style: italic; }
+    .history-tags { display: flex !important; justify-content: flex-start !important; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .history-tags span {
+      background: #f2e4d3; color: #5a3a22; border-radius: 999px; padding: 5px 9px;
+      font-weight: 800; font-size: 11px !important;
+    }
     .history-item small { color: #8a6647; }
     .ai-upload-box {
       padding: 16px; background: #fff8ef; border: 1px dashed #c19a6a;
@@ -263,6 +296,21 @@ export class ClienteVehiculosComponent implements OnInit {
         this.historyLoadingId = null;
       },
     });
+  }
+
+  totalHistoryCost(items: VehicleRepairHistory[] = []): number {
+    return items.reduce((sum, item) => sum + Number(item.costo || 0), 0);
+  }
+
+  recurrentAlerts(items: VehicleRepairHistory[] = []): string[] {
+    const counts: Record<string, number> = {};
+    for (const item of items) {
+      const key = (item.categoria || '').trim().toLowerCase();
+      if (key) counts[key] = (counts[key] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .filter(([, count]) => count >= 2)
+      .map(([category, count]) => `Falla recurrente detectada: ${category} (${count} registros).`);
   }
 
   handlePhotos(event: Event): void {
