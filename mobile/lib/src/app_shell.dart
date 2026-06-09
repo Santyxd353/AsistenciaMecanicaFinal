@@ -111,7 +111,7 @@ class _AppShellState extends State<AppShell> {
             _RutaNavItem(Icons.assignment_outlined, 'Casos'),
             _RutaNavItem(Icons.groups_outlined, 'Equipo'),
             _RutaNavItem(Icons.manage_accounts_outlined, 'Cuenta'),
-            _RutaNavItem(Icons.bar_chart, 'KPIs'),
+            _RutaNavItem(Icons.bar_chart, 'Reportes'),
           ],
         ),
       );

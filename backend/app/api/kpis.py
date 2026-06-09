@@ -30,11 +30,48 @@ from app.models.domain import (
     Pago,
     Solicitud,
     Taller,
+    Tecnico,
+    Vehiculo,
 )
 from app.models.user import User, UserRole
 
 
 router = APIRouter()
+
+
+def _obtener_taller_actual(session: Session, current_user: User) -> Taller:
+    """Devuelve el taller operativo del usuario actual.
+
+    En SaaS hay admins de tenant que no siempre son `propietario_id` directo
+    del taller. Por eso primero buscamos por propietario y luego por tenant.
+    """
+    if current_user.role not in {UserRole.WORKSHOP, UserRole.ADMIN}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo administradores de taller pueden ver estos reportes.",
+        )
+
+    stmt = select(Taller)
+    if current_user.tenant_id is not None:
+        stmt = stmt.where(Taller.tenant_id == current_user.tenant_id)
+
+    taller = session.exec(
+        stmt.where(Taller.propietario_id == current_user.id)
+    ).first()
+    if taller:
+        return taller
+
+    if current_user.tenant_id is not None:
+        taller = session.exec(
+            select(Taller)
+            .where(Taller.tenant_id == current_user.tenant_id)
+            .where(Taller.activo == True)
+            .order_by(Taller.id)
+        ).first()
+        if taller:
+            return taller
+
+    raise HTTPException(status_code=404, detail="No se encontro taller para este usuario.")
 
 
 def _resolver_tenant(current_user: User, tenant_id_query: Optional[int]) -> Optional[int]:
@@ -65,6 +102,191 @@ def _delta_min(a: Optional[datetime], b: Optional[datetime]) -> Optional[float]:
         return None
     delta = (b - a).total_seconds() / 60.0
     return delta if delta >= 0 else None
+
+
+def _add_count(bucket: dict[str, int], key: str | None) -> None:
+    clean = (key or "Sin dato").strip() or "Sin dato"
+    bucket[clean] = bucket.get(clean, 0) + 1
+
+
+def _top_dict(bucket: dict[str, int], limit: int = 8) -> list[dict]:
+    return [
+        {"nombre": key, "total": value}
+        for key, value in sorted(bucket.items(), key=lambda item: item[1], reverse=True)[:limit]
+    ]
+
+
+@router.get("/taller")
+def reportes_taller(
+    dias: int = Query(default=30, ge=1, le=365),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Reportes operativos para administrador de taller.
+
+    Incluye rendimiento de trabajadores, incidentes frecuentes, modelos de auto
+    auxiliados, zonas con mas auxilio, tiempos, ingresos y estado de casos.
+    """
+    taller = _obtener_taller_actual(session, current_user)
+    desde = datetime.utcnow() - timedelta(days=dias)
+
+    solicitudes = list(session.exec(
+        select(Solicitud)
+        .where(Solicitud.taller_id == taller.id)
+        .where(Solicitud.tenant_id == taller.tenant_id)
+        .where(Solicitud.fecha_creacion >= desde)
+        .order_by(Solicitud.fecha_creacion.desc())
+    ).all())
+
+    tecnicos = {
+        tecnico.id: tecnico
+        for tecnico in session.exec(
+            select(Tecnico)
+            .where(Tecnico.taller_id == taller.id)
+            .where(Tecnico.tenant_id == taller.tenant_id)
+        ).all()
+        if tecnico.id is not None
+    }
+
+    total = len(solicitudes)
+    finalizadas = [s for s in solicitudes if s.estado == EstadoSolicitud.FINALIZADO]
+    canceladas = [s for s in solicitudes if s.estado == EstadoSolicitud.CANCELADO]
+    activas = [
+        s for s in solicitudes
+        if s.estado in {
+            EstadoSolicitud.ASIGNADA,
+            EstadoSolicitud.TECNICO_EN_CAMINO,
+            EstadoSolicitud.TECNICO_LLEGO,
+            EstadoSolicitud.EN_PROCESO,
+        }
+    ]
+    pendientes = [
+        s for s in solicitudes
+        if s.estado in {EstadoSolicitud.PENDIENTE, EstadoSolicitud.BUSCANDO_TALLER}
+    ]
+
+    incidentes: dict[str, int] = {}
+    modelos: dict[str, int] = {}
+    marcas: dict[str, int] = {}
+    zonas: dict[str, dict] = {}
+    estados: dict[str, int] = {}
+    tecnico_stats: dict[int, dict] = {}
+    tiempos_llegada: list[float] = []
+    tiempos_cierre: list[float] = []
+
+    for solicitud in solicitudes:
+        _add_count(estados, solicitud.estado.value if isinstance(solicitud.estado, EstadoSolicitud) else str(solicitud.estado))
+        _add_count(incidentes, solicitud.clasificacion_ia)
+
+        if solicitud.vehiculo_id:
+            vehiculo = session.get(Vehiculo, solicitud.vehiculo_id)
+            if vehiculo:
+                _add_count(marcas, vehiculo.marca)
+                modelo_label = f"{vehiculo.marca} {vehiculo.modelo}".strip()
+                _add_count(modelos, modelo_label)
+
+        if solicitud.latitud is not None and solicitud.longitud is not None:
+            key = f"{round(solicitud.latitud, 2)},{round(solicitud.longitud, 2)}"
+            zone = zonas.setdefault(key, {
+                "lat": round(solicitud.latitud, 2),
+                "lng": round(solicitud.longitud, 2),
+                "total": 0,
+            })
+            zone["total"] += 1
+
+        llegada = _delta_min(solicitud.fecha_taller_asignado, solicitud.fecha_tecnico_llego)
+        if llegada is not None:
+            tiempos_llegada.append(llegada)
+        cierre = _delta_min(solicitud.fecha_creacion, solicitud.fecha_finalizado)
+        if cierre is not None:
+            tiempos_cierre.append(cierre)
+
+        if solicitud.tecnico_id:
+            entry = tecnico_stats.setdefault(solicitud.tecnico_id, {
+                "tecnico_id": solicitud.tecnico_id,
+                "nombre": tecnicos.get(solicitud.tecnico_id).nombre if solicitud.tecnico_id in tecnicos else "Mecanico",
+                "total": 0,
+                "finalizados": 0,
+                "activos": 0,
+                "cancelados": 0,
+                "ingresos": 0.0,
+                "tiempos_cierre": [],
+                "calificacion": tecnicos.get(solicitud.tecnico_id).calificacion_promedio if solicitud.tecnico_id in tecnicos else 0.0,
+            })
+            entry["total"] += 1
+            if solicitud.estado == EstadoSolicitud.FINALIZADO:
+                entry["finalizados"] += 1
+                entry["ingresos"] += float(solicitud.precio_cobrado or 0)
+            elif solicitud.estado == EstadoSolicitud.CANCELADO:
+                entry["cancelados"] += 1
+            elif solicitud in activas:
+                entry["activos"] += 1
+            cierre_tecnico = _delta_min(solicitud.fecha_creacion, solicitud.fecha_finalizado)
+            if cierre_tecnico is not None:
+                entry["tiempos_cierre"].append(cierre_tecnico)
+
+    trabajadores = []
+    for entry in tecnico_stats.values():
+        avg = (
+            sum(entry["tiempos_cierre"]) / len(entry["tiempos_cierre"])
+            if entry["tiempos_cierre"] else None
+        )
+        tasa_finalizacion = (
+            round(entry["finalizados"] / entry["total"] * 100, 1)
+            if entry["total"] else 0.0
+        )
+        score = round(
+            (tasa_finalizacion * 0.55)
+            + min(entry["finalizados"] * 7, 30)
+            + min(float(entry["calificacion"] or 0) * 3, 15),
+            1,
+        )
+        trabajadores.append({
+            "tecnico_id": entry["tecnico_id"],
+            "nombre": entry["nombre"],
+            "total": entry["total"],
+            "finalizados": entry["finalizados"],
+            "activos": entry["activos"],
+            "cancelados": entry["cancelados"],
+            "ingresos": round(entry["ingresos"], 2),
+            "tiempo_promedio_cierre_min": round(avg, 1) if avg is not None else None,
+            "tasa_finalizacion_pct": tasa_finalizacion,
+            "calificacion": round(float(entry["calificacion"] or 0), 1),
+            "score": score,
+        })
+    trabajadores.sort(key=lambda item: item["score"], reverse=True)
+
+    ingresos = round(sum(float(s.precio_cobrado or 0) for s in finalizadas), 2)
+    comision = round(sum(float(s.comision_plataforma or 0) for s in finalizadas), 2)
+    promedio_llegada = round(sum(tiempos_llegada) / len(tiempos_llegada), 1) if tiempos_llegada else None
+    promedio_cierre = round(sum(tiempos_cierre) / len(tiempos_cierre), 1) if tiempos_cierre else None
+
+    return {
+        "taller": {
+            "id": taller.id,
+            "nombre": taller.nombre_comercial,
+            "calificacion": taller.calificacion_promedio,
+        },
+        "ventana_dias": dias,
+        "resumen": {
+            "solicitudes": total,
+            "pendientes": len(pendientes),
+            "activas": len(activas),
+            "finalizadas": len(finalizadas),
+            "canceladas": len(canceladas),
+            "ingresos": ingresos,
+            "comision": comision,
+            "neto": round(ingresos - comision, 2),
+            "tiempo_promedio_llegada_min": promedio_llegada,
+            "tiempo_promedio_cierre_min": promedio_cierre,
+        },
+        "trabajadores_mas_rendimiento": trabajadores[:8],
+        "tipos_incidente": _top_dict(incidentes),
+        "modelos_auxiliados": _top_dict(modelos),
+        "marcas_auxiliadas": _top_dict(marcas),
+        "zonas_mas_auxilio": sorted(zonas.values(), key=lambda item: item["total"], reverse=True)[:8],
+        "estados": _top_dict(estados),
+    }
 
 
 @router.get("/")
