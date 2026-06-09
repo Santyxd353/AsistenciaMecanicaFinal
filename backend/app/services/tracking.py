@@ -8,19 +8,77 @@ también desde el flujo de reasignación o desde un job programado.
 from __future__ import annotations
 
 import math
+import os
 from datetime import datetime
 from typing import Optional
 
 import anyio
+from sqlmodel import select
 from sqlmodel import Session
 
 from app.models.domain import (
+    Notificacion,
     Solicitud,
     Tecnico,
     TrackingPing,
+    TipoNotificacion,
+    Vehiculo,
 )
 from app.services.assignment import eta_desde_distancia, haversine_km
+from app.services.notificaciones import crear_notificacion
 from app.services.realtime import manager as realtime_manager, solicitud_room, taller_room
+
+
+NEAR_ARRIVAL_TITLE = "El mecanico esta a punto de llegar"
+
+
+def _near_arrival_threshold_km() -> float:
+    try:
+        return float(os.getenv("TRACKING_NEAR_ARRIVAL_KM", "0.35"))
+    except ValueError:
+        return 0.35
+
+
+def _notificar_cliente_si_mecanico_cerca(
+    session: Session,
+    *,
+    solicitud: Solicitud,
+    tecnico: Tecnico,
+    distancia_km: Optional[float],
+) -> None:
+    if distancia_km is None or distancia_km > _near_arrival_threshold_km():
+        return
+    if not solicitud.id or not solicitud.vehiculo_id:
+        return
+
+    vehiculo = session.get(Vehiculo, solicitud.vehiculo_id)
+    if not vehiculo or not vehiculo.propietario_id:
+        return
+
+    ya_notificado = session.exec(
+        select(Notificacion)
+        .where(Notificacion.destinatario_id == vehiculo.propietario_id)
+        .where(Notificacion.solicitud_id == solicitud.id)
+        .where(Notificacion.titulo == NEAR_ARRIVAL_TITLE)
+    ).first()
+    if ya_notificado:
+        return
+
+    distancia_m = max(0, int(round(distancia_km * 1000)))
+    mensaje = (
+        f"{tecnico.nombre} esta cerca del punto de auxilio "
+        f"(aprox. {distancia_m} m). Preparate para recibirlo."
+    )
+    crear_notificacion(
+        session,
+        destinatario_id=vehiculo.propietario_id,
+        tipo=TipoNotificacion.TECNICO_EN_CAMINO,
+        titulo=NEAR_ARRIVAL_TITLE,
+        mensaje=mensaje,
+        solicitud_id=solicitud.id,
+        accion_url="/cliente/solicitudes",
+        tenant_id=solicitud.tenant_id,
+    )
 
 
 def registrar_ping(
@@ -75,6 +133,13 @@ def registrar_ping(
     if distancia is not None:
         solicitud.distancia_estimada_km = round(distancia, 2)
     session.add(solicitud)
+
+    _notificar_cliente_si_mecanico_cerca(
+        session,
+        solicitud=solicitud,
+        tecnico=tecnico,
+        distancia_km=distancia,
+    )
 
     session.flush()
     return ping
