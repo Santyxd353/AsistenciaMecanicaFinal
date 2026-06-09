@@ -49,6 +49,7 @@ export class TecnicosComponent implements OnInit {
     id: null,
     nombre: '',
     email: '',
+    telefono: '',
     ci: '',
     direccion: '',
     especialidad_ids: [],
@@ -237,6 +238,7 @@ export class TecnicosComponent implements OnInit {
       id: null,
       nombre: '',
       email: '',
+      telefono: '',
       ci: '',
       direccion: '',
       especialidad_ids: [],
@@ -266,6 +268,7 @@ export class TecnicosComponent implements OnInit {
 
     this.form = {
       ...t,
+      telefono: t.usuario_telefono ?? '',
       ci: t.ci ?? '',
       direccion: t.direccion ?? '',
       especialidad_ids: (t.especialidades || []).map(esp => esp.id),
@@ -294,6 +297,7 @@ export class TecnicosComponent implements OnInit {
       id: null,
       nombre: '',
       email: '',
+      telefono: '',
       ci: '',
       direccion: '',
       especialidad_ids: [],
@@ -580,6 +584,7 @@ export class TecnicosComponent implements OnInit {
       // Backend valida formato + unicidad. Acá lo normalizamos a minúsculas
       // para evitar duplicados por mayúsculas/minúsculas (Ramiro@... vs ramiro@...).
       email: (this.form.email || '').trim().toLowerCase(),
+      telefono: (this.form.telefono || '').trim(),
       ci: (this.form.ci || '').trim(),
       direccion: (this.form.direccion || '').trim(),
       especialidad_ids: this.especialidadesSeleccionadas.map(item => item.id),

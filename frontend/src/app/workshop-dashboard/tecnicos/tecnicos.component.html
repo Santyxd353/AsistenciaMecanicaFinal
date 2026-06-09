@@ -139,6 +139,11 @@
             </div>
 
             <div class="tech-meta">
+              <span class="meta-label">TelÃ©fono</span>
+              <strong>{{ t.usuario_telefono || 'Sin nÃºmero' }}</strong>
+            </div>
+
+            <div class="tech-meta">
               <span class="meta-label">Especialidades</span>
               <strong>{{ getEspecialidadesTexto(t) }}</strong>
             </div>
@@ -274,6 +279,28 @@
             <div class="field-error" *ngIf="ciCtrl.invalid && ciCtrl.touched">
               <span *ngIf="ciCtrl.errors?.['required']">El CI es obligatorio.</span>
               <span *ngIf="ciCtrl.errors?.['maxlength']">El CI no puede exceder 10 caracteres.</span>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label for="telefono">TelÃ©fono de contacto</label>
+            <input
+              id="telefono"
+              type="tel"
+              [(ngModel)]="form.telefono"
+              name="telefono"
+              #telefonoCtrl="ngModel"
+              required
+              minlength="7"
+              maxlength="15"
+              pattern="[0-9+()\\s-]{7,15}"
+              placeholder="Ej. 70012345"
+              autocomplete="tel"
+            />
+            <small class="hint">Este nÃºmero se mostrarÃ¡ al cliente para llamar o abrir WhatsApp.</small>
+            <div class="field-error" *ngIf="telefonoCtrl.invalid && telefonoCtrl.touched">
+              <span *ngIf="telefonoCtrl.errors?.['required']">El telÃ©fono del mecÃ¡nico es obligatorio.</span>
+              <span *ngIf="telefonoCtrl.errors?.['minlength'] || telefonoCtrl.errors?.['pattern']">Ingresa un telÃ©fono vÃ¡lido.</span>
             </div>
           </div>
 

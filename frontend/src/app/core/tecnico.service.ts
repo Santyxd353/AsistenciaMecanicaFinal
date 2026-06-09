@@ -18,6 +18,7 @@ export interface Tecnico {
   id_usuario?: number | null;
   usuario_username?: string | null;
   usuario_email?: string | null;
+  usuario_telefono?: string | null;
   password_temporal?: string | null;
 }
 
@@ -31,6 +32,7 @@ export interface TecnicoPayload {
    * lo marca `required`.
    */
   email?: string;
+  telefono?: string;
   ci: string;
   direccion: string;
   especialidad_ids: number[];

@@ -51,6 +51,19 @@ class TecnicoIn(BaseModel):
             raise ValueError("Ingresa un correo electrónico válido.")
         return value
 
+    @field_validator("telefono")
+    @classmethod
+    def validar_telefono(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        digits = re.sub(r"\D+", "", value)
+        if len(digits) < 7 or len(digits) > 15:
+            raise ValueError("Ingresa un telefono valido para el mecanico.")
+        return value
+
     @field_validator("ci")
     @classmethod
     def validar_ci(cls, value: str | None) -> str | None:
@@ -80,6 +93,20 @@ def obtener_taller_del_usuario(session: Session, current_user: User) -> Taller |
         .where(Taller.propietario_id == current_user.id)
         .where(Taller.tenant_id == current_user.tenant_id)
     ).first()
+
+
+def _telefono_mecanico_obligatorio(telefono: str | None) -> str:
+    """Devuelve un telefono usable para el mecanico.
+
+    El alta nueva en web/mobile debe pedir telefono. Aun asi mantenemos
+    compatibilidad con APKs ya instaladas que todavia envian el payload viejo
+    sin telefono: generamos un numero boliviano temporal para que el cliente
+    siempre vea un numero de contacto y el boton de llamar no quede inutil.
+    """
+    cleaned = (telefono or "").strip()
+    if cleaned:
+        return cleaned
+    return "7" + "".join(str(secrets.randbelow(10)) for _ in range(7))
 
 
 class TecnicoConvertirUsuarioIn(BaseModel):
@@ -323,11 +350,12 @@ def crear_tecnico(
 
     username = _username_unico(session, tecnico_in.nombre)
     password_temporal = _password_temporal(ci_value)
+    telefono_contacto = _telefono_mecanico_obligatorio(tecnico_in.telefono)
     usuario = User(
         username=username,
         email=email_normalizado,
         full_name=tecnico_in.nombre,
-        telefono=tecnico_in.telefono.strip() if tecnico_in.telefono else None,
+        telefono=telefono_contacto,
         role=UserRole.TECNICO,
         is_active=tecnico_in.activo,
         tenant_id=taller.tenant_id,
@@ -460,6 +488,19 @@ class TecnicoUpdate(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("Este campo es obligatorio")
+        return value
+
+    @field_validator("telefono")
+    @classmethod
+    def validar_telefono(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = value.strip()
+        if not value:
+            raise ValueError("El telefono del mecanico es obligatorio.")
+        digits = re.sub(r"\D+", "", value)
+        if len(digits) < 7 or len(digits) > 15:
+            raise ValueError("Ingresa un telefono valido para el mecanico.")
         return value
 
     @field_validator("ci")
