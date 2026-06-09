@@ -552,12 +552,26 @@ class _MechanicContactCard extends StatelessWidget {
               ],
             ),
           ),
-          FilledButton.tonalIcon(
-            onPressed: phone.isEmpty
-                ? null
-                : () => _showContact(context, phone),
-            icon: const Icon(Icons.call_outlined),
-            label: const Text('Contactar'),
+          Flexible(
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: phone.isEmpty
+                      ? null
+                      : () => _showContact(context, phone),
+                  icon: const Icon(Icons.call_outlined),
+                  label: const Text('Mecanico'),
+                ),
+                FilledButton.icon(
+                  onPressed: () => _showEmergencyContacts(context),
+                  icon: const Icon(Icons.local_hospital_outlined),
+                  label: const Text('Emergencias'),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -617,7 +631,152 @@ class _MechanicContactCard extends StatelessWidget {
       ),
     );
   }
+
+  static Future<void> _showEmergencyContacts(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final maxHeight = MediaQuery.of(sheetContext).size.height * 0.62;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Llamar a emergencias',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Elige una ambulancia, hospital o clinica. Se abrira el telefono con el numero listo.',
+                  style: TextStyle(color: Color(0xFF6F655B)),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  height: maxHeight,
+                  child: ListView.separated(
+                    itemCount: _emergencyContacts.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (_, index) {
+                      final item = _emergencyContacts[index];
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: CircleAvatar(
+                          backgroundColor: const Color(0xFFFFE2CC),
+                          foregroundColor: const Color(0xFF5A321C),
+                          child: Icon(item.icon),
+                        ),
+                        title: Text(
+                          item.name,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        subtitle: Text('${item.type} - ${item.phone}'),
+                        trailing: const Icon(Icons.call_outlined),
+                        onTap: () {
+                          Navigator.of(sheetContext).pop();
+                          launchUrl(
+                            Uri.parse('tel:${item.phoneForDialer}'),
+                            mode: LaunchMode.externalApplication,
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
+
+class _EmergencyContact {
+  const _EmergencyContact({
+    required this.name,
+    required this.type,
+    required this.phone,
+    required this.icon,
+  });
+
+  final String name;
+  final String type;
+  final String phone;
+  final IconData icon;
+
+  String get phoneForDialer {
+    final clean = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    if (clean.startsWith('+') || clean.length <= 3) {
+      return clean;
+    }
+    if (clean.startsWith('591')) {
+      return '+$clean';
+    }
+    return '+591$clean';
+  }
+}
+
+const _emergencyContacts = [
+  _EmergencyContact(
+    name: 'Emergencias Bolivia',
+    type: 'Atencion general',
+    phone: '911',
+    icon: Icons.emergency_outlined,
+  ),
+  _EmergencyContact(
+    name: 'Hospital San Juan de Dios',
+    type: 'Emergencia Santa Cruz',
+    phone: '118',
+    icon: Icons.local_hospital_outlined,
+  ),
+  _EmergencyContact(
+    name: 'Cruz Roja Santa Cruz',
+    type: 'Ambulancia',
+    phone: '3331965',
+    icon: Icons.health_and_safety_outlined,
+  ),
+  _EmergencyContact(
+    name: 'Cruz Roja Santa Cruz',
+    type: 'Ambulancia alterna',
+    phone: '3361122',
+    icon: Icons.health_and_safety_outlined,
+  ),
+  _EmergencyContact(
+    name: 'Emercruz SRL',
+    type: 'Ambulancia privada',
+    phone: '3365598',
+    icon: Icons.airport_shuttle_outlined,
+  ),
+  _EmergencyContact(
+    name: 'Emergencias GEMED',
+    type: 'Emergencia medica',
+    phone: '3703779',
+    icon: Icons.medical_services_outlined,
+  ),
+  _EmergencyContact(
+    name: 'Clinica Foianini',
+    type: 'Clinica privada',
+    phone: '3362211',
+    icon: Icons.local_hospital_outlined,
+  ),
+  _EmergencyContact(
+    name: 'Clinica Nino Jesus',
+    type: 'Clinica privada',
+    phone: '3366969',
+    icon: Icons.local_hospital_outlined,
+  ),
+  _EmergencyContact(
+    name: 'Hospital Universitario Japones',
+    type: 'Hospital 24h',
+    phone: '3462037',
+    icon: Icons.local_hospital_outlined,
+  ),
+];
 
 class _CotizacionTile extends StatelessWidget {
   const _CotizacionTile({required this.cotizacion, required this.onSelect});
