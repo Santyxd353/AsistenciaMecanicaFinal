@@ -10,7 +10,11 @@ python-multipart
 python-dotenv
 firebase-admin
 Pillow
-# Multipart outbound (audio upload a Groq Whisper).
+# Motor local de transcripcion Whisper optimizado con CTranslate2.
+faster-whisper
+# Motor local CPU de text-to-speech.
+piper-tts
+# Multipart outbound usado por integraciones Groq legacy.
 requests
 # WebSocket sync->async bridge usado por los broadcasts en handlers sync.
 anyio

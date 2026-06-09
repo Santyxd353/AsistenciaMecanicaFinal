@@ -39,9 +39,16 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - GROQ_VISION_MODEL=${GROQ_VISION_MODEL:-meta-llama/llama-4-scout-17b-16e-instruct}
-      - GROQ_AUDIO_MODEL=${GROQ_AUDIO_MODEL:-whisper-large-v3}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:4200,http://127.0.0.1:4200,http://localhost:4201,http://127.0.0.1:4201,http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080,http://localhost:61615,http://127.0.0.1:61615}
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - WHISPER_DEVICE=${WHISPER_DEVICE:-cpu}
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
       - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-es}
+      - WHISPER_BEAM_SIZE=${WHISPER_BEAM_SIZE:-5}
+      - MAX_AUDIO_MB=${MAX_AUDIO_MB:-25}
+      - PIPER_VOICE_NAME=${PIPER_VOICE_NAME:-es_ES-carlfm-x_low}
+      - PIPER_VOICE_DIR=${PIPER_VOICE_DIR:-/app/uploads/piper-voices}
+      - PIPER_AUTO_DOWNLOAD=${PIPER_AUTO_DOWNLOAD:-true}
       - ONESIGNAL_APP_ID=${ONESIGNAL_APP_ID:-}
       - ONESIGNAL_REST_API_KEY=${ONESIGNAL_REST_API_KEY:-}
       - ENABLE_LEGACY_FCM_FALLBACK=${ENABLE_LEGACY_FCM_FALLBACK:-true}

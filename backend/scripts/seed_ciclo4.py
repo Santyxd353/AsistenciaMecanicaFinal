@@ -33,13 +33,18 @@ from app.models.domain import (
     Tenant,
     TenantSubscription,
     SaaSPlan,
+    VehiculoHistorialReparacion,
 )
 from app.models.user import User, UserRole
 
 
 PASSWORD = "Prueba*2026"
-BASE_TIME = datetime.utcnow().replace(microsecond=0) - timedelta(days=5)
+BASE_TIME = datetime.utcnow().replace(microsecond=0) - timedelta(days=12)
 PLANS_BY_INDEX = ["gratis", "intermedio", "premium", "pro"]
+ACTIVE_TALLER_COUNT = 5
+TECHNICIANS_PER_TALLER = 2
+CASES_PER_TALLER = 10
+LOGIN_EMAIL_DOMAIN = "taller.test"
 
 
 @dataclass(frozen=True)
@@ -57,77 +62,52 @@ class TenantSeed:
 
 
 TENANTS: tuple[TenantSeed, ...] = (
-    TenantSeed(
-        slug="seed-c4-norte",
-        nombre="Red Norte",
-        descripcion="Tenant seed ciclo 4 - red norte.",
-        plan_codigo="gratis",
-        taller_nombre="Taller Norte Motors",
-        direccion="Av. Busch #100, La Paz",
-        telefono="72000001",
-        lat=-16.4995,
-        lng=-68.1240,
-        especialidades=("Bateria", "Electricidad", "Auxilio general"),
-    ),
-    TenantSeed(
-        slug="seed-c4-centro",
-        nombre="Red Centro",
-        descripcion="Tenant seed ciclo 4 - red centro.",
-        plan_codigo="intermedio",
-        taller_nombre="Centro Diesel Service",
-        direccion="Calle Comercio #220, La Paz",
-        telefono="72000002",
-        lat=-16.4950,
-        lng=-68.1335,
-        especialidades=("Motor", "Frenos", "Auxilio general"),
-    ),
-    TenantSeed(
-        slug="seed-c4-sur",
-        nombre="Red Sur",
-        descripcion="Tenant seed ciclo 4 - red sur.",
-        plan_codigo="premium",
-        taller_nombre="Sur Auto Rescue",
-        direccion="Calacoto, Calle 17 #55, La Paz",
-        telefono="72000003",
-        lat=-16.5391,
-        lng=-68.0728,
-        especialidades=("Llantas", "Motor", "Auxilio general"),
-    ),
-    TenantSeed(
-        slug="seed-c4-elalto",
-        nombre="Red El Alto",
-        descripcion="Tenant seed ciclo 4 - red el alto.",
-        plan_codigo="pro",
-        taller_nombre="Altiplano Taller Express",
-        direccion="Ceja de El Alto #80, El Alto",
-        telefono="72000004",
-        lat=-16.5047,
-        lng=-68.1644,
-        especialidades=("Bateria", "Llantas", "Auxilio general"),
-    ),
+    TenantSeed("taller01", "taller01", "Tenant seed Santa Cruz - taller01.", "gratis", "taller01", "Av. Monseñor Rivero y 1er Anillo, Santa Cruz de la Sierra", "77010001", -17.7749, -63.1823, ("Bateria", "Electricidad", "Auxilio general")),
+    TenantSeed("taller02", "taller02", "Tenant seed Santa Cruz - taller02.", "intermedio", "taller02", "Av. Cristo Redentor 2do Anillo, Santa Cruz de la Sierra", "77010002", -17.7584, -63.1817, ("Motor", "Frenos", "Auxilio general")),
+    TenantSeed("taller03", "taller03", "Tenant seed Santa Cruz - taller03.", "premium", "taller03", "Av. Banzer 4to Anillo, Santa Cruz de la Sierra", "77010003", -17.7385, -63.1852, ("Llantas", "Motor", "Auxilio general")),
+    TenantSeed("taller04", "taller04", "Tenant seed Santa Cruz - taller04.", "pro", "taller04", "Av. Beni 3er Anillo, Santa Cruz de la Sierra", "77010004", -17.7577, -63.1657, ("Bateria", "Llantas", "Auxilio general")),
+    TenantSeed("taller05", "taller05", "Tenant seed Santa Cruz - taller05.", "gratis", "taller05", "Av. Alemana 4to Anillo, Santa Cruz de la Sierra", "77010005", -17.7555, -63.1518, ("Motor", "Electricidad", "Auxilio general")),
+)
+ACTIVE_TENANT_SLUGS = {item.slug for item in TENANTS}
+RETIRED_SEED_TENANT_SLUGS = tuple(
+    f"taller{index:02d}" for index in range(ACTIVE_TALLER_COUNT + 1, 11)
 )
 
 
 DRIVER_ASSIGNMENTS = [
-    ("seed_driver_01", "driver01@seedc4.test", "Conductor Uno", "seed-c4-norte"),
-    ("seed_driver_02", "driver02@seedc4.test", "Conductor Dos", "seed-c4-centro"),
-    ("seed_driver_03", "driver03@seedc4.test", "Conductor Tres", "seed-c4-sur"),
-    ("seed_driver_04", "driver04@seedc4.test", "Conductor Cuatro", "seed-c4-elalto"),
-    ("seed_driver_05", "driver05@seedc4.test", "Conductor Cinco", "seed-c4-norte"),
+    (
+        f"conductor{index:02d}",
+        f"conductor{index:02d}@{LOGIN_EMAIL_DOMAIN}",
+        f"Conductor {index:02d}",
+        f"taller{((index - 1) % len(TENANTS)) + 1:02d}",
+    )
+    for index in range(1, 11)
 ]
 
 
+INCIDENT_PROFILES = (
+    ("Problema de bateria o sistema electrico", "Alta", "El vehiculo no enciende y requiere revision de bateria/alternador."),
+    ("Problema de llanta o neumatico", "Media", "El conductor reporta llanta baja o pinchada en ruta."),
+    ("Problema de motor o recalentamiento", "Alta", "El vehiculo presenta recalentamiento y perdida de potencia."),
+    ("Problema de frenos", "Alta", "El conductor reporta vibracion o perdida de respuesta al frenar."),
+    ("Incidente general", "Media", "Falla general diagnosticada y resuelta por asistencia mecanica."),
+)
+
+
 REQUEST_TEMPLATES = [
-    ("seed-c4-req-01", "seed_driver_01", "seed-c4-norte", EstadoSolicitud.FINALIZADO, "Problema de bateria o sistema electrico", "Alta", 0.0, 0.0),
-    ("seed-c4-req-02", "seed_driver_02", "seed-c4-centro", EstadoSolicitud.FINALIZADO, "Problema de llanta o neumatico", "Media", 0.01, -0.01),
-    ("seed-c4-req-03", "seed_driver_03", "seed-c4-sur", EstadoSolicitud.FINALIZADO, "Problema de motor o recalentamiento", "Alta", -0.01, 0.01),
-    ("seed-c4-req-04", "seed_driver_04", "seed-c4-elalto", EstadoSolicitud.FINALIZADO, "Incidente general", "Media", 0.015, -0.008),
-    ("seed-c4-req-05", "seed_driver_05", "seed-c4-norte", EstadoSolicitud.FINALIZADO, "Problema de bateria o sistema electrico", "Alta", -0.012, 0.012),
-    ("seed-c4-req-06", "seed_driver_01", "seed-c4-norte", EstadoSolicitud.FINALIZADO, "Problema de llanta o neumatico", "Media", 0.018, -0.006),
-    ("seed-c4-req-07", "seed_driver_02", "seed-c4-centro", EstadoSolicitud.FINALIZADO, "Problema de motor o recalentamiento", "Alta", -0.008, 0.014),
-    ("seed-c4-req-08", "seed_driver_03", "seed-c4-sur", EstadoSolicitud.FINALIZADO, "Incidente general", "Media", 0.014, 0.008),
-    ("seed-c4-req-09", "seed_driver_04", "seed-c4-elalto", EstadoSolicitud.CANCELADO, "Problema de llanta o neumatico", "Media", -0.015, -0.01),
-    ("seed-c4-req-10", "seed_driver_05", "seed-c4-norte", EstadoSolicitud.EN_PROCESO, "Problema de bateria o sistema electrico", "Alta", 0.006, 0.015),
+    (
+        f"seed-c4-req-{workshop_index:02d}-{case_index:02d}",
+        f"conductor{((workshop_index + case_index - 2) % 10) + 1:02d}",
+        f"taller{workshop_index:02d}",
+        EstadoSolicitud.FINALIZADO,
+        INCIDENT_PROFILES[(workshop_index + case_index - 2) % len(INCIDENT_PROFILES)][0],
+        INCIDENT_PROFILES[(workshop_index + case_index - 2) % len(INCIDENT_PROFILES)][1],
+        INCIDENT_PROFILES[(workshop_index + case_index - 2) % len(INCIDENT_PROFILES)][2],
+        ((case_index % 5) - 2) * 0.006,
+        (((case_index + 2) % 5) - 2) * 0.006,
+    )
+    for workshop_index in range(1, ACTIVE_TALLER_COUNT + 1)
+    for case_index in range(1, CASES_PER_TALLER + 1)
 ]
 
 
@@ -222,6 +202,82 @@ def get_tenant_map(session: Session) -> dict[str, Tenant]:
     return result
 
 
+def cleanup_retired_seed_data(session: Session) -> None:
+    retired_tenants = session.exec(
+        select(Tenant).where(Tenant.slug.in_(RETIRED_SEED_TENANT_SLUGS))
+    ).all()
+    retired_tenant_ids = [tenant.id for tenant in retired_tenants if tenant.id is not None]
+
+    obsolete_requests: list[Solicitud] = []
+    for index in range(ACTIVE_TALLER_COUNT + 1, 11):
+        obsolete_requests.extend(
+            session.exec(
+                select(Solicitud).where(
+                    Solicitud.cliente_sync_id.like(f"seed-c4-req-{index:02d}-%")
+                )
+            ).all()
+        )
+    obsolete_request_ids = [item.id for item in obsolete_requests if item.id is not None]
+
+    if obsolete_request_ids:
+        for solicitud in obsolete_requests:
+            solicitud.cotizacion_seleccionada_id = None
+            session.add(solicitud)
+        session.commit()
+
+        for model in (TrackingPing, Notificacion, Pago, VehiculoHistorialReparacion, Cotizacion):
+            for row in session.exec(
+                select(model).where(model.solicitud_id.in_(obsolete_request_ids))
+            ).all():
+                session.delete(row)
+        session.commit()
+
+        for solicitud in obsolete_requests:
+            session.delete(solicitud)
+        session.commit()
+        log(f"Solicitudes seed retiradas eliminadas: {len(obsolete_request_ids)}")
+
+    for index in range(ACTIVE_TALLER_COUNT + 1, 11):
+        referencia = f"seed-c4-subpay-{index:02d}"
+        payment = session.exec(
+            select(SubscriptionPaymentMock).where(
+                SubscriptionPaymentMock.referencia == referencia
+            )
+        ).first()
+        if payment:
+            session.delete(payment)
+    session.commit()
+
+    if retired_tenant_ids:
+        for taller in session.exec(
+            select(Taller).where(Taller.tenant_id.in_(retired_tenant_ids))
+        ).all():
+            taller.activo = False
+            session.add(taller)
+
+        for sub in session.exec(
+            select(TenantSubscription).where(
+                TenantSubscription.tenant_id.in_(retired_tenant_ids)
+            )
+        ).all():
+            sub.estado = "inactiva"
+            session.add(sub)
+
+        for user in session.exec(
+            select(User).where(User.tenant_id.in_(retired_tenant_ids))
+        ).all():
+            if user.username.startswith("seed_owner_"):
+                user.email = f"{user.username}@{LOGIN_EMAIL_DOMAIN}"
+                user.is_active = False
+                session.add(user)
+
+        for tenant in retired_tenants:
+            tenant.activo = False
+            session.add(tenant)
+        session.commit()
+        log(f"Tenants seed retirados desactivados: {len(retired_tenant_ids)}")
+
+
 def step_bootstrap() -> None:
     init_db()
     log("Base, tenant default, planes y especialidades iniciales listos.")
@@ -275,6 +331,7 @@ def step_tenants() -> None:
                 sub.estado = "activa"
             session.add(sub)
             session.commit()
+        cleanup_retired_seed_data(session)
 
 
 def step_workshops() -> None:
@@ -289,7 +346,7 @@ def step_workshops() -> None:
             owner = ensure_user(
                 session,
                 username=f"seed_owner_{index:02d}",
-                email=f"owner{index:02d}@seedc4.test",
+                email=f"owner{index:02d}@{LOGIN_EMAIL_DOMAIN}",
                 full_name=f"Administrador Taller {index}",
                 role=UserRole.WORKSHOP,
                 tenant_id=tenant.id,
@@ -303,10 +360,10 @@ def step_workshops() -> None:
                     nombre_comercial=item.taller_nombre,
                     direccion=item.direccion,
                     telefono=item.telefono,
-                    email_contacto=f"contacto{index:02d}@seedc4.test",
+                    email_contacto=f"contacto{index:02d}@{LOGIN_EMAIL_DOMAIN}",
                     horario_atencion="Lunes-Domingo 06:00-22:00",
                     descripcion=f"Taller seed para {item.nombre}.",
-                    sitio_web=f"https://{item.slug}.seedc4.test",
+                    sitio_web=f"https://{item.slug}.{LOGIN_EMAIL_DOMAIN}",
                     latitud=item.lat,
                     longitud=item.lng,
                     capacidad_operativa=5,
@@ -318,10 +375,10 @@ def step_workshops() -> None:
                 taller.nombre_comercial = item.taller_nombre
                 taller.direccion = item.direccion
                 taller.telefono = item.telefono
-                taller.email_contacto = f"contacto{index:02d}@seedc4.test"
+                taller.email_contacto = f"contacto{index:02d}@{LOGIN_EMAIL_DOMAIN}"
                 taller.horario_atencion = "Lunes-Domingo 06:00-22:00"
                 taller.descripcion = f"Taller seed para {item.nombre}."
-                taller.sitio_web = f"https://{item.slug}.seedc4.test"
+                taller.sitio_web = f"https://{item.slug}.{LOGIN_EMAIL_DOMAIN}"
                 taller.latitud = item.lat
                 taller.longitud = item.lng
                 taller.capacidad_operativa = 5
@@ -373,51 +430,56 @@ def step_technicians() -> None:
             if not taller:
                 raise RuntimeError(f"No existe taller para tenant {item.slug}")
 
-            for tech_number in range(1, 4):
-                username = f"seed_tech_{index:02d}_{tech_number:02d}"
+            for slot in range(1, TECHNICIANS_PER_TALLER + 1):
+                tech_index = (index - 1) * TECHNICIANS_PER_TALLER + slot
+                username = f"tecnico{tech_index:02d}"
                 user = ensure_user(
                     session,
                     username=username,
-                    email=f"{username}@seedc4.test",
-                    full_name=f"Tecnico {index}-{tech_number}",
+                    email=f"{username}@{LOGIN_EMAIL_DOMAIN}",
+                    full_name=f"Tecnico {tech_index:02d}",
                     role=UserRole.TECNICO,
                     tenant_id=tenant.id,
-                    telefono=f"750{index:02d}{tech_number:02d}",
+                    telefono=f"780100{tech_index:02d}",
                 )
-                ci = f"{index}{tech_number}12345"
+                ci = f"90{tech_index:02d}2026"
                 tecnico = session.exec(
                     select(Tecnico).where(Tecnico.id_usuario == user.id)
                 ).first()
+                lat_offset = 0.0015 * slot
+                lng_offset = -0.0015 * slot
                 if not tecnico:
                     tecnico = Tecnico(
-                        nombre=f"Tecnico {index}-{tech_number}",
+                        nombre=f"tecnico{tech_index:02d}",
                         ci=ci,
-                        direccion=f"Zona operativa {tech_number} - {item.nombre}",
-                        latitud=item.lat + tech_number * 0.002,
-                        longitud=item.lng - tech_number * 0.002,
-                        latitud_actual=item.lat + tech_number * 0.0025,
-                        longitud_actual=item.lng - tech_number * 0.0025,
-                        ultima_actualizacion_ubicacion=BASE_TIME + timedelta(hours=tech_number),
-                        disponible=tech_number != 3,
+                        direccion=f"Base tecnica {slot} - {item.direccion}",
+                        latitud=item.lat + lat_offset,
+                        longitud=item.lng + lng_offset,
+                        latitud_actual=item.lat + lat_offset + 0.0005,
+                        longitud_actual=item.lng + lng_offset - 0.0005,
+                        ultima_actualizacion_ubicacion=BASE_TIME + timedelta(hours=tech_index),
+                        disponible=True,
                         activo=True,
                         taller_id=taller.id,
                         id_usuario=user.id,
                         tenant_id=tenant.id,
                     )
                 else:
-                    tecnico.nombre = f"Tecnico {index}-{tech_number}"
+                    tecnico.nombre = f"tecnico{tech_index:02d}"
                     tecnico.ci = ci
-                    tecnico.direccion = f"Zona operativa {tech_number} - {item.nombre}"
-                    tecnico.latitud = item.lat + tech_number * 0.002
-                    tecnico.longitud = item.lng - tech_number * 0.002
-                    tecnico.latitud_actual = item.lat + tech_number * 0.0025
-                    tecnico.longitud_actual = item.lng - tech_number * 0.0025
-                    tecnico.ultima_actualizacion_ubicacion = BASE_TIME + timedelta(hours=tech_number)
-                    tecnico.disponible = tech_number != 3
+                    tecnico.direccion = f"Base tecnica {slot} - {item.direccion}"
+                    tecnico.latitud = item.lat + lat_offset
+                    tecnico.longitud = item.lng + lng_offset
+                    tecnico.latitud_actual = item.lat + lat_offset + 0.0005
+                    tecnico.longitud_actual = item.lng + lng_offset - 0.0005
+                    tecnico.ultima_actualizacion_ubicacion = BASE_TIME + timedelta(hours=tech_index)
+                    tecnico.disponible = True
                     tecnico.activo = True
                     tecnico.taller_id = taller.id
                     tecnico.id_usuario = user.id
                     tecnico.tenant_id = tenant.id
+                tecnico.total_calificaciones = 5
+                tecnico.calificacion_promedio = round(4.2 + (tech_index % 5) * 0.15, 2)
                 session.add(tecnico)
                 session.commit()
                 session.refresh(tecnico)
@@ -433,26 +495,29 @@ def step_technicians() -> None:
 
 
 def step_vehicles() -> None:
+    marcas = ["Toyota", "Nissan", "Suzuki", "Kia", "Hyundai", "Chevrolet", "Ford", "Volkswagen", "Honda", "Mazda"]
+    modelos = ["Corolla", "Frontier", "Swift", "Rio", "Accent", "Onix", "Ranger", "Gol", "Civic", "BT-50"]
+    colores = ["Blanco", "Gris", "Rojo", "Azul", "Negro", "Plata", "Verde", "Dorado", "Guindo", "Celeste"]
     with Session(engine) as session:
         for index, (username, _email, _full_name, _tenant_slug) in enumerate(DRIVER_ASSIGNMENTS, start=1):
             user = session.exec(select(User).where(User.username == username)).first()
             if not user:
                 raise RuntimeError(f"No existe conductor {username}")
-            placa = f"SC4{index:03d}LP"
+            placa = f"SCZ{index:04d}"
             vehicle = session.exec(select(Vehiculo).where(Vehiculo.placa == placa)).first()
             if not vehicle:
                 vehicle = Vehiculo(
                     placa=placa,
-                    marca=["Toyota", "Nissan", "Suzuki", "Kia", "Hyundai"][index - 1],
-                    modelo=["Corolla", "Frontier", "Swift", "Rio", "Accent"][index - 1],
-                    color=["Blanco", "Gris", "Rojo", "Azul", "Negro"][index - 1],
+                    marca=marcas[index - 1],
+                    modelo=modelos[index - 1],
+                    color=colores[index - 1],
                     propietario_id=user.id,
                     tenant_id=user.tenant_id,
                 )
             else:
-                vehicle.marca = ["Toyota", "Nissan", "Suzuki", "Kia", "Hyundai"][index - 1]
-                vehicle.modelo = ["Corolla", "Frontier", "Swift", "Rio", "Accent"][index - 1]
-                vehicle.color = ["Blanco", "Gris", "Rojo", "Azul", "Negro"][index - 1]
+                vehicle.marca = marcas[index - 1]
+                vehicle.modelo = modelos[index - 1]
+                vehicle.color = colores[index - 1]
                 vehicle.propietario_id = user.id
                 vehicle.tenant_id = user.tenant_id
             session.add(vehicle)
@@ -460,18 +525,19 @@ def step_vehicles() -> None:
             log(f"Vehiculo listo: {placa}")
 
 
-def _tecnico_for_taller(session: Session, taller_id: int) -> Tecnico | None:
-    return session.exec(
+def _tecnicos_for_taller(session: Session, taller_id: int) -> list[Tecnico]:
+    return list(session.exec(
         select(Tecnico)
         .where(Tecnico.taller_id == taller_id)
         .order_by(Tecnico.id.asc())
-    ).first()
+    ).all())
 
 
 def step_requests() -> None:
     with Session(engine) as session:
         tenant_map = get_tenant_map(session)
-        for index, (sync_id, driver_username, tenant_slug, state, clasificacion, prioridad, dlat, dlng) in enumerate(REQUEST_TEMPLATES, start=1):
+        completed_by_taller: dict[int, list[int]] = {}
+        for index, (sync_id, driver_username, tenant_slug, state, clasificacion, prioridad, detalle, dlat, dlng) in enumerate(REQUEST_TEMPLATES, start=1):
             user = session.exec(select(User).where(User.username == driver_username)).first()
             if not user:
                 raise RuntimeError(f"No existe conductor {driver_username}")
@@ -482,75 +548,133 @@ def step_requests() -> None:
             taller = session.exec(
                 select(Taller).where(Taller.tenant_id == tenant.id)
             ).first()
-            tecnico = _tecnico_for_taller(session, taller.id) if taller and taller.id else None
-            created_at = BASE_TIME + timedelta(hours=index * 3)
-            assigned_at = created_at + timedelta(minutes=12 + index) if state in {
+            tecnicos = _tecnicos_for_taller(session, taller.id) if taller and taller.id else []
+            if not taller or not tecnicos:
+                raise RuntimeError(f"Falta taller o tecnico para {tenant_slug}")
+
+            workshop_number = int(tenant_slug.replace("taller", ""))
+            case_number = ((index - 1) % 10) + 1
+            tecnico = tecnicos[(case_number - 1) % len(tecnicos)]
+            created_at = BASE_TIME + timedelta(hours=index * 2)
+            assigned_at = created_at + timedelta(minutes=6 + workshop_number) if state in {
                 EstadoSolicitud.ASIGNADA,
                 EstadoSolicitud.TECNICO_EN_CAMINO,
                 EstadoSolicitud.TECNICO_LLEGO,
                 EstadoSolicitud.EN_PROCESO,
                 EstadoSolicitud.FINALIZADO,
             } else None
-            arrived_at = assigned_at + timedelta(minutes=18 + index) if state in {
+            arrived_at = assigned_at + timedelta(minutes=12 + case_number) if state in {
                 EstadoSolicitud.TECNICO_LLEGO,
                 EstadoSolicitud.EN_PROCESO,
                 EstadoSolicitud.FINALIZADO,
             } and assigned_at else None
-            finished_at = arrived_at + timedelta(minutes=35 + index) if state == EstadoSolicitud.FINALIZADO and arrived_at else None
+            finished_at = arrived_at + timedelta(minutes=28 + (case_number * 3)) if state == EstadoSolicitud.FINALIZADO and arrived_at else None
+            costo = round(180 + workshop_number * 18 + case_number * 22.5, 2)
+            comision = round(costo * 0.10, 2)
 
             solicitud = session.exec(
                 select(Solicitud).where(Solicitud.cliente_sync_id == sync_id)
             ).first()
             if not solicitud:
                 solicitud = Solicitud(
-                    descripcion=f"[{sync_id}] Emergencia seed ciclo 4 #{index}",
-                    latitud=(taller.latitud if taller and taller.latitud is not None else tenant.lat) + dlat,
-                    longitud=(taller.longitud if taller and taller.longitud is not None else tenant.lng) + dlng,
+                    descripcion=f"[{sync_id}] {detalle} Atendido en Santa Cruz por {taller.nombre_comercial}.",
+                    latitud=(taller.latitud or -17.7833) + dlat,
+                    longitud=(taller.longitud or -63.1821) + dlng,
                     estado=state,
                     clasificacion_ia=clasificacion,
                     prioridad_ia=prioridad,
-                    resumen_ia=f"Resumen seed para {clasificacion.lower()}",
+                    resumen_ia=f"Resumen seed: {detalle}",
                     especialidad_requerida_ia=infer_specialty(clasificacion),
-                    distancia_estimada_km=round(2.5 + index * 0.8, 2),
-                    asignacion_score=round(0.65 + index * 0.02, 2),
-                    tiempo_estimado_minutos=20 + index * 3,
-                    estado_pago="pendiente",
+                    distancia_estimada_km=round(1.2 + case_number * 0.45 + workshop_number * 0.08, 2),
+                    asignacion_score=round(0.70 + (case_number % 7) * 0.035, 2),
+                    tiempo_estimado_minutos=18 + case_number,
+                    precio_cobrado=costo,
+                    comision_plataforma=comision,
+                    estado_pago="pagado",
                     vehiculo_id=vehicle.id if vehicle else None,
-                    taller_id=taller.id if assigned_at and taller else None,
-                    tecnico_id=tecnico.id if assigned_at and tecnico else None,
+                    taller_id=taller.id,
+                    tecnico_id=tecnico.id,
                     tenant_id=tenant.id,
                     cliente_sync_id=sync_id,
-                    sla_esperado_minutos=60 + (index % 3) * 15,
+                    sla_esperado_minutos=95 + (case_number % 3) * 15,
                     fecha_taller_asignado=assigned_at,
                     fecha_tecnico_llego=arrived_at,
                     fecha_finalizado=finished_at,
                 )
                 solicitud.fecha_creacion = created_at
             else:
-                solicitud.descripcion = f"[{sync_id}] Emergencia seed ciclo 4 #{index}"
-                solicitud.latitud = (taller.latitud if taller and taller.latitud is not None else tenant.lat) + dlat
-                solicitud.longitud = (taller.longitud if taller and taller.longitud is not None else tenant.lng) + dlng
+                solicitud.descripcion = f"[{sync_id}] {detalle} Atendido en Santa Cruz por {taller.nombre_comercial}."
+                solicitud.latitud = (taller.latitud or -17.7833) + dlat
+                solicitud.longitud = (taller.longitud or -63.1821) + dlng
                 solicitud.estado = state
                 solicitud.clasificacion_ia = clasificacion
                 solicitud.prioridad_ia = prioridad
-                solicitud.resumen_ia = f"Resumen seed para {clasificacion.lower()}"
+                solicitud.resumen_ia = f"Resumen seed: {detalle}"
                 solicitud.especialidad_requerida_ia = infer_specialty(clasificacion)
-                solicitud.distancia_estimada_km = round(2.5 + index * 0.8, 2)
-                solicitud.asignacion_score = round(0.65 + index * 0.02, 2)
-                solicitud.tiempo_estimado_minutos = 20 + index * 3
-                solicitud.estado_pago = "pendiente"
+                solicitud.distancia_estimada_km = round(1.2 + case_number * 0.45 + workshop_number * 0.08, 2)
+                solicitud.asignacion_score = round(0.70 + (case_number % 7) * 0.035, 2)
+                solicitud.tiempo_estimado_minutos = 18 + case_number
+                solicitud.precio_cobrado = costo
+                solicitud.comision_plataforma = comision
+                solicitud.estado_pago = "pagado"
                 solicitud.vehiculo_id = vehicle.id if vehicle else None
-                solicitud.taller_id = taller.id if assigned_at and taller else None
-                solicitud.tecnico_id = tecnico.id if assigned_at and tecnico else None
+                solicitud.taller_id = taller.id
+                solicitud.tecnico_id = tecnico.id
                 solicitud.tenant_id = tenant.id
-                solicitud.sla_esperado_minutos = 60 + (index % 3) * 15
+                solicitud.sla_esperado_minutos = 95 + (case_number % 3) * 15
                 solicitud.fecha_taller_asignado = assigned_at
                 solicitud.fecha_tecnico_llego = arrived_at
                 solicitud.fecha_finalizado = finished_at
                 solicitud.fecha_creacion = created_at
             session.add(solicitud)
             session.commit()
+            session.refresh(solicitud)
+
+            history = session.exec(
+                select(VehiculoHistorialReparacion).where(
+                    VehiculoHistorialReparacion.solicitud_id == solicitud.id
+                )
+            ).first()
+            if vehicle and solicitud.id:
+                if not history:
+                    history = VehiculoHistorialReparacion(
+                        vehiculo_id=vehicle.id or 0,
+                        solicitud_id=solicitud.id,
+                        taller_id=taller.id,
+                        tecnico_id=tecnico.id,
+                        tenant_id=tenant.id,
+                    )
+                history.titulo = f"Atencion {case_number:02d} en {taller.nombre_comercial}"
+                history.diagnostico = clasificacion
+                history.acciones_realizadas = (
+                    "Diagnostico en sitio, asistencia mecanica, prueba de funcionamiento "
+                    "y cierre del caso con conformidad del conductor."
+                )
+                history.categoria = infer_specialty(clasificacion)
+                history.prioridad = prioridad
+                history.costo = costo
+                history.estado_pago = "pagado"
+                history.kilometraje = 45000 + index * 137
+                history.observaciones = f"Caso seed KPI {sync_id}; tecnico asignado {tecnico.nombre}."
+                history.fecha_servicio = finished_at or created_at
+                history.fecha_creacion = created_at
+                history.fecha_actualizacion = finished_at or created_at
+                session.add(history)
+                session.commit()
+
+            if taller.id:
+                completed_by_taller.setdefault(taller.id, []).append(assigned_at.minute if assigned_at else 0)
             log(f"Solicitud lista: {sync_id}")
+
+        for taller_id, assignment_minutes in completed_by_taller.items():
+            taller = session.get(Taller, taller_id)
+            if not taller:
+                continue
+            taller.total_servicios_completados = len(assignment_minutes)
+            taller.tiempo_respuesta_promedio = round(sum(assignment_minutes) / len(assignment_minutes)) if assignment_minutes else None
+            taller.calificacion_promedio = 4.3
+            session.add(taller)
+        session.commit()
 
 
 def step_quotes() -> None:
@@ -628,7 +752,7 @@ def step_payments() -> None:
         }
         tenants = list(get_tenant_map(session).values())
 
-        for index in range(1, 11):
+        for index in range(1, ACTIVE_TALLER_COUNT + 1):
             tenant = tenants[(index - 1) % len(tenants)]
             plan_codigo = PLANS_BY_INDEX[(index - 1) % len(PLANS_BY_INDEX)]
             plan = plans[plan_codigo]
@@ -647,7 +771,7 @@ def step_payments() -> None:
                     estado="pagado" if index <= 6 else "pendiente_pago",
                     referencia=referencia,
                     metodo="mock",
-                    contacto_email=f"billing{index:02d}@seedc4.test",
+                    contacto_email=f"billing{index:02d}@{LOGIN_EMAIL_DOMAIN}",
                     contacto_nombre=f"Contacto Billing {index:02d}",
                     onboarding_token=f"seed-c4-onboard-{index:02d}",
                     usado=index <= 4,
@@ -660,7 +784,7 @@ def step_payments() -> None:
                 payment.monto = round(plan.precio_mensual or 0, 2)
                 payment.estado = "pagado" if index <= 6 else "pendiente_pago"
                 payment.metodo = "mock"
-                payment.contacto_email = f"billing{index:02d}@seedc4.test"
+                payment.contacto_email = f"billing{index:02d}@{LOGIN_EMAIL_DOMAIN}"
                 payment.contacto_nombre = f"Contacto Billing {index:02d}"
                 payment.onboarding_token = f"seed-c4-onboard-{index:02d}"
                 payment.usado = index <= 4
@@ -674,7 +798,7 @@ def step_payments() -> None:
             .where(Solicitud.cliente_sync_id.like("seed-c4-req-%"))
             .where(Solicitud.estado == EstadoSolicitud.FINALIZADO)
             .order_by(Solicitud.id.asc())
-        ).all()[:5]
+        ).all()
         for index, solicitud in enumerate(paid_requests, start=1):
             vehiculo = session.get(Vehiculo, solicitud.vehiculo_id) if solicitud.vehiculo_id else None
             if not vehiculo or not vehiculo.propietario_id:
@@ -765,6 +889,17 @@ def step_notifications() -> None:
 
 def step_tracking() -> None:
     with Session(engine) as session:
+        seed_requests = session.exec(
+            select(Solicitud).where(Solicitud.cliente_sync_id.like("seed-c4-req-%"))
+        ).all()
+        seed_request_ids = [item.id for item in seed_requests if item.id is not None]
+        if seed_request_ids:
+            for ping in session.exec(
+                select(TrackingPing).where(TrackingPing.solicitud_id.in_(seed_request_ids))
+            ).all():
+                session.delete(ping)
+            session.commit()
+
         solicitudes = session.exec(
             select(Solicitud)
             .where(Solicitud.cliente_sync_id.in_(["seed-c4-req-01", "seed-c4-req-10"]))
@@ -838,12 +973,14 @@ def step_summary() -> None:
         ]
         counts = {
             "tenants_seed": len(tenant_ids),
-            "users_seed": len(session.exec(select(User).where(User.username.like("seed_%"))).all()),
+            "conductores_seed": len(session.exec(select(User).where(User.username.like("conductor%"))).all()),
+            "tecnicos_seed_usuarios": len(session.exec(select(User).where(User.username.like("tecnico%"))).all()),
             "talleres_seed": len(session.exec(select(Taller).where(Taller.tenant_id.in_(tenant_ids))).all()),
-            "tecnicos_seed": len(session.exec(select(Tecnico).where(Tecnico.nombre.like("Tecnico %"))).all()),
-            "vehiculos_seed": len(session.exec(select(Vehiculo).where(Vehiculo.placa.like("SC4%"))).all()),
+            "tecnicos_seed": len(session.exec(select(Tecnico).where(Tecnico.nombre.like("tecnico%"))).all()),
+            "vehiculos_seed": len(session.exec(select(Vehiculo).where(Vehiculo.placa.like("SCZ%"))).all()),
             "solicitudes_seed": len(seed_request_ids),
             "cotizaciones_seed": len(session.exec(select(Cotizacion).where(Cotizacion.descripcion.like("[SEED-C4-COT-%"))).all()),
+            "historial_vehicular_seed": len(session.exec(select(VehiculoHistorialReparacion).where(VehiculoHistorialReparacion.solicitud_id.in_(seed_request_ids))).all()) if seed_request_ids else 0,
             "subscription_payments_seed": len(session.exec(select(SubscriptionPaymentMock).where(SubscriptionPaymentMock.referencia.like("seed-c4-subpay-%"))).all()),
             "service_payments_seed": len(session.exec(select(Pago).where(Pago.referencia.like("seed-c4-servicepay-%"))).all()),
             "notificaciones_seed": len(session.exec(select(Notificacion).where(Notificacion.accion_url.like("/seed/c4/notificacion/%"))).all()),

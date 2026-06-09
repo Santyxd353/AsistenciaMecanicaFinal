@@ -2,19 +2,20 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Dependencias del sistema (mucho mas ligeras que antes):
+# Dependencias del sistema:
 # * build-essential / libpq-dev -> compilacion de psycopg2-binary (suele
 #   ser opcional con wheels precompiladas, pero las dejamos para alpine-like)
 # * curl -> usado por el HEALTHCHECK
+# * ffmpeg -> decodificacion de audios moviles para faster-whisper
 #
 # Removidos respecto a la version anterior (>10 GB final):
 #   - tesseract-ocr / tesseract-ocr-spa  (OCR ahora lo hace el LLM en la nube)
-#   - ffmpeg                              (audio ahora via Groq Whisper API)
 #   - libgl1 / libglib2.0-0               (no hay torch/transformers locales)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     curl \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

@@ -710,7 +710,7 @@ class AppController extends ChangeNotifier {
 
   Future<EmergencyRequest> submitEmergency({
     required Vehicle vehicle,
-    required String incidentType,
+    String? incidentType,
     required String description,
     required double latitud,
     required double longitud,
@@ -722,9 +722,11 @@ class AppController extends ChangeNotifier {
       throw ApiException('Debes iniciar sesion para reportar una emergencia.');
     }
 
+    final selectedIncidentType = incidentType?.trim();
     final composedDescriptionPreview = [
       'Vehiculo ${vehicle.placa} (${vehicle.marca} ${vehicle.modelo})',
-      'Tipo de emergencia: $incidentType',
+      if (selectedIncidentType != null && selectedIncidentType.isNotEmpty)
+        'Tipo de emergencia: $selectedIncidentType',
       description.trim(),
       if (extraNotes.trim().isNotEmpty)
         'Notas del conductor: ${extraNotes.trim()}',
@@ -760,7 +762,7 @@ class AppController extends ChangeNotifier {
         latitud: latitud,
         longitud: longitud,
         vehiculoId: vehicle.remoteId,
-        incidentType: incidentType,
+        incidentType: selectedIncidentType,
         extraNotes: extraNotes.trim(),
         imagePaths: imagePaths,
         audioPath: audioPath,
@@ -781,7 +783,7 @@ class AppController extends ChangeNotifier {
       final meta = LocalRequestMeta(
         requestId: created.id,
         vehicleLabel: vehicle.label,
-        issueType: incidentType,
+        issueType: selectedIncidentType ?? '',
         imagePaths: imagePaths,
         audioPath: audioPath,
         extraNotes: extraNotes.trim(),
@@ -795,6 +797,132 @@ class AppController extends ChangeNotifier {
       await _refreshRemoteData(storage);
     });
     return created;
+  }
+
+  Future<EmergencyRequest> submitQuoteRequest({
+    required Vehicle vehicle,
+    required String description,
+    required double latitud,
+    required double longitud,
+    String extraNotes = '',
+    List<String> imagePaths = const [],
+    String? audioPath,
+  }) async {
+    if (!isAuthenticated) {
+      throw ApiException('Debes iniciar sesion para solicitar cotizaciones.');
+    }
+
+    final composedDescription = [
+      'Solicitud de cotizacion para vehiculo ${vehicle.placa} (${vehicle.marca} ${vehicle.modelo})',
+      description.trim(),
+      if (extraNotes.trim().isNotEmpty)
+        'Notas del conductor: ${extraNotes.trim()}',
+      'El conductor solicita recibir varias cotizaciones de talleres antes de elegir donde atender el fallo.',
+    ].join('. ');
+
+    if (!connectivity.currentOnline) {
+      await offlineQueue.enqueue({
+        'descripcion': composedDescription,
+        'latitud': latitud,
+        'longitud': longitud,
+        if (vehicle.remoteId != null) 'vehiculo_id': vehicle.remoteId,
+      });
+      throw ApiException(
+        'Sin conexion. Solicitud de cotizacion guardada localmente; se enviara automaticamente al volver online.',
+      );
+    }
+
+    late EmergencyRequest created;
+    await _executeWithLoading(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final storage = LocalRepository(prefs);
+      final api = ApiClient(baseUrl: _baseUrl, token: _accessToken);
+      created = await api.createRequest(
+        descripcion: composedDescription,
+        latitud: latitud,
+        longitud: longitud,
+        vehiculoId: vehicle.remoteId,
+        incidentType: null,
+        extraNotes: extraNotes.trim(),
+        imagePaths: imagePaths,
+        audioPath: audioPath,
+      );
+
+      if (imagePaths.isNotEmpty) {
+        created = await api.uploadRequestImages(
+          requestId: created.id,
+          imagePaths: imagePaths,
+        );
+      }
+      if (audioPath != null && audioPath.isNotEmpty) {
+        created = await api.uploadRequestAudio(
+          requestId: created.id,
+          audioPath: audioPath,
+        );
+      }
+
+      final meta = LocalRequestMeta(
+        requestId: created.id,
+        vehicleLabel: vehicle.label,
+        issueType: 'Cotizacion',
+        imagePaths: imagePaths,
+        audioPath: audioPath,
+        extraNotes: extraNotes.trim(),
+      );
+
+      _requestMetas = [
+        meta,
+        ..._requestMetas.where((item) => item.requestId != created.id),
+      ];
+      await storage.saveRequestMetas(_requestMetas);
+      await _refreshRemoteData(storage);
+    });
+    return created;
+  }
+
+  Future<String> transcribeEmergencyAudio(String audioPath) async {
+    if (!isAuthenticated) {
+      throw ApiException('Debes iniciar sesion para transcribir audio.');
+    }
+    if (audioPath.trim().isEmpty) {
+      throw ApiException('Graba un audio antes de transcribir.');
+    }
+
+    final result = await ApiClient(
+      baseUrl: _baseUrl,
+      token: _accessToken,
+    ).transcribeAudio(audioPath);
+    final text = (result['text'] as String? ?? '').trim();
+    if (text.isEmpty) {
+      final error = (result['error'] as String? ?? '').trim();
+      throw ApiException(
+        error.isNotEmpty
+            ? 'No se pudo transcribir el audio: $error'
+            : 'No se pudo obtener texto del audio.',
+      );
+    }
+    return text;
+  }
+
+  Future<String?> synthesizeAssistantVoice({
+    required String messageKey,
+    String? especialidad,
+    String? descripcion,
+    String? incidentType,
+    int? cantidad,
+  }) async {
+    if (!isAuthenticated) {
+      return null;
+    }
+    final api = ApiClient(baseUrl: _baseUrl, token: _accessToken);
+    final result = await api.synthesizeAssistantVoice(
+      messageKey: messageKey,
+      especialidad: especialidad,
+      descripcion: descripcion,
+      incidentType: incidentType,
+      cantidad: cantidad,
+    );
+    return api.resolveAssetUrl(result['url'] as String?);
   }
 
   Future<void> cancelRequest(int requestId) async {
@@ -1300,13 +1428,10 @@ class AppController extends ChangeNotifier {
 
       final requests = await api.fetchRequests();
       _technicians = await api.fetchTechnicians();
-      final trackedIds = _requestMetas.map((meta) => meta.requestId).toSet();
-      _requests =
-          requests.where((request) => trackedIds.contains(request.id)).toList()
-            ..sort(
-              (left, right) =>
-                  right.fechaCreacion.compareTo(left.fechaCreacion),
-            );
+      _requests = requests.toList()
+        ..sort(
+          (left, right) => right.fechaCreacion.compareTo(left.fechaCreacion),
+        );
       _workshopProfile = null;
       _workshopStats = null;
 

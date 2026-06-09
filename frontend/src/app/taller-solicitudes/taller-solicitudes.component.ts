@@ -57,7 +57,7 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
     garantia_dias: 30
   };
   tecnicoSeleccionadoId: number | null = null;
-  vistaActiva: 'pendientes' | 'mis-solicitudes' = 'pendientes';
+  vistaActiva: 'pendientes' | 'mis-solicitudes' | 'cotizaciones' = 'pendientes';
   solicitudSeleccionada: Solicitud | null = null;
   mostrandoNuevaSolicitud = false;
   creandoSolicitud = false;
@@ -251,6 +251,11 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
       : `${this.backendBaseUrl}${solicitud.audio_url}`;
   }
 
+  obtenerImagenUrl(path: string): string {
+    if (!path) return '';
+    return path.startsWith('http') ? path : `${this.backendBaseUrl}${path}`;
+  }
+
   obtenerUrlRuta(solicitud: Solicitud): string {
     const originLat = solicitud.tecnico_latitud ?? this.tallerActual?.latitud;
     const originLng = solicitud.tecnico_longitud ?? this.tallerActual?.longitud;
@@ -261,7 +266,7 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
     return `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`;
   }
 
-  cambiarVista(vista: 'pendientes' | 'mis-solicitudes'): void {
+  cambiarVista(vista: 'pendientes' | 'mis-solicitudes' | 'cotizaciones'): void {
     this.vistaActiva = vista;
   }
 
@@ -327,6 +332,29 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
     return !!this.solicitudSeleccionada?.cotizacion_seleccionada_id;
   }
 
+  get solicitudesParaCotizar(): Solicitud[] {
+    const candidatas = [...this.pendientes, ...this.misSolicitudes].filter((solicitud) =>
+      ['pendiente', 'buscando_taller'].includes(solicitud.estado)
+    );
+    const porId = new Map<number, Solicitud>();
+    candidatas.forEach((solicitud) => {
+      if (!porId.has(solicitud.id)) {
+        porId.set(solicitud.id, solicitud);
+      }
+    });
+    return Array.from(porId.values());
+  }
+
+  obtenerEstadoCotizacion(solicitud: Solicitud): string {
+    if (solicitud.cotizacion_seleccionada_id) {
+      return 'Cotización seleccionada';
+    }
+    if (solicitud.taller_id) {
+      return 'Cotización candidata';
+    }
+    return 'Pendiente de cotizar';
+  }
+
   get puedeEditarCostoSolicitud(): boolean {
     return !!this.solicitudSeleccionada
       && !this.costoBloqueadoPorCotizacion
@@ -380,12 +408,26 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
       return;
     }
 
+    // Logging para depuración
+    console.log('=== INTENTANDO ENVIAR COTIZACIÓN ===');
+    console.log('Solicitud ID:', this.solicitudSeleccionada.id);
+    console.log('Solicitud estado:', this.solicitudSeleccionada.estado);
+    console.log('Solicitud taller_id:', this.solicitudSeleccionada.taller_id);
+    console.log('¿Puede cotizar?', this.puedeCotizarSolicitud);
+
     const costo = Number(this.cotizacionDraft.costo_estimado);
     const eta = Number(this.cotizacionDraft.eta_llegada_minutos);
     const horas = Number(this.cotizacionDraft.tiempo_reparacion_horas);
+    
+    console.log('Validación de números:');
+    console.log('  Costo:', costo, 'válido:', Number.isFinite(costo) && costo > 0);
+    console.log('  ETA:', eta, 'válido:', Number.isFinite(eta) && eta > 0);
+    console.log('  Horas:', horas, 'válido:', Number.isFinite(horas) && horas > 0);
+    
     if (!Number.isFinite(costo) || costo <= 0 || !Number.isFinite(eta) || eta <= 0 || !Number.isFinite(horas) || horas <= 0) {
       this.errorCotizacion = 'Costo, ETA y horas deben ser valores positivos.';
       this.mensajeCotizacion = '';
+      console.error('Error de validación:', this.errorCotizacion);
       return;
     }
 
@@ -393,6 +435,16 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
     this.errorCotizacion = '';
     this.mensajeCotizacion = '';
     const solicitudId = this.solicitudSeleccionada.id;
+    
+    console.log('Enviando cotización con payload:', {
+      costo_estimado: costo,
+      eta_llegada_minutos: eta,
+      tiempo_reparacion_horas: horas,
+      descripcion: this.cotizacionDraft.descripcion.trim(),
+      incluye_repuestos: this.cotizacionDraft.incluye_repuestos,
+      garantia_dias: Number(this.cotizacionDraft.garantia_dias) || 0,
+    });
+    
     this.cotizacionService.crear(solicitudId, {
       costo_estimado: costo,
       eta_llegada_minutos: eta,
@@ -409,11 +461,26 @@ export class TallerSolicitudesComponent implements OnInit, OnDestroy {
     ).subscribe({
       next: () => {
         this.guardandoCotizacion = false;
+        this.cotizacionesEnviadasIds.add(solicitudId);
         this.mensajeCotizacion = 'Cotizacion enviada al cliente.';
+        console.log('✓ Cotización enviada exitosamente');
       },
       error: (error) => {
         this.guardandoCotizacion = false;
-        this.errorCotizacion = error?.error?.detail || 'No se pudo enviar la cotización.';
+        console.error('Error al enviar cotización:', error);
+        console.error('Status:', error?.status);
+        console.error('Detail:', error?.error?.detail);
+        console.error('Message:', error?.error?.message);
+        console.error('Error completo:', error);
+        
+        this.errorCotizacion = error?.error?.detail || error?.error?.message || 'No se pudo enviar la cotización.';
+        if (error?.status === 403) {
+          this.errorCotizacion = 'Este taller no tiene permiso para cotizar esta solicitud. Verifica que sea candidato.';
+        } else if (error?.status === 409) {
+          this.errorCotizacion = 'La solicitud ya no está en estado pendiente o buscando taller.';
+        } else if (error?.status === 404) {
+          this.errorCotizacion = 'Solicitud no encontrada en el servidor.';
+        }
       }
     });
   }

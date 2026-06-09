@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import re
+import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -20,6 +21,157 @@ from app.services.storage import guess_mime_type
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_TIMEOUT_SECONDS = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "25"))
 HF_VEHICLE_MODEL = os.getenv("HF_VEHICLE_MODEL", "therealcyberlord/stanford-car-vit-patch16").strip()
+
+
+SPECIALTY_RULES: tuple[dict[str, object], ...] = (
+    {
+        "especialidad": "electricidad",
+        "clasificacion": "Problema electrico",
+        "prioridad": "Media",
+        "keywords": ("bateria", "batería", "no enciende", "click", "alternador", "arranque", "electrico", "eléctrico", "luces", "fusible"),
+        "resumen": "El vehiculo presenta una falla electrica o de arranque.",
+    },
+    {
+        "especialidad": "alternador y arranque",
+        "clasificacion": "Problema de alternador o arranque",
+        "prioridad": "Media",
+        "keywords": ("alternador", "arranque", "motor de arranque", "burro", "no arranca", "descarga"),
+        "resumen": "El incidente sugiere revision de alternador, bateria o sistema de arranque.",
+    },
+    {
+        "especialidad": "batería",
+        "clasificacion": "Problema de bateria",
+        "prioridad": "Media",
+        "keywords": ("bateria", "batería", "borne", "descargada", "sin bateria", "pasar corriente"),
+        "resumen": "El vehiculo requiere asistencia por bateria descargada o falla relacionada.",
+    },
+    {
+        "especialidad": "llantas",
+        "clasificacion": "Problema de llanta o neumatico",
+        "prioridad": "Media",
+        "keywords": ("llanta", "neumatico", "neumático", "pinchada", "pinchazo", "rueda", "aire de la llanta"),
+        "resumen": "El vehiculo presenta una falla en llanta o neumatico y requiere asistencia en ruta.",
+    },
+    {
+        "especialidad": "motor",
+        "clasificacion": "Problema de motor",
+        "prioridad": "Alta",
+        "keywords": ("motor", "humo", "pistonea", "se apaga", "perdio potencia", "perdió potencia", "ruido del motor"),
+        "resumen": "Hay indicios de falla de motor. Requiere revision mecanica prioritaria.",
+    },
+    {
+        "especialidad": "refrigeración / radiador",
+        "clasificacion": "Problema de refrigeracion o radiador",
+        "prioridad": "Alta",
+        "keywords": ("recalentado", "recalento", "recalentó", "temperatura", "radiador", "agua", "coolant", "anticongelante", "ventilador"),
+        "resumen": "El vehiculo presenta senales de recalentamiento o falla del sistema de refrigeracion.",
+    },
+    {
+        "especialidad": "frenos",
+        "clasificacion": "Problema de frenos",
+        "prioridad": "Alta",
+        "keywords": ("freno", "frenos", "no frena", "pedal", "pastilla", "disco", "abs", "liquido de frenos"),
+        "resumen": "El incidente sugiere falla en el sistema de frenos y requiere atencion urgente.",
+    },
+    {
+        "especialidad": "suspensión",
+        "clasificacion": "Problema de suspension",
+        "prioridad": "Media",
+        "keywords": ("suspension", "suspensión", "amortiguador", "golpe abajo", "tren delantero", "bujes", "vibra mucho"),
+        "resumen": "El vehiculo presenta sintomas de falla en suspension o tren delantero.",
+    },
+    {
+        "especialidad": "transmisión / caja",
+        "clasificacion": "Problema de transmision o caja",
+        "prioridad": "Alta",
+        "keywords": ("caja", "transmision", "transmisión", "cambio", "embrague", "no entra marcha", "patina"),
+        "resumen": "El incidente apunta a una falla en transmision, caja o embrague.",
+    },
+    {
+        "especialidad": "embrague",
+        "clasificacion": "Problema de embrague",
+        "prioridad": "Media",
+        "keywords": ("embrague", "clutch", "pedal de embrague", "no entran los cambios"),
+        "resumen": "El vehiculo requiere revision del sistema de embrague.",
+    },
+    {
+        "especialidad": "dirección",
+        "clasificacion": "Problema de direccion",
+        "prioridad": "Alta",
+        "keywords": ("direccion", "dirección", "volante duro", "hidraulica", "hidráulica", "no gira", "cremallera"),
+        "resumen": "El incidente sugiere una falla en el sistema de direccion.",
+    },
+    {
+        "especialidad": "aire acondicionado",
+        "clasificacion": "Problema de aire acondicionado",
+        "prioridad": "Baja",
+        "keywords": ("aire acondicionado", "no enfria", "no enfría", "compresor", "climatizador", "gas del aire"),
+        "resumen": "El vehiculo presenta una falla en aire acondicionado o climatizacion.",
+    },
+    {
+        "especialidad": "inyección y combustible",
+        "clasificacion": "Problema de inyeccion o combustible",
+        "prioridad": "Media",
+        "keywords": ("inyeccion", "inyección", "combustible", "gasolina", "diesel", "bomba de gasolina", "inyector", "filtro de combustible"),
+        "resumen": "El incidente apunta a una falla de inyeccion o suministro de combustible.",
+    },
+    {
+        "especialidad": "escape",
+        "clasificacion": "Problema de escape",
+        "prioridad": "Baja",
+        "keywords": ("escape", "catalizador", "silenciador", "humo negro", "olor a gases"),
+        "resumen": "El vehiculo requiere revision del sistema de escape.",
+    },
+    {
+        "especialidad": "carrocería y pintura",
+        "clasificacion": "Choque o dano de carroceria",
+        "prioridad": "Alta",
+        "keywords": ("choque", "colision", "colisión", "accidente", "golpe", "abollado", "parachoque", "carroceria", "carrocería"),
+        "resumen": "El incidente involucra golpe, colision o dano de carroceria.",
+    },
+    {
+        "especialidad": "grúa / remolque",
+        "clasificacion": "Solicitud de grua o remolque",
+        "prioridad": "Alta",
+        "keywords": ("grua", "grúa", "remolque", "remolcar", "varado", "no se mueve", "no puede circular"),
+        "resumen": "El vehiculo no puede circular y podria requerir grua o remolque.",
+    },
+    {
+        "especialidad": "cerrajería automotriz",
+        "clasificacion": "Problema de cerrajeria automotriz",
+        "prioridad": "Media",
+        "keywords": ("llave", "llaves", "cerradura", "cerrajeria", "cerrajería", "me quede afuera", "bloqueado"),
+        "resumen": "El incidente sugiere apertura o asistencia de cerrajeria automotriz.",
+    },
+    {
+        "especialidad": "diagnóstico electrónico (obd)",
+        "clasificacion": "Diagnostico electronico requerido",
+        "prioridad": "Media",
+        "keywords": ("check engine", "scanner", "obd", "testigo", "sensor", "computadora", "codigo de error"),
+        "resumen": "El vehiculo requiere diagnostico electronico con escaner OBD.",
+    },
+    {
+        "especialidad": "autos eléctricos - carga rápida",
+        "clasificacion": "Problema de carga en auto electrico",
+        "prioridad": "Media",
+        "keywords": ("carga rapida", "carga rápida", "cargador", "no carga", "electrico no carga", "eléctrico no carga"),
+        "resumen": "El incidente sugiere un problema de carga en vehiculo electrico.",
+    },
+    {
+        "especialidad": "autos eléctricos - batería de tracción",
+        "clasificacion": "Problema de bateria de traccion",
+        "prioridad": "Alta",
+        "keywords": ("bateria de traccion", "batería de tracción", "alto voltaje", "autonomia", "autonomía", "vehiculo electrico", "vehículo eléctrico"),
+        "resumen": "El vehiculo electrico podria tener falla de bateria de traccion.",
+    },
+    {
+        "especialidad": "autos híbridos",
+        "clasificacion": "Problema de sistema hibrido",
+        "prioridad": "Media",
+        "keywords": ("hibrido", "híbrido", "sistema hibrido", "sistema híbrido", "bateria hibrida", "batería híbrida"),
+        "resumen": "El vehiculo hibrido requiere diagnostico especializado.",
+    },
+)
 
 
 @dataclass
@@ -41,53 +193,139 @@ class VehiclePhotoAnalysis:
     source: str
 
 
+def _normalize_text(value: object) -> str:
+    text = str(value or "")
+    normalized = unicodedata.normalize("NFKD", text)
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    return " ".join(normalized.casefold().split())
+
+
+def _best_available_specialty_match(
+    *,
+    text: str,
+    selected_specialty: Optional[str],
+    available_specialties: Optional[list[str]],
+) -> Optional[str]:
+    if not available_specialties:
+        return selected_specialty
+
+    normalized_options = [
+        (specialty, _normalize_text(specialty))
+        for specialty in available_specialties
+        if str(specialty or "").strip()
+    ]
+    if not normalized_options:
+        return selected_specialty
+
+    general_specialty = _available_general_specialty(normalized_options)
+
+    selected_normalized = _normalize_text(selected_specialty)
+    for specialty, normalized_specialty in normalized_options:
+        if selected_normalized and (
+            selected_normalized == normalized_specialty
+            or selected_normalized in normalized_specialty
+            or normalized_specialty in selected_normalized
+        ):
+            return specialty
+
+    best_specialty: Optional[str] = None
+    best_score = 0
+    for specialty, normalized_specialty in normalized_options:
+        score = 0
+        if normalized_specialty and normalized_specialty in text:
+            score += 5
+        for token in normalized_specialty.split():
+            if len(token) >= 4 and token in text:
+                score += 2
+        for rule in SPECIALTY_RULES:
+            rule_specialty = _normalize_text(rule["especialidad"])
+            if not (
+                rule_specialty == normalized_specialty
+                or rule_specialty in normalized_specialty
+                or normalized_specialty in rule_specialty
+            ):
+                continue
+            for keyword in rule["keywords"]:  # type: ignore[index]
+                normalized_keyword = _normalize_text(keyword)
+                if normalized_keyword and normalized_keyword in text:
+                    score += 3 if " " in normalized_keyword else 2
+        if score > best_score:
+            best_score = score
+            best_specialty = specialty
+
+    return best_specialty if best_score > 0 else general_specialty
+
+
+def _available_general_specialty(
+    normalized_options: list[tuple[str, str]],
+) -> Optional[str]:
+    return next(
+        (
+            specialty
+            for specialty, normalized_specialty in normalized_options
+            if normalized_specialty in {"auxilio general", "general"}
+        ),
+        None,
+    )
+
+
 def fallback_incident_analysis(
     *,
     descripcion: str,
     incident_type: Optional[str] = None,
+    available_specialties: Optional[list[str]] = None,
 ) -> IncidentAnalysis:
-    clasificacion = "Incidente general"
-    prioridad = "Baja"
-    resumen = "El cliente reporta una falla general pendiente de diagnostico manual."
-    especialidad = "general"
+    text = _normalize_text(f"{incident_type or ''} {descripcion}")
+    best_rule: dict[str, object] | None = None
+    best_score = 0
 
-    desc_eval = f"{incident_type or ''} {descripcion}".lower()
+    for rule in SPECIALTY_RULES:
+        score = 0
+        specialty = _normalize_text(rule["especialidad"])
+        if specialty and specialty in text:
+            score += 4
+        for keyword in rule["keywords"]:  # type: ignore[index]
+            normalized_keyword = _normalize_text(keyword)
+            if normalized_keyword and normalized_keyword in text:
+                score += 3 if " " in normalized_keyword else 2
+        if score > best_score:
+            best_score = score
+            best_rule = rule
 
-    if any(token in desc_eval for token in ["no enciende", "bateria", "batería", "click click", "arranca"]):
-        clasificacion = "Problema de bateria o sistema electrico"
-        prioridad = "Media"
-        resumen = (
-            "El vehiculo no responde al arranque. Se requiere revision de bateria, alternador o sistema electrico."
+    matched_specialty = _best_available_specialty_match(
+        text=text,
+        selected_specialty=str(best_rule["especialidad"]) if best_rule else None,
+        available_specialties=available_specialties,
+    )
+    if matched_specialty:
+        if best_rule:
+            return IncidentAnalysis(
+                clasificacion=str(best_rule["clasificacion"]),
+                prioridad=str(best_rule["prioridad"]),
+                resumen=str(best_rule["resumen"]),
+                especialidad_requerida=matched_specialty,
+            )
+        return IncidentAnalysis(
+            clasificacion="Incidente general",
+            prioridad="Baja",
+            resumen="El cliente reporta una falla pendiente de diagnostico manual.",
+            especialidad_requerida=matched_specialty,
         )
-        especialidad = "electrico"
-    elif any(token in desc_eval for token in ["pinchada", "llanta", "neumatico", "neumático"]):
-        clasificacion = "Problema de llanta o neumatico"
-        prioridad = "Media"
-        resumen = "El vehiculo presenta una falla en llanta o neumatico y requiere asistencia en ruta."
-        especialidad = "llantas"
-    elif any(token in desc_eval for token in ["humo", "recalentado", "temperatura", "motor"]):
-        clasificacion = "Problema de motor o recalentamiento"
-        prioridad = "Alta"
-        resumen = "Hay indicios de falla de motor o recalentamiento. Requiere atencion prioritaria."
-        especialidad = "motor"
-    elif any(token in desc_eval for token in ["llaves", "cerrajer", "cerrado"]):
-        clasificacion = "Problema de cerrajeria automotriz"
-        prioridad = "Media"
-        resumen = "El incidente sugiere apertura de vehiculo o asistencia de cerrajeria."
-        especialidad = "cerrajeria"
-    elif any(token in desc_eval for token in ["choque", "colision", "colisión", "accidente", "golpe"]):
-        clasificacion = "Choque o colision"
-        prioridad = "Alta"
-        resumen = "El incidente parece involucrar colision o golpe. Conviene revisar danos y posible remolque."
-        especialidad = "grua"
+
+    if not best_rule:
+        return IncidentAnalysis(
+            clasificacion="Incidente general",
+            prioridad="Baja",
+            resumen="El cliente reporta una falla general pendiente de diagnostico manual.",
+            especialidad_requerida="auxilio general",
+        )
 
     return IncidentAnalysis(
-        clasificacion=clasificacion,
-        prioridad=prioridad,
-        resumen=resumen,
-        especialidad_requerida=especialidad,
+        clasificacion=str(best_rule["clasificacion"]),
+        prioridad=str(best_rule["prioridad"]),
+        resumen=str(best_rule["resumen"]),
+        especialidad_requerida=str(best_rule["especialidad"]),
     )
-
 
 def analyze_incident(
     *,
@@ -96,9 +334,14 @@ def analyze_incident(
     image_paths: Optional[list[str]] = None,
     audio_paths: Optional[list[str]] = None,
     vehicle_photo_path: Optional[str] = None,
+    available_specialties: Optional[list[str]] = None,
 ) -> IncidentAnalysis:
     if not _gemini_api_key():
-        return fallback_incident_analysis(descripcion=descripcion, incident_type=incident_type)
+        return fallback_incident_analysis(
+            descripcion=descripcion,
+            incident_type=incident_type,
+            available_specialties=available_specialties,
+        )
 
     try:
         return _analyze_with_gemini(
@@ -107,10 +350,15 @@ def analyze_incident(
             image_paths=image_paths or [],
             audio_paths=audio_paths or [],
             vehicle_photo_path=vehicle_photo_path,
+            available_specialties=available_specialties,
         )
     except Exception as exc:
         print(f"Gemini incidente fallo: {exc}")
-        return fallback_incident_analysis(descripcion=descripcion, incident_type=incident_type)
+        return fallback_incident_analysis(
+            descripcion=descripcion,
+            incident_type=incident_type,
+            available_specialties=available_specialties,
+        )
 
 
 def analyze_vehicle_photos(*, image_paths: list[str], file_names: Optional[list[str]] = None) -> VehiclePhotoAnalysis:
@@ -277,13 +525,27 @@ def _analyze_with_gemini(
     image_paths: list[str],
     audio_paths: list[str],
     vehicle_photo_path: Optional[str],
+    available_specialties: Optional[list[str]] = None,
 ) -> IncidentAnalysis:
+    if available_specialties:
+        specialty_names = {
+            str(specialty).strip()
+            for specialty in available_specialties
+            if str(specialty or "").strip()
+        } or {"auxilio general"}
+    else:
+        specialty_names = {
+            str(rule["especialidad"]) for rule in SPECIALTY_RULES
+        } | {"auxilio general"}
+    specialty_options = ", ".join(
+        sorted(specialty_names)
+    )
     prompt = (
         "Analiza un incidente vehicular para una plataforma de asistencia mecanica. "
         "Debes devolver solo JSON valido con estas claves exactas: "
         'clasificacion, prioridad, resumen, especialidad_requerida. '
         "La prioridad solo puede ser Alta, Media o Baja. "
-        "La especialidad_requerida debe ser una de: general, electrico, llantas, motor, grua, cerrajeria, carroceria. "
+        f"La especialidad_requerida debe ser una de estas especialidades del sistema: {specialty_options}. "
         f"Tipo reportado: {incident_type or 'No especificado'}. "
         f"Descripcion del cliente: {descripcion}"
     )
@@ -333,7 +595,10 @@ def _analyze_with_gemini(
             data.get("resumen"),
             "Se genero un resumen automatico del incidente.",
         ),
-        especialidad_requerida=_sanitize_specialty(data.get("especialidad_requerida")),
+        especialidad_requerida=_sanitize_specialty(
+            data.get("especialidad_requerida"),
+            available_specialties=available_specialties,
+        ),
     )
 
 
@@ -687,20 +952,56 @@ def _sanitize_priority(value: object) -> str:
     return normalized
 
 
-def _sanitize_specialty(value: object) -> str:
-    normalized = str(value).strip().lower() if value is not None else ""
-    if normalized not in {
-        "general",
-        "electrico",
-        "llantas",
-        "motor",
-        "grua",
-        "cerrajeria",
-        "carroceria",
-    }:
-        return "general"
-    return normalized
+def _sanitize_specialty(
+    value: object,
+    *,
+    available_specialties: Optional[list[str]] = None,
+) -> str:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return "auxilio general"
 
+    if available_specialties:
+        normalized_options = [
+            (str(specialty), _normalize_text(specialty))
+            for specialty in available_specialties
+            if str(specialty or "").strip()
+        ]
+        for specialty in available_specialties:
+            normalized_specialty = _normalize_text(specialty)
+            if normalized_specialty and (
+                normalized == normalized_specialty
+                or normalized in normalized_specialty
+                or normalized_specialty in normalized
+            ):
+                return str(specialty)
+        return _available_general_specialty(normalized_options) or "auxilio general"
+
+    allowed = {_normalize_text(rule["especialidad"]): str(rule["especialidad"]) for rule in SPECIALTY_RULES}
+    allowed["auxilio general"] = "auxilio general"
+    legacy_aliases = {
+        "general": "auxilio general",
+        "electrico": "electricidad",
+        "electricos": "electricidad",
+        "mecanico": "motor",
+        "mecanicos": "motor",
+        "grua": "gr?a / remolque",
+        "remolque": "gr?a / remolque",
+        "cerrajeria": "cerrajer?a automotriz",
+        "carroceria": "carrocer?a y pintura",
+        "bateria": "bater?a",
+        "radiador": "refrigeraci?n / radiador",
+        "caja": "transmisi?n / caja",
+        "transmision": "transmisi?n / caja",
+    }
+    if normalized in allowed:
+        return allowed[normalized]
+    if normalized in legacy_aliases:
+        return legacy_aliases[normalized]
+    for key, canonical in allowed.items():
+        if key in normalized or normalized in key:
+            return canonical
+    return "auxilio general"
 
 def _sanitize_plate(value: object) -> str:
     raw = str(value).upper().strip() if value is not None else ""

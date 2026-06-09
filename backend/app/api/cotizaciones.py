@@ -179,7 +179,7 @@ def crear_cotizacion(
             crear_notificacion(
                 session,
                 destinatario_id=vehiculo.propietario_id,
-                tipo=TipoNotificacion.GENERAL,
+                tipo=TipoNotificacion.COTIZACION_ENVIADA,
                 titulo="Nueva cotización recibida",
                 mensaje=(
                     f"{taller.nombre_comercial} cotizó tu solicitud por "

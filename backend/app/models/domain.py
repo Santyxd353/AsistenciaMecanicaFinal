@@ -207,6 +207,7 @@ class TipoNotificacion(str, Enum):
     SERVICIO_TERMINADO = "servicio_terminado"
     SERVICIO_CONCLUIDO_PAGO = "servicio_concluido_pago"
     GENERAL = "general"
+    COTIZACION_ENVIADA = "cotizacion_enviada"
 
 
 class NotificacionBase(SQLModel):
@@ -607,6 +608,7 @@ class SolicitudRead(SolicitudBase):
     audio_url: Optional[str] = None
     audio_resumen_ia: Optional[str] = None
     ruta_recomendada_ia: Optional[str] = None
+    imagenes: Optional[list[str]] = None
     
 class SolicitudCreate(SolicitudBase):
     pass

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'app_controller.dart';
 import 'screens/auth_screen.dart';
 import 'screens/overview_screen.dart';
+import 'screens/quote_request_screen.dart';
 import 'screens/report_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/vehicle_registration_screen.dart';
@@ -139,9 +140,10 @@ class _AppShellState extends State<AppShell> {
     final pages = [
       OverviewScreen(
         onCreateReport: () => setState(() => _currentIndex = 1),
-        onRegisterVehicle: () => setState(() => _currentIndex = 2),
+        onRegisterVehicle: () => setState(() => _currentIndex = 3),
       ),
       const ReportScreen(),
+      const QuoteRequestScreen(),
       const VehicleRegistrationScreen(),
       const SettingsScreen(),
     ];
@@ -162,6 +164,7 @@ class _AppShellState extends State<AppShell> {
         items: const [
           _RutaNavItem(Icons.dashboard_outlined, 'Inicio'),
           _RutaNavItem(Icons.sos_outlined, 'Reportar'),
+          _RutaNavItem(Icons.request_quote_outlined, 'Cotizar'),
           _RutaNavItem(Icons.directions_car_filled_outlined, 'Vehiculos'),
           _RutaNavItem(Icons.person_outline, 'Perfil'),
         ],

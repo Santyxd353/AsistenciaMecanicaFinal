@@ -1,12 +1,15 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 
 import '../app_controller.dart';
 import '../models.dart';
 import 'request_detail_screen.dart';
 
-class OverviewScreen extends StatelessWidget {
+class OverviewScreen extends StatefulWidget {
   const OverviewScreen({
     super.key,
     required this.onCreateReport,
@@ -17,9 +20,36 @@ class OverviewScreen extends StatelessWidget {
   final VoidCallback onRegisterVehicle;
 
   @override
+  State<OverviewScreen> createState() => _OverviewScreenState();
+}
+
+class _OverviewScreenState extends State<OverviewScreen> {
+  final _voiceSearchController = TextEditingController();
+  final _audioRecorder = AudioRecorder();
+  final _searchResultPlayer = AudioPlayer();
+
+  bool _showHistorySearch = false;
+  bool _recordingVoiceSearch = false;
+  bool _transcribingVoiceSearch = false;
+  bool _playingSearchSummary = false;
+  DateTimeRange? _dateRange;
+  String? _incidentFilter;
+
+  @override
+  void dispose() {
+    _voiceSearchController.dispose();
+    _audioRecorder.dispose();
+    _searchResultPlayer.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final controller = context.watch<AppController>();
     final requests = controller.requests;
+    final visibleRequests = _visibleRequests(requests);
+    final incidentOptions = _incidentOptions(requests);
+    final searchSummary = _searchSummary(visibleRequests);
     final notifications = controller.notifications.take(4).toList();
     final activeCount = controller.activeRequests.length;
     final closedCount = requests.length - activeCount;
@@ -42,15 +72,15 @@ class OverviewScreen extends StatelessWidget {
                 user: controller.currentUser,
                 vehicleCount: controller.vehicles.length,
                 activeCount: activeCount,
-                onCreateReport: onCreateReport,
-                onRegisterVehicle: onRegisterVehicle,
+                onCreateReport: widget.onCreateReport,
+                onRegisterVehicle: widget.onRegisterVehicle,
               ),
               const SizedBox(height: 16),
               if (controller.currentUser == null || controller.vehicles.isEmpty)
                 _SetupWarning(
                   missingProfile: controller.currentUser == null,
                   missingVehicles: controller.vehicles.isEmpty,
-                  onRegisterVehicle: onRegisterVehicle,
+                  onRegisterVehicle: widget.onRegisterVehicle,
                 ),
               if (controller.currentUser == null || controller.vehicles.isEmpty)
                 const SizedBox(height: 16),
@@ -60,7 +90,7 @@ class OverviewScreen extends StatelessWidget {
                     child: _MetricCard(
                       title: 'Seguimiento',
                       value: requests.length.toString(),
-                      caption: 'Solicitudes creadas desde mobile',
+                      caption: 'Solicitudes creadas',
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -83,17 +113,57 @@ class OverviewScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               Text(
-                'Mis emergencias',
+                _showHistorySearch ? 'Buscar solicitudes' : 'Ultima solicitud',
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
-                onPressed: controller.loading ? null : controller.refreshData,
-                icon: const Icon(Icons.sync),
-                label: const Text('Actualizar estados'),
+                onPressed: controller.loading
+                    ? null
+                    : () => setState(
+                        () => _showHistorySearch = !_showHistorySearch,
+                      ),
+                icon: Icon(
+                  _showHistorySearch
+                      ? Icons.expand_less
+                      : Icons.manage_search_outlined,
+                ),
+                label: Text(
+                  _showHistorySearch
+                      ? 'Ocultar buscador'
+                      : 'Buscar historial',
+                ),
               ),
+              if (_showHistorySearch) ...[
+                const SizedBox(height: 10),
+                _HistorySearchCard(
+                  dateRange: _dateRange,
+                  incidentFilter: _incidentFilter,
+                  incidentOptions: incidentOptions,
+                  voiceSearchController: _voiceSearchController,
+                  recordingVoiceSearch: _recordingVoiceSearch,
+                  transcribingVoiceSearch: _transcribingVoiceSearch,
+                  onPickDateRange: _pickDateRange,
+                  onIncidentChanged: (value) =>
+                      setState(() => _incidentFilter = value),
+                  onVoiceSearch: () => _toggleVoiceSearch(controller),
+                  onTextChanged: (_) => setState(() {}),
+                  onClear: _clearSearch,
+                ),
+                const SizedBox(height: 10),
+                _SearchResultSummary(
+                  total: visibleRequests.length,
+                  incidentLabel: searchSummary,
+                  playing: _playingSearchSummary,
+                  onPlay: () => _playSearchResultAudio(
+                    controller: controller,
+                    total: visibleRequests.length,
+                    incidentLabel: searchSummary,
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               if (controller.loading)
                 const Padding(
@@ -120,7 +190,7 @@ class OverviewScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 18),
                         FilledButton.icon(
-                          onPressed: onCreateReport,
+                          onPressed: widget.onCreateReport,
                           icon: const Icon(Icons.add_location_alt_outlined),
                           label: const Text('Crear primer reporte'),
                         ),
@@ -128,8 +198,30 @@ class OverviewScreen extends StatelessWidget {
                     ),
                   ),
                 )
+              else if (visibleRequests.isEmpty)
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(22),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          'No encontramos solicitudes con esos filtros.',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Prueba con otro rango de fechas, tipo de incidencia o busqueda por voz.',
+                        ),
+                      ],
+                    ),
+                  ),
+                )
               else
-                ...requests.map(
+                ...visibleRequests.map(
                   (request) => Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: _RequestCard(
@@ -169,6 +261,396 @@ class OverviewScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  List<EmergencyRequest> _visibleRequests(List<EmergencyRequest> requests) {
+    final sorted = requests.toList()
+      ..sort((left, right) => right.fechaCreacion.compareTo(left.fechaCreacion));
+    if (!_showHistorySearch) {
+      return sorted.take(1).toList();
+    }
+
+    final query = _normalize(_voiceSearchController.text);
+    return sorted.where((request) {
+      final createdAt = request.fechaCreacion.toLocal();
+      final range = _dateRange;
+      if (range != null) {
+        final start = DateTime(
+          range.start.year,
+          range.start.month,
+          range.start.day,
+        );
+        final end = DateTime(
+          range.end.year,
+          range.end.month,
+          range.end.day,
+          23,
+          59,
+          59,
+          999,
+        );
+        if (createdAt.isBefore(start) || createdAt.isAfter(end)) {
+          return false;
+        }
+      }
+
+      final incident = _incidentLabel(request);
+      if (_incidentFilter != null && incident != _incidentFilter) {
+        return false;
+      }
+
+      if (query.isEmpty) {
+        return true;
+      }
+      final searchable = _normalize(
+        [
+          request.descripcion,
+          request.clasificacionIa,
+          request.resumenIa,
+          request.especialidadRequeridaIa,
+          request.tallerNombre,
+          request.tecnicoNombre,
+          request.vehiculoPlaca,
+          request.vehiculoDescripcion,
+        ].whereType<String>().join(' '),
+      );
+      return searchable.contains(query);
+    }).toList();
+  }
+
+  List<String> _incidentOptions(List<EmergencyRequest> requests) {
+    final byNormalized = <String, String>{};
+    for (final request in requests) {
+      final label = _incidentLabel(request).trim();
+      if (label.isEmpty) {
+        continue;
+      }
+      byNormalized.putIfAbsent(_normalize(label), () => label);
+    }
+    return byNormalized.values.toList()..sort();
+  }
+
+  String _incidentLabel(EmergencyRequest request) {
+    final specialty = request.especialidadRequeridaIa?.trim();
+    if (specialty != null && specialty.isNotEmpty) {
+      return specialty;
+    }
+    final classification = request.clasificacionIa?.trim();
+    if (classification != null && classification.isNotEmpty) {
+      return classification;
+    }
+    return 'Sin clasificar';
+  }
+
+  String _normalize(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll('á', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll('ü', 'u')
+        .replaceAll('ñ', 'n')
+        .trim();
+  }
+
+  String _searchSummary(List<EmergencyRequest> requests) {
+    if (_incidentFilter != null && _incidentFilter!.trim().isNotEmpty) {
+      return _incidentFilter!.trim();
+    }
+    final query = _voiceSearchController.text.trim();
+    if (query.isNotEmpty) {
+      return query;
+    }
+    if (requests.isEmpty) {
+      return 'los filtros indicados';
+    }
+    final grouped = <String, int>{};
+    for (final request in requests) {
+      final label = _incidentLabel(request);
+      grouped[label] = (grouped[label] ?? 0) + 1;
+    }
+    final entries = grouped.entries.toList()
+      ..sort((left, right) => right.value.compareTo(left.value));
+    return entries.first.key;
+  }
+
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 3),
+      lastDate: DateTime(now.year + 1),
+      initialDateRange:
+          _dateRange ??
+          DateTimeRange(
+            start: now.subtract(const Duration(days: 30)),
+            end: now,
+          ),
+    );
+    if (picked != null && mounted) {
+      setState(() => _dateRange = picked);
+    }
+  }
+
+  Future<void> _toggleVoiceSearch(AppController controller) async {
+    if (_recordingVoiceSearch) {
+      final path = await _audioRecorder.stop();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _recordingVoiceSearch = false;
+        _transcribingVoiceSearch = path != null && path.isNotEmpty;
+      });
+      if (path == null || path.isEmpty) {
+        return;
+      }
+      try {
+        final text = await controller.transcribeEmergencyAudio(path);
+        if (!mounted) {
+          return;
+        }
+        _applyConversationalSearch(text, controller.requests);
+        setState(() => _transcribingVoiceSearch = false);
+        final filtered = _visibleRequests(controller.requests);
+        await _playSearchResultAudio(
+          controller: controller,
+          total: filtered.length,
+          incidentLabel: _searchSummary(filtered),
+        );
+      } catch (error) {
+        if (!mounted) {
+          return;
+        }
+        setState(() => _transcribingVoiceSearch = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+          ),
+        );
+      }
+      return;
+    }
+
+    final hasPermission = await _audioRecorder.hasPermission();
+    if (!hasPermission) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Concede permiso de microfono para buscar por voz.'),
+        ),
+      );
+      return;
+    }
+
+    final dir = await getTemporaryDirectory();
+    final path =
+        '${dir.path}/busqueda-${DateTime.now().millisecondsSinceEpoch}.m4a';
+    await _audioRecorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc),
+      path: path,
+    );
+    if (mounted) {
+      setState(() => _recordingVoiceSearch = true);
+    }
+  }
+
+  void _clearSearch() {
+    _voiceSearchController.clear();
+    setState(() {
+      _dateRange = null;
+      _incidentFilter = null;
+    });
+  }
+
+  void _applyConversationalSearch(
+    String spokenText,
+    List<EmergencyRequest> requests,
+  ) {
+    final normalized = _normalize(spokenText);
+    final dateRange = _dateRangeFromCommand(normalized);
+    final incident = _incidentFromCommand(normalized, requests);
+    setState(() {
+      if (dateRange != null) {
+        _dateRange = dateRange;
+      }
+      if (incident != null) {
+        _incidentFilter = incident;
+        _voiceSearchController.text = incident;
+      } else {
+        _voiceSearchController.text = _cleanSearchCommand(spokenText);
+      }
+    });
+  }
+
+  DateTimeRange? _dateRangeFromCommand(String normalizedText) {
+    final now = DateTime.now();
+    DateTime dayStart(DateTime value) =>
+        DateTime(value.year, value.month, value.day);
+    DateTime dayEnd(DateTime value) =>
+        DateTime(value.year, value.month, value.day, 23, 59, 59, 999);
+
+    if (normalizedText.contains('ayer')) {
+      final yesterday = now.subtract(const Duration(days: 1));
+      return DateTimeRange(start: dayStart(yesterday), end: dayEnd(yesterday));
+    }
+    if (normalizedText.contains('hoy')) {
+      return DateTimeRange(start: dayStart(now), end: dayEnd(now));
+    }
+    if (normalizedText.contains('esta semana')) {
+      final start = dayStart(now.subtract(Duration(days: now.weekday - 1)));
+      return DateTimeRange(start: start, end: dayEnd(now));
+    }
+    if (normalizedText.contains('este mes')) {
+      final start = DateTime(now.year, now.month);
+      return DateTimeRange(start: start, end: dayEnd(now));
+    }
+    if (normalizedText.contains('ultimos 7 dias') ||
+        normalizedText.contains('ultima semana')) {
+      return DateTimeRange(
+        start: dayStart(now.subtract(const Duration(days: 7))),
+        end: dayEnd(now),
+      );
+    }
+    if (normalizedText.contains('ultimos 30 dias') ||
+        normalizedText.contains('ultimo mes')) {
+      return DateTimeRange(
+        start: dayStart(now.subtract(const Duration(days: 30))),
+        end: dayEnd(now),
+      );
+    }
+    return null;
+  }
+
+  String? _incidentFromCommand(
+    String normalizedText,
+    List<EmergencyRequest> requests,
+  ) {
+    final options = _incidentOptions(requests);
+    final aliases = <String, List<String>>{
+      'bateria': ['bateria', 'baterias', 'electrico', 'electricidad'],
+      'frenos': ['freno', 'frenos', 'pedal duro', 'no frena'],
+      'motor': ['motor', 'recalienta', 'recalentamiento', 'humo'],
+      'llantas': ['llanta', 'llantas', 'goma', 'pinchazo', 'neumatico'],
+      'choque': ['choque', 'chocado', 'colision', 'carroceria'],
+      'auxilio general': ['auxilio general', 'general'],
+    };
+
+    for (final option in options) {
+      final normalizedOption = _normalize(option);
+      if (normalizedText.contains(normalizedOption)) {
+        return option;
+      }
+      for (final entry in aliases.entries) {
+        if (normalizedOption.contains(entry.key) &&
+            entry.value.any(normalizedText.contains)) {
+          return option;
+        }
+      }
+    }
+    for (final entry in aliases.entries) {
+      if (entry.value.any(normalizedText.contains)) {
+        final matchedOption = options.cast<String?>().firstWhere(
+          (option) => _normalize(option ?? '').contains(entry.key),
+          orElse: () => null,
+        );
+        return matchedOption;
+      }
+    }
+    return null;
+  }
+
+  String _cleanSearchCommand(String spokenText) {
+    var cleaned = _normalize(spokenText);
+    const removable = [
+      'buscame',
+      'buscar',
+      'busca',
+      'solicitudes',
+      'solicitud',
+      'incidencias',
+      'incidencia',
+      'emergencias',
+      'emergencia',
+      'sobre',
+      'de',
+      'del',
+      'con',
+      'por',
+      'ayer',
+      'hoy',
+      'esta semana',
+      'este mes',
+      'ultimos 7 dias',
+      'ultimos 30 dias',
+    ];
+    for (final word in removable) {
+      cleaned = cleaned.replaceAll(word, ' ');
+    }
+    return cleaned.split(RegExp(r'\s+')).where((word) => word.isNotEmpty).join(' ');
+  }
+
+  Future<void> _playSearchResultAudio({
+    required AppController controller,
+    required int total,
+    required String incidentLabel,
+  }) async {
+    if (_playingSearchSummary) {
+      return;
+    }
+    setState(() => _playingSearchSummary = true);
+    try {
+      final url = await controller.synthesizeAssistantVoice(
+        messageKey: 'search_results',
+        especialidad: incidentLabel,
+        descripcion: _searchDateLabel(),
+        cantidad: total,
+      );
+      if (url == null || url.isEmpty) {
+        return;
+      }
+      await _searchResultPlayer.stop();
+      await _searchResultPlayer.play(UrlSource(url));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _playingSearchSummary = false);
+      }
+    }
+  }
+
+  String? _searchDateLabel() {
+    final range = _dateRange;
+    if (range == null) {
+      return null;
+    }
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final start = DateTime(range.start.year, range.start.month, range.start.day);
+    final end = DateTime(range.end.year, range.end.month, range.end.day);
+    if (start == today && end == today) {
+      return 'hoy';
+    }
+    if (start == today.subtract(const Duration(days: 1)) &&
+        end == today.subtract(const Duration(days: 1))) {
+      return 'ayer';
+    }
+    if (start == DateTime(now.year, now.month)) {
+      return 'este mes';
+    }
+    return null;
   }
 }
 
@@ -326,6 +808,191 @@ class _MetricCard extends StatelessWidget {
             Text(
               caption,
               style: const TextStyle(color: Color(0xFF6F655B), fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HistorySearchCard extends StatelessWidget {
+  const _HistorySearchCard({
+    required this.dateRange,
+    required this.incidentFilter,
+    required this.incidentOptions,
+    required this.voiceSearchController,
+    required this.recordingVoiceSearch,
+    required this.transcribingVoiceSearch,
+    required this.onPickDateRange,
+    required this.onIncidentChanged,
+    required this.onVoiceSearch,
+    required this.onTextChanged,
+    required this.onClear,
+  });
+
+  final DateTimeRange? dateRange;
+  final String? incidentFilter;
+  final List<String> incidentOptions;
+  final TextEditingController voiceSearchController;
+  final bool recordingVoiceSearch;
+  final bool transcribingVoiceSearch;
+  final VoidCallback onPickDateRange;
+  final ValueChanged<String?> onIncidentChanged;
+  final VoidCallback onVoiceSearch;
+  final ValueChanged<String> onTextChanged;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final formatter = DateFormat('dd/MM/yyyy');
+    final rangeLabel = dateRange == null
+        ? 'Seleccionar rango de fechas'
+        : '${formatter.format(dateRange!.start)} - ${formatter.format(dateRange!.end)}';
+    final uniqueIncidentOptions = {
+      for (final option in incidentOptions) option,
+    }.toList();
+    final safeIncidentFilter = uniqueIncidentOptions.contains(incidentFilter)
+        ? incidentFilter
+        : null;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Buscar en historial',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onPickDateRange,
+              icon: const Icon(Icons.date_range_outlined),
+              label: Text(rangeLabel),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: safeIncidentFilter,
+              decoration: const InputDecoration(
+                labelText: 'Tipo de incidencia',
+              ),
+              items: [
+                const DropdownMenuItem<String>(
+                  value: null,
+                  child: Text('Todas las incidencias'),
+                ),
+                ...uniqueIncidentOptions.map(
+                  (item) => DropdownMenuItem<String>(
+                    value: item,
+                    child: Text(item),
+                  ),
+                ),
+              ],
+              onChanged: onIncidentChanged,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: voiceSearchController,
+              onChanged: onTextChanged,
+              decoration: InputDecoration(
+                labelText: 'Buscar por voz o texto',
+                hintText: 'Ejemplo: frenos, bateria, motor...',
+                suffixIcon: transcribingVoiceSearch
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : IconButton(
+                        onPressed: onVoiceSearch,
+                        icon: Icon(
+                          recordingVoiceSearch
+                              ? Icons.stop_circle_outlined
+                              : Icons.mic_none_outlined,
+                        ),
+                        tooltip: recordingVoiceSearch
+                            ? 'Detener busqueda por voz'
+                            : 'Buscar por voz',
+                      ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: onClear,
+                  icon: const Icon(Icons.clear_all_outlined),
+                  label: const Text('Limpiar filtros'),
+                ),
+                if (recordingVoiceSearch)
+                  const _MiniMetaChip(
+                    icon: Icons.mic,
+                    label: 'Grabando busqueda...',
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchResultSummary extends StatelessWidget {
+  const _SearchResultSummary({
+    required this.total,
+    required this.incidentLabel,
+    required this.playing,
+    required this.onPlay,
+  });
+
+  final int total;
+  final String incidentLabel;
+  final bool playing;
+  final VoidCallback onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final message = total == 1
+        ? 'Se encontro 1 solicitud con incidencia de $incidentLabel.'
+        : 'Se encontraron $total solicitudes con incidencias de $incidentLabel.';
+
+    return Card(
+      color: const Color(0xFFFFF8EC),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.search_outlined, color: Color(0xFF715A3E)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Color(0xFF4E453E),
+                  fontWeight: FontWeight.w700,
+                  height: 1.35,
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: playing ? null : onPlay,
+              icon: playing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.volume_up_outlined),
+              tooltip: 'Escuchar resultado',
             ),
           ],
         ),

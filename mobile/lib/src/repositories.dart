@@ -684,6 +684,47 @@ class ApiClient {
     return EmergencyRequest.fromApi(await _decodeObjectFromStream(response));
   }
 
+  Future<Map<String, dynamic>> transcribeAudio(String audioPath) async {
+    final request = http.MultipartRequest(
+      'POST',
+      _uri('/api/v1/ia/transcribir-audio'),
+    );
+    request.headers.addAll(_headers());
+    request.files.add(await http.MultipartFile.fromPath('audio', audioPath));
+    final response = await request.send().timeout(const Duration(seconds: 60));
+    return await _decodeObjectFromStream(response);
+  }
+
+  Future<Map<String, dynamic>> synthesizeAssistantVoice({
+    required String messageKey,
+    String? especialidad,
+    String? descripcion,
+    String? incidentType,
+    int? cantidad,
+  }) async {
+    final body = {
+      'message_key': messageKey,
+      if (especialidad != null && especialidad.trim().isNotEmpty)
+        'especialidad': especialidad.trim(),
+      if (descripcion != null && descripcion.trim().isNotEmpty)
+        'descripcion': descripcion.trim(),
+      if (incidentType != null && incidentType.trim().isNotEmpty)
+        'incident_type': incidentType.trim(),
+      if (cantidad != null) 'cantidad': cantidad.toString(),
+    };
+    final response = await http
+        .post(
+          _uri('/api/v1/ia/asistente-voz'),
+          headers: {
+            ..._headers(),
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: body,
+        )
+        .timeout(const Duration(seconds: 30));
+    return _decodeObject(response);
+  }
+
   Future<EmergencyRequest> uploadRequestImages({
     required int requestId,
     required List<String> imagePaths,

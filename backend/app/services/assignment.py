@@ -61,35 +61,73 @@ def normalizar_texto(texto: Optional[str]) -> str:
     return " ".join(limpio.casefold().split())
 
 
+def re_split_specialty(value: str) -> list[str]:
+    return [
+        token
+        for token in (
+            value
+            .replace("/", " ")
+            .replace("-", " ")
+            .replace("(", " ")
+            .replace(")", " ")
+            .split()
+        )
+        if token
+    ]
+
+
 def palabras_clave_solicitud(solicitud: Solicitud) -> list[str]:
     texto = normalizar_texto(
         f"{solicitud.especialidad_requerida_ia or ''} "
         f"{solicitud.clasificacion_ia or ''} {solicitud.descripcion or ''}"
     )
-    if any(item in texto for item in ["bateria", "electrico", "arranque", "alternador"]):
-        return ["bateria", "electrico", "electricidad", "arranque"]
+    requerida = normalizar_texto(solicitud.especialidad_requerida_ia)
+    keywords = [item for item in re_split_specialty(requerida) if len(item) >= 3]
+
+    if any(item in texto for item in ["bateria", "electrico", "electricidad", "arranque", "alternador"]):
+        return keywords + ["bateria", "electrico", "electricidad", "arranque", "alternador"]
     if any(item in texto for item in ["llanta", "neumatico", "pinchazo", "pinchada", "rueda"]):
-        return ["llanta", "neumatico", "vulcanizacion", "rueda"]
-    if any(item in texto for item in ["choque", "colision", "accidente", "golpe", "grua"]):
-        return ["choque", "colision", "carroceria", "grua"]
+        return keywords + ["llanta", "neumatico", "vulcanizacion", "rueda"]
+    if any(item in texto for item in ["choque", "colision", "accidente", "golpe", "grua", "remolque", "carroceria"]):
+        return keywords + ["choque", "colision", "carroceria", "grua", "remolque"]
     if any(item in texto for item in ["motor", "recalentamiento", "humo", "radiador"]):
-        return ["motor", "mecanica", "recalentamiento", "radiador"]
+        return keywords + ["motor", "mecanica", "recalentamiento", "radiador"]
+    if any(item in texto for item in ["freno", "frenos", "abs", "pastilla"]):
+        return keywords + ["freno", "frenos", "abs", "pastilla", "disco"]
+    if any(item in texto for item in ["suspension", "amortiguador", "tren delantero"]):
+        return keywords + ["suspension", "amortiguador", "tren delantero"]
+    if any(item in texto for item in ["caja", "transmision", "embrague", "cambio"]):
+        return keywords + ["caja", "transmision", "embrague", "cambio"]
+    if any(item in texto for item in ["aire acondicionado", "climatizador", "compresor"]):
+        return keywords + ["aire acondicionado", "climatizador", "compresor"]
+    if any(item in texto for item in ["inyeccion", "combustible", "inyector", "gasolina", "diesel"]):
+        return keywords + ["inyeccion", "combustible", "inyector", "gasolina", "diesel"]
     if any(item in texto for item in ["llave", "cerrajeria", "cerradura"]):
-        return ["cerrajeria", "llave", "cerradura"]
-    return ["general", "mecanica", "auxilio"]
+        return keywords + ["cerrajeria", "llave", "cerradura"]
+    return keywords + ["general", "mecanica", "auxilio"]
 
 
 def familia_solicitud(solicitud: Solicitud) -> str:
     palabras = set(palabras_clave_solicitud(solicitud))
-    if palabras & {"bateria", "electrico", "electricidad", "arranque"}:
+    if palabras & {"bateria", "electrico", "electricidad", "arranque", "alternador"}:
         return "electricidad"
     if palabras & {"llanta", "neumatico", "vulcanizacion", "rueda"}:
         return "llantas"
     if palabras & {"motor", "mecanica", "recalentamiento", "radiador"}:
         return "motor"
+    if palabras & {"freno", "frenos", "abs", "pastilla", "disco"}:
+        return "frenos"
+    if palabras & {"suspension", "amortiguador"}:
+        return "suspension"
+    if palabras & {"caja", "transmision", "embrague", "cambio"}:
+        return "transmision"
+    if palabras & {"aire", "acondicionado", "climatizador", "compresor"}:
+        return "aire"
+    if palabras & {"inyeccion", "combustible", "inyector", "gasolina", "diesel"}:
+        return "combustible"
     if palabras & {"cerrajeria", "llave", "cerradura"}:
         return "cerrajeria"
-    if palabras & {"choque", "colision", "carroceria", "grua"}:
+    if palabras & {"choque", "colision", "carroceria", "grua", "remolque"}:
         return "colision"
     return "general"
 
@@ -99,11 +137,21 @@ def familia_especialidad(especialidad: str) -> str:
         return "electricidad"
     if any(item in especialidad for item in ["llanta", "neumatico", "vulcanizacion", "rueda"]):
         return "llantas"
-    if any(item in especialidad for item in ["motor", "mecanica", "mecánica", "radiador", "freno", "frenos"]):
+    if any(item in especialidad for item in ["motor", "mecanica", "radiador", "refrigeracion"]):
         return "motor"
+    if any(item in especialidad for item in ["freno", "frenos", "abs"]):
+        return "frenos"
+    if any(item in especialidad for item in ["suspension", "amortiguador"]):
+        return "suspension"
+    if any(item in especialidad for item in ["transmision", "caja", "embrague"]):
+        return "transmision"
+    if any(item in especialidad for item in ["aire acondicionado", "climatizador"]):
+        return "aire"
+    if any(item in especialidad for item in ["inyeccion", "combustible"]):
+        return "combustible"
     if any(item in especialidad for item in ["cerrajeria", "cerradura", "llave"]):
         return "cerrajeria"
-    if any(item in especialidad for item in ["choque", "colision", "carroceria", "grua"]):
+    if any(item in especialidad for item in ["choque", "colision", "carroceria", "grua", "remolque"]):
         return "colision"
     if especialidad in ESPECIALIDADES_GENERALES:
         return "general"
@@ -118,6 +166,13 @@ def puntaje_especialidad_taller(taller: Taller, solicitud: Solicitud, *, ignore_
     if not especialidades:
         return 14.0
 
+    requerida = normalizar_texto(solicitud.especialidad_requerida_ia)
+    if requerida:
+        if any(requerida == especialidad for especialidad in especialidades):
+            return 42.0
+        if any(requerida in especialidad or especialidad in requerida for especialidad in especialidades):
+            return 36.0
+
     familia = familia_solicitud(solicitud)
     familias_taller = {familia_especialidad(especialidad) for especialidad in especialidades}
 
@@ -125,12 +180,9 @@ def puntaje_especialidad_taller(taller: Taller, solicitud: Solicitud, *, ignore_
         return 34.0
     if "general" in familias_taller:
         return 18.0
-    if familia == "motor" and familias_taller & {"motor"}:
-        return 30.0
     if familia == "electricidad" and familias_taller & {"motor"}:
         return 12.0
     return 0.0
-
 
 def prioridad_peso(prioridad: Optional[str]) -> float:
     prioridad_normalizada = normalizar_texto(prioridad)
@@ -168,6 +220,12 @@ def especialidad_match(taller: Taller, solicitud: Solicitud, *, ignore_specialty
         return True
     especialidades = [normalizar_texto(item.nombre) for item in taller.especialidades]
     if not especialidades:
+        return True
+    requerida = normalizar_texto(solicitud.especialidad_requerida_ia)
+    if requerida and any(
+        requerida == especialidad or requerida in especialidad or especialidad in requerida
+        for especialidad in especialidades
+    ):
         return True
     if any(especialidad in ESPECIALIDADES_GENERALES for especialidad in especialidades):
         return True

@@ -1,3 +1,4 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:flutter/material.dart';
@@ -18,6 +19,8 @@ class ReportScreen extends StatefulWidget {
 }
 
 class _ReportScreenState extends State<ReportScreen> {
+  static const _showIncidentTypeChips = false;
+  static const _showAssistantVoiceTestButton = false;
   static const _incidentTypes = [
     'Bateria',
     'Llanta',
@@ -30,12 +33,14 @@ class _ReportScreenState extends State<ReportScreen> {
   final _descriptionController = TextEditingController();
   final _notesController = TextEditingController();
   final _audioRecorder = AudioRecorder();
+  final _assistantPlayer = AudioPlayer();
 
-  String _selectedIncident = _incidentTypes.first;
+  String _selectedIncident = _incidentTypes.last;
   String? _selectedVehicleId;
   List<String> _imagePaths = const [];
   String? _audioPath;
   bool _recordingAudio = false;
+  bool _transcribingAudio = false;
   double? _selectedLat;
   double? _selectedLng;
 
@@ -44,6 +49,7 @@ class _ReportScreenState extends State<ReportScreen> {
     _descriptionController.dispose();
     _notesController.dispose();
     _audioRecorder.dispose();
+    _assistantPlayer.dispose();
     super.dispose();
   }
 
@@ -99,7 +105,9 @@ class _ReportScreenState extends State<ReportScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text(
-                                'Vehiculo y tipo de incidente',
+                                _showIncidentTypeChips
+                                    ? 'Vehiculo y tipo de incidente'
+                                    : 'Vehiculo',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w800,
                                   fontSize: 16,
@@ -122,22 +130,24 @@ class _ReportScreenState extends State<ReportScreen> {
                                 onChanged: (value) =>
                                     setState(() => _selectedVehicleId = value),
                               ),
-                              const SizedBox(height: 16),
-                              Wrap(
-                                spacing: 10,
-                                runSpacing: 10,
-                                children: _incidentTypes
-                                    .map(
-                                      (type) => ChoiceChip(
-                                        label: Text(type),
-                                        selected: _selectedIncident == type,
-                                        onSelected: (_) => setState(
-                                          () => _selectedIncident = type,
+                              if (_showIncidentTypeChips) ...[
+                                const SizedBox(height: 16),
+                                Wrap(
+                                  spacing: 10,
+                                  runSpacing: 10,
+                                  children: _incidentTypes
+                                      .map(
+                                        (type) => ChoiceChip(
+                                          label: Text(type),
+                                          selected: _selectedIncident == type,
+                                          onSelected: (_) => setState(
+                                            () => _selectedIncident = type,
+                                          ),
                                         ),
-                                      ),
-                                    )
-                                    .toList(),
-                              ),
+                                      )
+                                      .toList(),
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -174,6 +184,32 @@ class _ReportScreenState extends State<ReportScreen> {
                                   return null;
                                 },
                               ),
+                              if (_showAssistantVoiceTestButton) ...[
+                                const SizedBox(height: 12),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: FilledButton.tonalIcon(
+                                    onPressed: controller.loading
+                                        ? null
+                                        : () => _playAssistantVoice(
+                                            messageKey: 'post_recording',
+                                            descripcion:
+                                                _descriptionController.text,
+                                          ),
+                                    icon: const Icon(Icons.volume_up_outlined),
+                                    label: const Text('Escuchar audio'),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'Prueba la respuesta de voz segun la descripcion escrita, sin enviar la solicitud.',
+                                  style: TextStyle(
+                                    color: Color(0xFF6F655B),
+                                    fontSize: 12,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 12),
                               TextFormField(
                                 controller: _notesController,
@@ -345,6 +381,40 @@ class _ReportScreenState extends State<ReportScreen> {
                                         title: 'Audio descriptivo',
                                         paths: [_audioPath!],
                                       ),
+                                    if (_audioPath != null) ...[
+                                      const SizedBox(height: 8),
+                                      FilledButton.tonalIcon(
+                                        onPressed:
+                                            _transcribingAudio ||
+                                                controller.loading
+                                            ? null
+                                            : _transcribeAudio,
+                                        icon: _transcribingAudio
+                                            ? const SizedBox(
+                                                width: 18,
+                                                height: 18,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                            : const Icon(Icons.auto_awesome),
+                                        label: Text(
+                                          _transcribingAudio
+                                              ? 'Transcribiendo...'
+                                              : 'Transcribir con IA',
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      const Text(
+                                        'La transcripcion se copia en la descripcion para que puedas corregirla antes de enviar.',
+                                        style: TextStyle(
+                                          color: Color(0xFF6F655B),
+                                          fontSize: 12,
+                                          height: 1.4,
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
                             ],
@@ -355,7 +425,7 @@ class _ReportScreenState extends State<ReportScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton.icon(
-                          onPressed: controller.loading
+                          onPressed: controller.loading || _transcribingAudio
                               ? null
                               : () => _submit(controller, selectedVehicle),
                           icon: const Icon(Icons.send_outlined),
@@ -483,6 +553,10 @@ class _ReportScreenState extends State<ReportScreen> {
           _audioPath = path;
         }
       });
+      await _playAssistantVoice(
+        messageKey: 'post_recording',
+        descripcion: _descriptionController.text,
+      );
       return;
     }
 
@@ -510,6 +584,49 @@ class _ReportScreenState extends State<ReportScreen> {
       return;
     }
     setState(() => _recordingAudio = true);
+  }
+
+  Future<void> _transcribeAudio() async {
+    final audioPath = _audioPath;
+    if (audioPath == null || audioPath.isEmpty) {
+      return;
+    }
+
+    setState(() => _transcribingAudio = true);
+    try {
+      final text = await context.read<AppController>().transcribeEmergencyAudio(
+        audioPath,
+      );
+      if (!mounted) {
+        return;
+      }
+      final currentDescription = _descriptionController.text.trim();
+      final nextDescription = currentDescription.isEmpty
+          ? text
+          : '$currentDescription\n\nTranscripcion del audio: $text';
+      _descriptionController.value = TextEditingValue(
+        text: nextDescription,
+        selection: TextSelection.collapsed(offset: nextDescription.length),
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Audio transcrito. Revisa el texto antes de enviar.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _transcribingAudio = false);
+      }
+    }
   }
 
   Future<void> _submit(AppController controller, Vehicle? vehicle) async {
@@ -548,7 +665,7 @@ class _ReportScreenState extends State<ReportScreen> {
       }
       final request = await controller.submitEmergency(
         vehicle: vehicle,
-        incidentType: _selectedIncident,
+        incidentType: _showIncidentTypeChips ? _selectedIncident : null,
         description: _descriptionController.text,
         latitud: latitud,
         longitud: longitud,
@@ -564,7 +681,7 @@ class _ReportScreenState extends State<ReportScreen> {
       _descriptionController.clear();
       _notesController.clear();
       setState(() {
-        _selectedIncident = _incidentTypes.first;
+        _selectedIncident = _incidentTypes.last;
         _imagePaths = const [];
         _audioPath = null;
         _selectedLat = null;
@@ -576,6 +693,10 @@ class _ReportScreenState extends State<ReportScreen> {
           content: Text('Solicitud #${request.id} enviada correctamente.'),
         ),
       );
+      await _playAssistantVoice(
+        messageKey: 'request_sent',
+        descripcion: _descriptionController.text,
+      );
     } catch (error) {
       if (!mounted) {
         return;
@@ -585,6 +706,37 @@ class _ReportScreenState extends State<ReportScreen> {
           content: Text(error.toString().replaceFirst('Exception: ', '')),
         ),
       );
+    }
+  }
+
+  Future<void> _playAssistantVoice({
+    required String messageKey,
+    String? especialidad,
+    String? descripcion,
+    String? incidentType,
+  }) async {
+    try {
+      final url = await context.read<AppController>().synthesizeAssistantVoice(
+        messageKey: messageKey,
+        especialidad: especialidad,
+        descripcion: descripcion,
+        incidentType: incidentType,
+      );
+      if (url == null || url.isEmpty) {
+        return;
+      }
+      await _assistantPlayer.stop();
+      await _assistantPlayer.play(UrlSource(url));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      final fallback = messageKey == 'request_sent'
+          ? 'Su solicitud fue enviada. En breve tendra una notificacion.'
+          : 'Enseguida su solicitud sera enviada a los talleres mas cercanos.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(fallback)));
     }
   }
 }

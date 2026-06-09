@@ -170,7 +170,7 @@
 
 .taller-solicitudes-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -232,6 +232,30 @@
   border: 1px solid #efe1d0;
   cursor: pointer;
   transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.taller-solicitudes-item-meta {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #efe1d0;
+}
+
+.taller-solicitudes-item-meta span {
+  font-size: 13px;
+  color: #5f4a39;
+  line-height: 1.5;
+}
+
+.taller-solicitudes-item-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.taller-solicitudes-item-actions .taller-solicitudes-boton-secundario {
+  min-width: 180px;
 }
 
 .taller-solicitudes-item + .taller-solicitudes-item {
@@ -465,6 +489,23 @@
   width: 100%;
   margin: 8px 0 12px;
 }
+
+.taller-solicitudes-images {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.taller-solicitudes-images img {
+  width: 140px;
+  height: 92px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #efe1d0;
+  background: #fff;
+  display: block;
+}
+.taller-solicitudes-images a { display: inline-block; }
 
 .taller-solicitudes-campo {
   display: grid;

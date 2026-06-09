@@ -73,6 +73,16 @@ ESTADO_ALIASES = {
 }
 
 
+def especialidades_taller_disponibles(session: Session) -> list[str]:
+    nombres = {
+        especialidad.nombre
+        for taller in session.exec(select(Taller).where(Taller.activo == True)).all()
+        for especialidad in taller.especialidades
+        if especialidad.nombre
+    }
+    return sorted(nombres)
+
+
 def normalizar_estado_operativo(estado: str | EstadoSolicitud) -> EstadoSolicitud:
     if isinstance(estado, EstadoSolicitud):
         return ESTADO_ALIASES.get(estado.value, estado)
@@ -749,6 +759,17 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
     if audio:
         audio_url = audio.ruta_archivo
 
+    # Recopilar evidencias de imagenes para exponerlas en la respuesta
+    imagenes = [
+        evidencia.ruta_archivo
+        for evidencia in session.exec(
+            select(Evidencia)
+            .where(Evidencia.solicitud_id == solicitud.id)
+            .where(Evidencia.tipo_evidencia == TipoEvidencia.IMAGEN)
+            .order_by(Evidencia.fecha_subida.desc())
+        ).all()
+    ]
+
     if solicitud.resumen_ia and "Resumen del audio:" in solicitud.resumen_ia:
         audio_resumen_ia = solicitud.resumen_ia.split("Resumen del audio:", 1)[1].strip()
 
@@ -777,6 +798,7 @@ def build_solicitud_read(session: Session, solicitud: Solicitud) -> SolicitudRea
             "audio_url": audio_url,
             "audio_resumen_ia": audio_resumen_ia,
             "ruta_recomendada_ia": ruta_recomendada_ia,
+            "imagenes": imagenes,
         }
     )
 
@@ -801,6 +823,7 @@ def reanalizar_solicitud_con_evidencias(session: Session, solicitud: Solicitud) 
         descripcion=solicitud.descripcion,
         image_paths=image_paths,
         audio_paths=audio_paths[:1],
+        available_specialties=especialidades_taller_disponibles(session),
     )
     audio_summary = None
     if solicitud.resumen_ia and "Resumen del audio:" in solicitud.resumen_ia:
@@ -809,7 +832,6 @@ def reanalizar_solicitud_con_evidencias(session: Session, solicitud: Solicitud) 
     solicitud.clasificacion_ia = analysis.clasificacion
     solicitud.prioridad_ia = analysis.prioridad
     solicitud.resumen_ia = analysis.resumen
-    solicitud.especialidad_requerida_ia = analysis.especialidad_requerida
     solicitud.especialidad_requerida_ia = analysis.especialidad_requerida
     if audio_summary:
         solicitud.resumen_ia = f"{solicitud.resumen_ia}\nResumen del audio: {audio_summary}".strip()
@@ -995,10 +1017,14 @@ def crear_solicitud(
         if existente:
             return build_solicitud_read(session, existente)
 
-    analysis = analyze_incident(descripcion=solicitud.descripcion)
+    analysis = analyze_incident(
+        descripcion=solicitud.descripcion,
+        available_specialties=especialidades_taller_disponibles(session),
+    )
     solicitud.clasificacion_ia = analysis.clasificacion
     solicitud.prioridad_ia = analysis.prioridad
     solicitud.resumen_ia = analysis.resumen
+    solicitud.especialidad_requerida_ia = analysis.especialidad_requerida
     solicitud.estado_pago = "pendiente"
     solicitud.precio_cobrado, solicitud.comision_plataforma = estimate_pricing(
         solicitud.clasificacion_ia,

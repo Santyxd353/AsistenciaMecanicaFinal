@@ -46,6 +46,15 @@
           Mis solicitudes
           <span>{{ misSolicitudes.length }}</span>
         </button>
+        <button
+          type="button"
+          class="taller-solicitudes-tab"
+          [class.activa]="vistaActiva === 'cotizaciones'"
+          (click)="cambiarVista('cotizaciones')"
+        >
+          Cotizaciones
+          <span>{{ solicitudesParaCotizar.length }}</span>
+        </button>
       </div>
     </section>
 
@@ -94,6 +103,48 @@
       <div *ngIf="vistaActiva === 'mis-solicitudes' && misSolicitudes.length === 0" class="taller-solicitudes-vacio">
         Tu taller todavía no tiene solicitudes tomadas.
       </div>
+
+      <div *ngIf="vistaActiva === 'cotizaciones'" class="taller-solicitudes-bloque-header">
+        <div>
+          <p class="taller-solicitudes-kicker">Cotizaciones</p>
+          <h2>Solicitudes para cotizar</h2>
+          <p class="taller-solicitudes-subtexto">
+            Revisa las solicitudes candidatas y abre el detalle para enviar tu presupuesto.
+          </p>
+        </div>
+        <span class="taller-solicitudes-total">{{ solicitudesParaCotizar.length }}</span>
+      </div>
+
+      <div *ngIf="vistaActiva === 'cotizaciones' && solicitudesParaCotizar.length === 0" class="taller-solicitudes-vacio">
+        No hay solicitudes candidatas para cotizar en este momento.
+      </div>
+
+      <article
+        class="taller-solicitudes-item"
+        *ngFor="let solicitud of solicitudesParaCotizar"
+        [hidden]="vistaActiva !== 'cotizaciones'"
+        (click)="abrirDetalle(solicitud)"
+      >
+        <div class="taller-solicitudes-item-header">
+          <strong>Solicitud #{{ solicitud.id }}</strong>
+          <span class="taller-solicitudes-estado-pill {{ solicitud.estado }}">
+            {{ etiquetaEstado(solicitud.estado) }}
+          </span>
+        </div>
+        <p>{{ solicitud.descripcion }}</p>
+        <div class="taller-solicitudes-item-meta">
+          <span><strong>Vehículo:</strong> {{ solicitud.vehiculo_placa || solicitud.vehiculo_descripcion || 'No asociado' }}</span>
+          <span><strong>Especialidad IA:</strong> {{ solicitud.clasificacion_ia || 'Sin clasificación' }}</span>
+          <span><strong>ETA:</strong> {{ solicitud.tiempo_estimado_minutos ? solicitud.tiempo_estimado_minutos + ' min' : 'No disponible' }}</span>
+          <span><strong>Distancia:</strong> {{ solicitud.distancia_tecnico_km ? (solicitud.distancia_tecnico_km | number:'1.0-1') + ' km' : 'No disponible' }}</span>
+          <span><strong>Estado cotización:</strong> {{ obtenerEstadoCotizacion(solicitud) }}</span>
+        </div>
+        <div class="taller-solicitudes-item-actions">
+          <button type="button" class="taller-solicitudes-boton-secundario" (click)="abrirDetalle(solicitud); $event.stopPropagation()">
+            Crear cotización
+          </button>
+        </div>
+      </article>
 
       <article
         class="taller-solicitudes-item"
@@ -244,6 +295,15 @@
           <p *ngIf="solicitudSeleccionada.audio_resumen_ia">
             <strong>Resumen IA:</strong> {{ solicitudSeleccionada.audio_resumen_ia }}
           </p>
+        </div>
+
+        <div class="taller-solicitudes-detalle-seccion" *ngIf="solicitudSeleccionada.imagenes?.length">
+          <span class="taller-solicitudes-detalle-label">Imágenes adjuntas</span>
+          <div class="taller-solicitudes-images">
+            <a *ngFor="let img of solicitudSeleccionada.imagenes" [href]="obtenerImagenUrl(img)" target="_blank" rel="noopener noreferrer">
+              <img [src]="obtenerImagenUrl(img)" alt="Evidencia imagen" />
+            </a>
+          </div>
         </div>
 
         <div class="taller-solicitudes-detalle-seccion" *ngIf="solicitudSeleccionada.ruta_recomendada_ia">

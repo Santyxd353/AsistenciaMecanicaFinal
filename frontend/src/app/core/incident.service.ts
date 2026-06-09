@@ -34,6 +34,7 @@ export interface Solicitud {
   audio_url?: string;
   audio_resumen_ia?: string;
   ruta_recomendada_ia?: string;
+  imagenes?: string[];
   cliente_sync_id?: string;
   cotizacion_seleccionada_id?: number;
   fecha_creacion: string;
