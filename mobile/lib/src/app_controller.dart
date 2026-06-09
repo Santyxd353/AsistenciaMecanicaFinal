@@ -1453,9 +1453,13 @@ class AppController extends ChangeNotifier {
               requestId: requestId,
             );
             notifyListeners();
-            SharedPreferences.getInstance().then((prefs) {
-              LocalRepository(prefs).saveNotifications(_notifications);
-            });
+            unawaited(
+              SharedPreferences.getInstance().then((prefs) async {
+                final storage = LocalRepository(prefs);
+                await storage.saveNotifications(_notifications);
+                await _refreshRemoteData(storage);
+              }),
+            );
           },
       onTapRequest: (requestId) {
         _pendingNotificationRequestId = requestId;

@@ -150,6 +150,14 @@ def _obtener_taller_actual(session: Session, current_user: User) -> Taller:
         select(Taller).where(Taller.propietario_id == current_user.id)
     ).first()
 
+    if not taller and current_user.tenant_id is not None:
+        taller = session.exec(
+            select(Taller)
+            .where(Taller.tenant_id == current_user.tenant_id)
+            .where(Taller.activo == True)
+            .order_by(Taller.id)
+        ).first()
+
     if not taller:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -641,8 +649,18 @@ def estimate_pricing(clasificacion: Optional[str], prioridad: Optional[str]) -> 
 
 
 def obtener_taller_del_usuario(session: Session, current_user: User) -> Taller | None:
-    return session.exec(
+    taller = session.exec(
         select(Taller).where(Taller.propietario_id == current_user.id)
+    ).first()
+    if taller:
+        return taller
+    if current_user.tenant_id is None:
+        return None
+    return session.exec(
+        select(Taller)
+        .where(Taller.tenant_id == current_user.tenant_id)
+        .where(Taller.activo == True)
+        .order_by(Taller.id)
     ).first()
 
 
@@ -1166,7 +1184,7 @@ def listar_solicitudes_pendientes_taller(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role != UserRole.WORKSHOP:
+    if current_user.role not in {UserRole.WORKSHOP, UserRole.ADMIN}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Solo los talleres pueden consultar solicitudes pendientes.",

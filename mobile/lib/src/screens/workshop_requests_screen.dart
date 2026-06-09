@@ -211,6 +211,10 @@ class _RequestCard extends StatelessWidget {
                   ),
                 ],
               ),
+              if (controller.canWorkshopManageRequest(request)) ...[
+                const SizedBox(height: 12),
+                _QuickActions(request: request),
+              ],
               if (request.paymentReady) ...[
                 const SizedBox(height: 12),
                 DecoratedBox(
@@ -233,6 +237,124 @@ class _RequestCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _QuickActions extends StatelessWidget {
+  const _QuickActions({required this.request});
+
+  final EmergencyRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<AppController>();
+    final action = _nextAction(request.estado);
+    if (action == null) {
+      return OutlinedButton.icon(
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => WorkshopRequestDetailScreen(requestId: request.id),
+            ),
+          );
+        },
+        icon: const Icon(Icons.open_in_new),
+        label: const Text('Ver trabajo'),
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(
+          child: FilledButton.icon(
+            onPressed: controller.loading
+                ? null
+                : () => _advance(context, controller, action.estado),
+            icon: Icon(action.icon),
+            label: Text(action.label),
+          ),
+        ),
+        const SizedBox(width: 10),
+        IconButton.outlined(
+          tooltip: 'Ver detalle',
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    WorkshopRequestDetailScreen(requestId: request.id),
+              ),
+            );
+          },
+          icon: const Icon(Icons.chevron_right),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _advance(
+    BuildContext context,
+    AppController controller,
+    String estado,
+  ) async {
+    try {
+      await controller.advanceRequestStatus(request: request, estado: estado);
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Trabajo actualizado.')),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    }
+  }
+
+  _QuickAction? _nextAction(String estado) {
+    switch (estado) {
+      case 'asignada':
+        return const _QuickAction(
+          estado: 'tecnico_en_camino',
+          label: 'Estoy en camino',
+          icon: Icons.route_outlined,
+        );
+      case 'tecnico_en_camino':
+        return const _QuickAction(
+          estado: 'tecnico_llego',
+          label: 'Llegue al punto',
+          icon: Icons.location_on_outlined,
+        );
+      case 'tecnico_llego':
+        return const _QuickAction(
+          estado: 'en_proceso',
+          label: 'Iniciar atencion',
+          icon: Icons.build_circle_outlined,
+        );
+      case 'en_proceso':
+        return const _QuickAction(
+          estado: 'finalizado',
+          label: 'Finalizar trabajo',
+          icon: Icons.task_alt_outlined,
+        );
+      default:
+        return null;
+    }
+  }
+}
+
+class _QuickAction {
+  const _QuickAction({
+    required this.estado,
+    required this.label,
+    required this.icon,
+  });
+
+  final String estado;
+  final String label;
+  final IconData icon;
 }
 
 class _FilterChip extends StatelessWidget {

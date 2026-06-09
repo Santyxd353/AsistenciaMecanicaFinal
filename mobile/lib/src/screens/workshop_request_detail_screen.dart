@@ -28,6 +28,17 @@ class _WorkshopRequestDetailScreenState
   int get requestId => widget.requestId;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(context.read<AppController>().refreshData());
+    });
+  }
+
+  @override
   void dispose() {
     // Si el técnico cierra esta pantalla, paramos el timer de tracking para
     // no consumir batería ni datos en segundo plano. La pantalla del detalle
@@ -68,8 +79,39 @@ class _WorkshopRequestDetailScreenState
     if (request == null) {
       return Scaffold(
         appBar: AppBar(title: Text('Solicitud #$requestId')),
-        body: const Center(
-          child: Text('La solicitud ya no esta visible. Actualiza la bandeja.'),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (controller.loading) ...[
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  const Text('Cargando trabajo asignado...'),
+                ] else ...[
+                  const Icon(Icons.assignment_late_outlined, size: 44),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'No se pudo cargar este trabajo.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Actualiza la bandeja. Si sigue sin aparecer, el taller todavia no asigno este servicio a tu usuario mecanico.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: controller.refreshData,
+                    icon: const Icon(Icons.sync),
+                    label: const Text('Actualizar'),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       );
     }
