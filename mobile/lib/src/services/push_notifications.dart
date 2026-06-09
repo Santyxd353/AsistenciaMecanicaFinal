@@ -32,6 +32,7 @@ class PushNotificationsService {
 
   static bool _initialized = false;
   static bool _oneSignalClickListenerReady = false;
+  static bool _oneSignalForegroundListenerReady = false;
   static ForegroundPushHandler? _foregroundHandler;
   static PushTapHandler? _tapHandler;
   static StreamSubscription<RemoteMessage>? _onMessageSubscription;
@@ -52,14 +53,21 @@ class PushNotificationsService {
 
     if (AppConfig.oneSignalAppId.isNotEmpty) {
       try {
+        final canAskPermission = await OneSignal.Notifications.canRequest();
+        if (canAskPermission || !OneSignal.Notifications.permission) {
+          await OneSignal.Notifications.requestPermission(true);
+        }
+
         final externalId = _buildExternalId(currentUser);
         await OneSignal.login(externalId);
+        await OneSignal.User.pushSubscription.optIn();
         await OneSignal.User.addTags({
           'user_id': currentUser.id,
           'role': currentUser.role,
           'tenant_id': currentUser.tenantId ?? 'global',
         });
         _ensureOneSignalClickListener();
+        _ensureOneSignalForegroundListener();
       } catch (error) {
         debugPrint('No se pudo asociar usuario en OneSignal: $error');
       }
@@ -144,6 +152,32 @@ class PushNotificationsService {
       if (requestId != null) {
         _tapHandler?.call(requestId);
       }
+    });
+  }
+
+  static void _ensureOneSignalForegroundListener() {
+    if (_oneSignalForegroundListenerReady) {
+      return;
+    }
+    _oneSignalForegroundListenerReady = true;
+    OneSignal.Notifications.addForegroundWillDisplayListener((event) {
+      final requestId = _readRequestId(
+        event.notification.additionalData ?? const <String, dynamic>{},
+      );
+      final title = event.notification.title ?? 'RutaSOS';
+      final body =
+          event.notification.body ?? 'Tienes una nueva notificacion.';
+
+      _foregroundHandler?.call(
+        title: title,
+        message: body,
+        requestId: requestId,
+      );
+
+      // En primer plano OneSignal puede no mostrar banner por defecto.
+      // Lo forzamos para que el telefono se comporte igual que en segundo plano.
+      event.preventDefault();
+      event.notification.display();
     });
   }
 
