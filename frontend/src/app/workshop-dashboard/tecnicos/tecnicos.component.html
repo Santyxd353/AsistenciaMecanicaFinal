@@ -139,8 +139,8 @@
             </div>
 
             <div class="tech-meta">
-              <span class="meta-label">TelÃ©fono</span>
-              <strong>{{ t.usuario_telefono || 'Sin nÃºmero' }}</strong>
+              <span class="meta-label">Teléfono</span>
+              <strong>{{ t.usuario_telefono || 'Sin número' }}</strong>
             </div>
 
             <div class="tech-meta">
@@ -283,7 +283,7 @@
           </div>
 
           <div class="form-field">
-            <label for="telefono">TelÃ©fono de contacto</label>
+            <label for="telefono">Teléfono de contacto</label>
             <input
               id="telefono"
               type="tel"
@@ -297,10 +297,10 @@
               placeholder="Ej. 70012345"
               autocomplete="tel"
             />
-            <small class="hint">Este nÃºmero se mostrarÃ¡ al cliente para llamar o abrir WhatsApp.</small>
+            <small class="hint">Este número se mostrará al cliente para llamar o abrir WhatsApp.</small>
             <div class="field-error" *ngIf="telefonoCtrl.invalid && telefonoCtrl.touched">
-              <span *ngIf="telefonoCtrl.errors?.['required']">El telÃ©fono del mecÃ¡nico es obligatorio.</span>
-              <span *ngIf="telefonoCtrl.errors?.['minlength'] || telefonoCtrl.errors?.['pattern']">Ingresa un telÃ©fono vÃ¡lido.</span>
+              <span *ngIf="telefonoCtrl.errors?.['required']">El teléfono del mecánico es obligatorio.</span>
+              <span *ngIf="telefonoCtrl.errors?.['minlength'] || telefonoCtrl.errors?.['pattern']">Ingresa un teléfono válido.</span>
             </div>
           </div>
 
