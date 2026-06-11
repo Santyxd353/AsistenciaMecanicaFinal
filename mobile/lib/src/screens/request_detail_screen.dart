@@ -118,6 +118,8 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
           children: [
+            _TopContactActions(request: request),
+            const SizedBox(height: 14),
             _SectionCard(
               title: 'Estado actual',
               child: Column(
@@ -509,6 +511,101 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
   }
 }
 
+class _TopContactActions extends StatelessWidget {
+  const _TopContactActions({required this.request});
+
+  final EmergencyRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    final phone = _MechanicContactCard._normalizePhone(
+      request.tecnicoTelefono ?? '',
+    );
+    final mechanicAvailable = phone.isNotEmpty;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFF3A2113),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF3A2113).withValues(alpha: 0.16),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Acciones rápidas',
+              style: TextStyle(
+                color: Color(0xFFFFE7C7),
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.2,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              mechanicAvailable
+                  ? 'Contacta a tu mecánico o pide apoyo médico si lo necesitas.'
+                  : 'Aún no hay teléfono del mecánico. La asistencia médica está disponible.',
+              style: const TextStyle(color: Color(0xFFF7E9D9), height: 1.35),
+            ),
+            const SizedBox(height: 14),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 360;
+                final mechanicButton = FilledButton.icon(
+                  onPressed: mechanicAvailable
+                      ? () => _MechanicContactCard._showContact(context, phone)
+                      : null,
+                  icon: const Icon(Icons.call_outlined),
+                  label: const Text('Llamar mecánico'),
+                );
+                final emergencyButton = FilledButton.tonalIcon(
+                  onPressed: () =>
+                      _MechanicContactCard._showEmergencyContacts(context),
+                  icon: const Icon(Icons.local_hospital_outlined),
+                  label: const Text('Asistencia médica'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFFFF4E8),
+                    foregroundColor: const Color(0xFF5A321C),
+                    disabledBackgroundColor: const Color(0xFFE9D8C4),
+                  ),
+                );
+
+                if (compact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      mechanicButton,
+                      const SizedBox(height: 10),
+                      emergencyButton,
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: mechanicButton),
+                    const SizedBox(width: 10),
+                    Expanded(child: emergencyButton),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _MechanicContactCard extends StatelessWidget {
   const _MechanicContactCard({required this.request});
 
@@ -550,27 +647,6 @@ class _MechanicContactCard extends StatelessWidget {
                 ),
                 if (phone.isNotEmpty)
                   Text(phone, style: const TextStyle(color: Color(0xFF8D5524))),
-              ],
-            ),
-          ),
-          Flexible(
-            child: Wrap(
-              alignment: WrapAlignment.end,
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton.tonalIcon(
-                  onPressed: phone.isEmpty
-                      ? null
-                      : () => _showContact(context, phone),
-                  icon: const Icon(Icons.call_outlined),
-                  label: const Text('Mecanico'),
-                ),
-                FilledButton.icon(
-                  onPressed: () => _showEmergencyContacts(context),
-                  icon: const Icon(Icons.local_hospital_outlined),
-                  label: const Text('Emergencias'),
-                ),
               ],
             ),
           ),
