@@ -3,6 +3,7 @@ import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { FormsModule, NgForm  } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
+import { finalize, timeout } from 'rxjs';
 import { Tecnico, TecnicoPayload, TecnicoService, TecnicoUsuarioPayload } from '../../core/tecnico.service';
 import { EspecialidadService, Especialidad } from '../../core/especialidad.service';
 
@@ -347,7 +348,13 @@ export class TecnicosComponent implements OnInit {
 
   guardarTecnico(payload: TecnicoPayload) {
     if (this.editando) {
-      this.tecnicoService.actualizarTecnico(this.form.id, payload).subscribe({
+      this.tecnicoService.actualizarTecnico(this.form.id, payload).pipe(
+        timeout(12000),
+        finalize(() => {
+          this.guardando = false;
+          this.cdr.detectChanges();
+        }),
+      ).subscribe({
         next: (res: Tecnico) => {
           const credenciales = res.usuario_username && res.password_temporal
             ? ` Usuario: ${res.usuario_username} | Contraseña temporal: ${res.password_temporal}`
@@ -370,7 +377,13 @@ export class TecnicosComponent implements OnInit {
         },
       });
     } else {
-      this.tecnicoService.crearTecnico(payload).subscribe({
+      this.tecnicoService.crearTecnico(payload).pipe(
+        timeout(12000),
+        finalize(() => {
+          this.guardando = false;
+          this.cdr.detectChanges();
+        }),
+      ).subscribe({
         next: (res: Tecnico) => {
           this.mensajeExito = 'Mecánico creado correctamente.';
           this.guardando = false;
@@ -706,11 +719,22 @@ export class TecnicosComponent implements OnInit {
   }
 
   private obtenerMensajeError(error: unknown, fallback: string): string {
+    if ((error as { name?: string })?.name === 'TimeoutError') {
+      return 'El servidor tardó demasiado en responder. Intenta nuevamente.';
+    }
     if (error instanceof HttpErrorResponse) {
       const detail = error.error?.detail;
       if (detail?.code === 'PLAN_LIMIT_TECHNICIAN') {
         this.router.navigate(['/upgrade-plan'], { queryParams: { reason: 'mechanics' } });
         return detail.message || fallback;
+      }
+      if (Array.isArray(detail)) {
+        return detail
+          .map(item => item?.msg || item?.message || JSON.stringify(item))
+          .join(' ');
+      }
+      if (detail && typeof detail === 'object') {
+        return detail.message || JSON.stringify(detail);
       }
       return detail?.message || detail || fallback;
     }
