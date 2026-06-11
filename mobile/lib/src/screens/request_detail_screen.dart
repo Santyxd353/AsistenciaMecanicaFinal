@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../app_controller.dart';
 import '../models.dart';
 import '../services/realtime_service.dart';
+import '../services/route_service.dart';
 import '../widgets/vehicle_history_card.dart';
 
 class RequestDetailScreen extends StatefulWidget {
@@ -889,14 +890,23 @@ class _LiveMap extends StatelessWidget {
               userAgentPackageName: 'com.rutasos.mobile',
             ),
             if (mechanic != null)
-              PolylineLayer(
-                polylines: [
-                  Polyline(
-                    points: [mechanic, incident],
-                    strokeWidth: 4,
-                    color: const Color(0xFF8D5524),
-                  ),
-                ],
+              FutureBuilder<List<LatLng>>(
+                future: RouteService.drivingRoute(
+                  origin: mechanic,
+                  destination: incident,
+                ),
+                builder: (context, snapshot) {
+                  final points = snapshot.data ?? [mechanic, incident];
+                  return PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: points,
+                        strokeWidth: 5,
+                        color: const Color(0xFF8D5524),
+                      ),
+                    ],
+                  );
+                },
               ),
             MarkerLayer(
               markers: [

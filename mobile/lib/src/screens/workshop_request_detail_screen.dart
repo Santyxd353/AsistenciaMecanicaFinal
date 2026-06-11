@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../app_controller.dart';
 import '../models.dart';
 import '../repositories.dart';
+import '../services/route_service.dart';
 import '../widgets/vehicle_history_card.dart';
 
 class WorkshopRequestDetailScreen extends StatefulWidget {
@@ -665,14 +666,23 @@ class _MechanicTrackingMapCardState extends State<_MechanicTrackingMapCard> {
                     userAgentPackageName: 'com.rutasos.mobile',
                   ),
                   if (mechanic != null)
-                    PolylineLayer(
-                      polylines: [
-                        Polyline(
-                          points: [mechanic, destination],
-                          strokeWidth: 5,
-                          color: const Color(0xFF8D5524),
-                        ),
-                      ],
+                    FutureBuilder<List<LatLng>>(
+                      future: RouteService.drivingRoute(
+                        origin: mechanic,
+                        destination: destination,
+                      ),
+                      builder: (context, snapshot) {
+                        final points = snapshot.data ?? [mechanic, destination];
+                        return PolylineLayer(
+                          polylines: [
+                            Polyline(
+                              points: points,
+                              strokeWidth: 5,
+                              color: const Color(0xFF8D5524),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   MarkerLayer(
                     markers: [

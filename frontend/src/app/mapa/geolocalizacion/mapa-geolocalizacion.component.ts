@@ -39,6 +39,7 @@ export class MapaGeolocalizacionComponent implements AfterViewInit, OnChanges, O
   private mapa: L.Map | null = null;
   private marcadores: L.CircleMarker[] = [];
   private ruta: L.Polyline | null = null;
+  private routeRequestSeq = 0;
   errorRenderMapa = false;
 
   get puntosValidos(): PuntoMapaGeolocalizacion[] {
@@ -120,6 +121,7 @@ export class MapaGeolocalizacionComponent implements AfterViewInit, OnChanges, O
     try {
       this.marcadores.forEach((marcador) => marcador.remove());
       this.marcadores = [];
+      this.routeRequestSeq++;
       this.ruta?.remove();
       this.ruta = null;
 
@@ -135,19 +137,7 @@ export class MapaGeolocalizacionComponent implements AfterViewInit, OnChanges, O
         bounds.extend(L.latLng(punto.latitud as number, punto.longitud as number));
       });
 
-      const rutaPuntos = this.puntosValidos
-        .filter((punto) => punto.tipo !== 'incidente')
-        .concat(this.puntosValidos.filter((punto) => punto.tipo === 'incidente'))
-        .map((punto) => [punto.latitud as number, punto.longitud as number] as L.LatLngExpression);
-
-      if (rutaPuntos.length >= 2) {
-        this.ruta = L.polyline(rutaPuntos, {
-          color: '#111827',
-          weight: 4,
-          opacity: 0.72,
-          dashArray: '8 8',
-        }).addTo(this.mapa as L.Map);
-      }
+      this.dibujarRutaOperativa();
 
       if (this.puntosValidos.length === 1) {
         const unico = this.puntosValidos[0];
@@ -200,6 +190,64 @@ export class MapaGeolocalizacionComponent implements AfterViewInit, OnChanges, O
     };
 
     return estilos[tipo];
+  }
+
+  private dibujarRutaOperativa(): void {
+    const incidente = this.puntosValidos.find((punto) => punto.tipo === 'incidente');
+    const tecnico = this.puntosValidos.find((punto) => punto.tipo === 'tecnico');
+
+    if (!this.mapa || !incidente || !tecnico) {
+      return;
+    }
+
+    const fallback: L.LatLngExpression[] = [
+      [tecnico.latitud as number, tecnico.longitud as number],
+      [incidente.latitud as number, incidente.longitud as number],
+    ];
+    this.ruta = this.crearPolylineRuta(fallback, true);
+
+    const seq = this.routeRequestSeq;
+    this.obtenerRutaOsrm(tecnico, incidente)
+      .then((rutaReal) => {
+        if (!this.mapa || seq !== this.routeRequestSeq || rutaReal.length < 2) {
+          return;
+        }
+        this.ruta?.remove();
+        this.ruta = this.crearPolylineRuta(rutaReal, false);
+      })
+      .catch(() => {
+        // Conserva la linea fallback si OSRM no responde.
+      });
+  }
+
+  private crearPolylineRuta(points: L.LatLngExpression[], fallback: boolean): L.Polyline {
+    return L.polyline(points, {
+      color: fallback ? '#8a6a4f' : '#8D5524',
+      weight: fallback ? 4 : 5,
+      opacity: fallback ? 0.65 : 0.9,
+      dashArray: fallback ? '8 8' : undefined,
+    }).addTo(this.mapa as L.Map);
+  }
+
+  private async obtenerRutaOsrm(
+    origen: PuntoMapaGeolocalizacion,
+    destino: PuntoMapaGeolocalizacion,
+  ): Promise<L.LatLngExpression[]> {
+    const url = [
+      'https://router.project-osrm.org/route/v1/driving/',
+      `${origen.longitud},${origen.latitud};${destino.longitud},${destino.latitud}`,
+      '?overview=full&geometries=geojson',
+    ].join('');
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      return [];
+    }
+    const body = await response.json() as {
+      routes?: Array<{ geometry?: { coordinates?: Array<[number, number]> } }>;
+    };
+    const coordinates = body.routes?.[0]?.geometry?.coordinates ?? [];
+    return coordinates.map(([lng, lat]) => [lat, lng] as L.LatLngExpression);
   }
 
   private programarAjusteMapa(): void {
